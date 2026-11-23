@@ -81,7 +81,7 @@ object MtGlass {
     /** (v901) كبسولة/دوك عايم زجاجي داكن (نص أبيض فوقه): سطح شبه شفاف + لمعة + حافة مضيئة (أو لون تمييز لما accent != 0) */
     fun floatPill(radiusPx: Float, density: Float, accent: Int = 0): Drawable {
         // (v909) زجاج وحافة رسائل MeeTube (meetube_toast_glass / meetube_toast_rim) — نفس MobileSnackbar
-        val base = GradientDrawable().apply { setColor(MeeRes.color("meetube_toast_glass", 0xC0332C26.toInt(), 0xC0332C26.toInt()))   // (v1206) توست/كبسولة عايمة بلون Espresso دافي; cornerRadius = radiusPx }
+        val base = GradientDrawable().apply { setColor(MeeRes.color("meetube_toast_glass", 0xC0332C26.toInt(), 0xC0332C26.toInt())); cornerRadius = radiusPx }   // (v1206) توست/كبسولة عايمة بلون Espresso دافي
         val top = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x1AFFFFFF, 0x00FFFFFF)).apply { cornerRadius = radiusPx }
         val edge = GradientDrawable().apply { setColor(Color.TRANSPARENT); cornerRadius = radiusPx; setStroke(max(1, density.roundToInt()), if (accent != 0) accent else MeeRes.color("meetube_toast_rim", 0x3DFFFFFF, 0x3DFFFFFF)) }
         return LayerDrawable(arrayOf<Drawable>(base, top, edge))
