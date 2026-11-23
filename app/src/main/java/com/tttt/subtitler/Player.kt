@@ -706,10 +706,11 @@ class PlayerActivity : Activity(), Host {
             "voice" -> runOnUiThread { try { voiceMenu() } catch (e: Throwable) { LogStore.err("Player:rvoice", e) } }   // (v712) فصل صوت الكلام
             "nextlist" -> runOnUiThread { try { openNextSheet() } catch (e: Throwable) { LogStore.err("Player:rnext", e) } }   // (v712) 📃 التالي (يوتيوب)
             "tr_free", "tr_gem" -> remoteTrGuarded { geminiAsk() }   // (v743) FreeLLM اتشال — الزرارين القدام بيفتحوا اختيار جيميناي
-            "tr_gem_acc" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "0"); Cfg.put("dual_listen", "2"); Cfg.put("fastmode", "0"); geminiStart() } }   // (v1043) الاختيار اتعمل على الموبايل — من غير نافذة على التلفزيون
-            "tr_gem_fast" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "0"); Cfg.put("dual_listen", "0"); Cfg.put("fastmode", "0"); geminiStart() } }
-            "tr_gem_quick" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "0"); Cfg.put("fastmode", "1"); geminiStart() } }
-        "tr_gem_bal" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "1"); geminiStart() } }   // (دمج v1090) ⚖ متوازن   // (v1068) ⚡ سريع
+            "tr_gem_acc" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "0"); Cfg.put("tr_one", "0"); Cfg.put("dual_listen", "2"); Cfg.put("fastmode", "0"); geminiStart() } }   // (v1043) الاختيار اتعمل على الموبايل — من غير نافذة على التلفزيون
+            "tr_gem_fast" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "0"); Cfg.put("tr_one", "0"); Cfg.put("dual_listen", "0"); Cfg.put("fastmode", "0"); geminiStart() } }
+            "tr_gem_quick" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "0"); Cfg.put("tr_one", "0"); Cfg.put("fastmode", "1"); geminiStart() } }
+            "tr_gem_one" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "1"); Cfg.put("tr_one", "1"); geminiStart() } }   // (v1197) 🔑 مفتاح واحد
+            "tr_gem_bal" -> remoteTrGuarded { trAsked = true; h.post { Cfg.put("tr_bal", "1"); Cfg.put("tr_one", "0"); geminiStart() } }   // (دمج v1090) ⚖ متوازن   // (v1068) ⚡ سريع
             "tr_whisper" -> whisperStart()
             "tr_gtx" -> startGeminiTranscribe()
             "tr_wtx" -> offlineQuick(true)
@@ -2839,12 +2840,13 @@ class PlayerActivity : Activity(), Host {
         val ft = FastTr(conf, { makeSource(sp) }, engine, hst, Cfg.str("conv_dialect", ""))
         // (v1119) تفريغ بس: المحرك البسيط بياخد العلم من الخطة اللي شغّلتها runPlanCore
         try { ft.transOnly = engine.transOnly } catch (_: Throwable) {}
+        try { ft.oneKey = Cfg.bool("tr_one", false) } catch (_: Throwable) {}   // (v1197) 🔑 مفتاح واحد
         ft.onState = { runOnUiThread { try { updateTr() } catch (_: Throwable) {} } }
         fastTr = ft
         val fresh = freshOnce; freshOnce = false
         if (fresh) { try { player.seekTo(0) } catch (_: Throwable) {}; cur = 0L }
         val balNote = if (ft.transOnly) "تفريغ بس — من غير ترجمة" else "تفريغ ثم ترجمة"
-        log("⚖ متوازن — المحرك البسيط (كل مفتاح باتش: " + balNote + ")")
+        if (ft.oneKey) log("🔑 مفتاح واحد — مفتاح بيترجم بالتوالي (" + balNote + ") + مفتاح تأكيد بينقّح بالسياق") else log("⚖ متوازن — المحرك البسيط (كل مفتاح باتش: " + balNote + ")")
         Thread {
             if (fresh) try { engine.redoAll() } catch (e: Throwable) { val m = "⚠ " + (e.message ?: e.toString()).take(120); log(m); runOnUiThread { say(m) } }
             ft.start()
@@ -3695,16 +3697,18 @@ class PlayerActivity : Activity(), Host {
         val title = ui.text("", 14f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(2), 0, ui.dp(2)) }
         // (v1127) قايمة البلوكات (☑/☐) اتشالت — البلوكات بتتحدد لوحدها من موضع السلايدر (TrSlider.onAt) من غير عرض
         val balNote = shNote("⚖ المتوازن: المحرك البسيط — كل مفتاح ياخد باتش ويفرّغه (يظهر على طول) وبعدين يترجمه. من غير بلوكات سرعة/دقة. حرّك يمين للدقيق أو شمال للسريع.")
+        val oneNote = shNote("🔑 مفتاح واحد: مفتاح بيترجم الباتشات واحد ورا التاني (بيرتاح بين كل باتش عشان 429) ومفتاح تاني تأكيدي بيراجع كل اللي فات بالسياق ويبدّل الترجمة القديمة. لو باتش وقع بيروح لمفتاح فاضي، ولو مفيش بيستنى المفتاح التأكيدي.")
         val dualNote = shNote("⚡ ٧٥/٢٥ (سماع واحد) مختار من «🔧 إعدادات متقدمة» — تحريك السلايدر جوه الدقيق مش بيغيّره")
         fun paint(p: Int) {
             title.text = TrSlider.title(p)
             val bal = TrSlider.zone(p) == TrSlider.BAL
             balNote.visibility = if (bal) View.VISIBLE else View.GONE
+            oneNote.visibility = if (TrSlider.zone(p) == TrSlider.ONE) View.VISIBLE else View.GONE
             dualNote.visibility = if (TrSlider.zone(p) == TrSlider.ACC && Cfg.int("dual_listen", 1) == 0) View.VISIBLE else View.GONE
         }
         col.addView(title, LinearLayout.LayoutParams(-1, -2))
         val sb = SeekBar(this).apply {
-            layoutDirection = View.LAYOUT_DIRECTION_LTR; max = TrSlider.STATIONS - 1; progress = TrSlider.station(TrSlider.pos())   // (v1134) 4 محطات
+            layoutDirection = View.LAYOUT_DIRECTION_LTR; max = TrSlider.STATIONS - 1; progress = TrSlider.station(TrSlider.pos())   // (v1197) 5 محطات
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) { if (u) { val ip = TrSlider.posOf(p); TrSlider.setPos(ip); try { updateTr() } catch (_: Throwable) {}; paint(ip); onChanged() } }
                 override fun onStartTrackingTouch(s: SeekBar?) {}
@@ -3715,10 +3719,11 @@ class PlayerActivity : Activity(), Host {
         val ends = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
         ends.addView(ui.text("⚡ أسرع", 11.5f, 0xFF9AA0A6.toInt()), LinearLayout.LayoutParams(0, -2, 1f))
         ends.addView(ui.text("⚡ سريع", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
+        ends.addView(ui.text("🔑 مفتاح", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
         ends.addView(ui.text("⚖ متوازن", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
         ends.addView(ui.text("🎯 دقيق", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.END }, LinearLayout.LayoutParams(0, -2, 1f))
         col.addView(ends, LinearLayout.LayoutParams(-1, -2))
-        col.addView(balNote); col.addView(dualNote)
+        col.addView(balNote); col.addView(oneNote); col.addView(dualNote)
         paint(TrSlider.pos())
     }
 

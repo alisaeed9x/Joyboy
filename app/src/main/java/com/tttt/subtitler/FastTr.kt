@@ -282,6 +282,13 @@ class FastTr(
             if (transOnly) it.original.isNotBlank() else (it.translated.isNotBlank() && it.translated != it.original)
         }.map { it.chunk }.toSet()
         val order = ((start until n) + (0 until start)).filter { it !in doneSet && it !in haveTr }
+        if (oneKey) {   // (v1197) 🔑 وضع المفتاح الواحد
+            runOneKey(s, dur, order)
+            try { s.close() } catch (_: Throwable) {}
+            try { eng.saveNow() } catch (_: Throwable) {}
+            if (!stopped) host.log("🔑 [مفتاح واحد] خلصت — ${doneSet.size}/$total باتش" + (if (failedSet.isNotEmpty()) " · ⚠ ${failedSet.size} فاشل" else ""))
+            return
+        }
         val workers = pool.all().size.coerceIn(1, MAX_WORKERS)
         host.log("⚡ [محرك ٢] $n باتش · $workers خيط (كل مفتاح باتش) · الموديل ${model().removePrefix("gemini-")}")
         val next = AtomicInteger(0)
@@ -440,7 +447,7 @@ class FastTr(
                 deadline += waitNetDown()
                 continue
             }
-            val k = pool.pickIdle(i, avoid, 1) ?: pool.pickFree(avoid, i) ?: pool.pickFree(null, i)
+            val k = if (oneKey) oneKeyPick(avoid) else (pool.pickIdle(i, avoid, 1) ?: pool.pickFree(avoid, i) ?: pool.pickFree(null, i))   // (v1197) مفتاح واحد: المترجم الأول، والباتش الواقع لمفتاح فاضي ثم المؤكّد
             if (k == null) { nap(500); continue }
             pool.begin(k, i); stage[i] = label; keyNoOf[i] = pool.all().indexOf(k) + 1
             val t0 = System.currentTimeMillis()
@@ -473,6 +480,153 @@ class FastTr(
             }
         }
         return null
+    }
+
+    // ===== (v1197) 🔑 وضع المفتاح الواحد =====
+    // مفتاح «مترجم» بياخد الباتشات واحد ورا التاني (مش بالتوازي) وبيرتاح بين كل باتش عشان ما يجيش 429.
+    // ومفتاح «تأكيدي» بياخد كل التفريغ الأصلي للباتشات اللي خلصت (القديم والجديد) ويبعته لجيميناي يترجمه بالسياق
+    // ويبدّل بيه الترجمات القديمة. باتش وقع → مفتاح فاضي تاني، ولو مفيش بيستنى المفتاح التأكيدي يفضى.
+    @Volatile var oneKey: Boolean = false
+    @Volatile private var oneT: String? = null
+    @Volatile private var oneC: String? = null
+    @Volatile private var oneFinished = false
+    private val trDone = ConcurrentHashMap.newKeySet<Int>()
+    private val confirmed = ConcurrentHashMap.newKeySet<Int>()
+
+    /** الراحة بين بداية باتش وبداية اللي بعده (ms) — تتظبط من onekey_rest_ms (افتراضي 8000 = طلبين لكل باتش على ~15 طلب/دقيقة) */
+    private fun oneRestMs(): Long = try { Cfg.int("onekey_rest_ms", 8000).toLong().coerceIn(0L, 60_000L) } catch (_: Throwable) { 8000L }
+
+    private fun oneKeyPick(avoid: String?): String? {
+        val t = oneT; val c = oneC
+        if (avoid == null && t != null && pool.ok(t) && pool.loadOf(t) == 0) return t
+        val others = pool.all().filter { it != avoid && it != c && pool.ok(it) && pool.loadOf(it) == 0 }
+        others.firstOrNull()?.let { return it }
+        if (c != null && c != avoid && pool.ok(c) && pool.loadOf(c) == 0) return c
+        if (pool.all().size <= 1 && t != null && pool.ok(t) && pool.loadOf(t) == 0) return t
+        return null
+    }
+
+    private fun runOneKey(s: AudioSource, dur: Double, order: List<Int>) {
+        val keys = conf.keys.filter { it.length > 10 }
+        val tKey = keys.firstOrNull() ?: pool.all().firstOrNull() ?: return
+        val cKey = (conf.refine + conf.backup + keys.drop(1)).firstOrNull { it != tKey && it.length > 10 }
+        oneT = tKey; oneC = cKey; oneFinished = false
+        host.log("🔑 [مفتاح واحد] $total باتش بالتوالي · مترجم ${pool.tail(tKey)} · " +
+            (if (cKey != null) "تأكيد ${pool.tail(cKey)}" else "من غير مفتاح تأكيد (تأكيد واحد في الآخر)") +
+            " · راحة ${oneRestMs() / 1000}ث بين الباتشات · الموديل ${model().removePrefix("gemini-")}")
+        val confirmTh: Thread? = if (cKey != null && !transOnly) Thread {
+            try { confirmLoop(cKey) } catch (e: Throwable) { try { host.log("⚠ [مفتاح واحد] المؤكّد وقف: " + (e.message ?: e.toString()).take(120)) } catch (_: Throwable) {} }
+        }.apply { isDaemon = true; name = "fast-tr-confirm"; start() } else null
+
+        fun one(i: Int): Long {
+            val t0 = System.currentTimeMillis()
+            active.add(i); startedAt[i] = t0; stage[i] = "تفريغ"
+            try {
+                process(i, s, dur)
+                if (i in doneSet && i !in failedSet) trDone.add(i)
+            } catch (e: Throwable) {
+                failedSet.add(i); host.log("⚠ [مفتاح واحد] باتش ${i + 1}: " + (e.message ?: e.toString()).take(120))
+            } finally {
+                active.remove(i); msOf[i] = System.currentTimeMillis() - t0
+            }
+            state()
+            return t0
+        }
+        fun rest(t0: Long) {
+            var left = oneRestMs() - (System.currentTimeMillis() - t0)
+            while (left > 0 && !stopped) { val n = minOf(left, 500L); nap(n); left -= n }
+        }
+        for (i in order) {
+            if (stopped) break
+            waitIfPaused()
+            if (stopped) break
+            rest(one(i))
+        }
+        // مرحلة تانية: الباتشات اللي وقعت تتجرّب تاني (مفتاح فاضي، ولو مفيش المؤكّد لما يفضى)
+        val retry = order.filter { it in failedSet }
+        if (retry.isNotEmpty() && !stopped) host.log("🔑 [مفتاح واحد] إعادة ${retry.size} باتش وقعوا")
+        for (i in retry) {
+            if (stopped) break
+            waitIfPaused()
+            if (stopped) break
+            rest(one(i))
+        }
+        oneFinished = true
+        try { confirmTh?.join() } catch (_: InterruptedException) {}
+        // مفيش مفتاح تاني: تأكيد واحد في الآخر على نفس المفتاح بعد راحة
+        if (cKey == null && !transOnly && !stopped && trDone.size > 1) {
+            var left = oneRestMs(); while (left > 0 && !stopped) { nap(500); left -= 500 }
+            if (!stopped) confirmBatches(tKey, trDone.toList().sorted())
+        }
+    }
+
+    private fun confirmLoop(key: String) {
+        var fails = 0
+        var endBy = 0L
+        while (!stopped) {
+            waitIfPaused()
+            val fresh = trDone.filter { it !in confirmed }
+            if (oneFinished) { if (endBy == 0L) endBy = System.currentTimeMillis() + 3 * 60_000L; if (fresh.isEmpty() || System.currentTimeMillis() > endBy) break }
+            if (fresh.isEmpty()) { nap(500); continue }
+            if (!pool.ok(key) || pool.loadOf(key) > 0) { nap(500); continue }   // المفتاح التأكيدي مشغول بباتش واقع أو واخد 429
+            val upto = trDone.toList().sorted()
+            if (confirmBatches(key, upto)) { confirmed.addAll(upto); fails = 0 }
+            else if (++fails >= 3) { confirmed.addAll(upto); fails = 0; try { host.log("⚠ [مفتاح واحد] التأكيد فشل 3 مرات — بكمّل من غيره للباتشات دي") } catch (_: Throwable) {} }
+            else nap(3000)
+        }
+    }
+
+    private fun confirmPrompt(lines: List<String>): String =
+        "These numbered lines are consecutive subtitle lines of ONE video, in order (earlier lines first). They were transcribed from the audio in their original language. " +
+        "Translate each line using the context of ALL the lines (who is speaking, who is addressed, names, the running topic) so the translation is consistent and accurate. " +
+        translatePrompt(lines)
+
+    /** بيبعت أصل كل الباتشات المذكورة (آخر 300 جملة بحد أقصى) للترجمة بالسياق ويبدّل بيه الترجمات الموجودة */
+    private fun confirmBatches(k: String, batches: List<Int>): Boolean {
+        val bs = batches.toSet()
+        var src = eng.subs.filter { it.chunk in bs && it.original.isNotBlank() }.sortedBy { it.start }
+        if (src.size > 300) src = src.takeLast(300)
+        if (src.isEmpty()) return true
+        val lines = src.map { it.original }
+        val t0 = System.currentTimeMillis()
+        var ok = false
+        pool.begin(k)
+        try {
+            val rep = Api.generate(model(), k, confirmPrompt(lines), null, 8192, 0.2, true)
+            val a = arr(rep.text) ?: throw BadReply("رد التأكيد مش JSON")
+            if (a.length() != lines.size) throw BadReply("عدد جمل التأكيد ${a.length()} بدل ${lines.size}")
+            val map = HashMap<String, String>()
+            for (x in lines.indices) {
+                val v = a.opt(x)
+                if (v is JSONObject) learnNames(v.optString("n", ""))
+                val tr = (when (v) { is JSONObject -> v.optString("t", v.optString("text", "")); is String -> v; else -> "" }).trim()
+                if (tr.isNotEmpty()) map[src[x].start.toString() + "|" + src[x].original] = tr
+            }
+            if (stopped) return false
+            synchronized(mergeLock) {
+                val out = eng.subs.map { sb -> val tr = map[sb.start.toString() + "|" + sb.original]; if (tr != null) sb.copy(translated = tr) else sb }
+                eng.importSubs(out.sortedBy { it.start })
+            }
+            try { host.changed() } catch (_: Throwable) {}
+            ok = true; pool.good(k)
+            host.log("🔎 [مفتاح واحد] تأكيد بالسياق: ${lines.size} جملة (${batches.size} باتش) · ${System.currentTimeMillis() - t0}ms")
+            if (persistN.incrementAndGet() % 3 == 0) try { eng.saveNow() } catch (_: Throwable) {}
+            return true
+        } catch (e: NoKey) {
+            pool.block(k, 10 * 60_000L); return false
+        } catch (e: ApiErr) {
+            host.log("⚠ [مفتاح واحد] التأكيد: HTTP ${e.code}")
+            if (e.code == 503) record503()
+            pool.block(k, if (e.code == 429) 60_000L else if (e.code == 403 || e.code == 401 || e.code == 400) 5 * 60_000L else 8_000L)
+            return false
+        } catch (e: BadReply) {
+            host.log("⚠ [مفتاح واحد] التأكيد: ${e.message}"); return false
+        } catch (e: java.io.IOException) {
+            if (NetWait.stillDown(e)) waitNetDown() else pool.block(k, 5_000L)
+            return false
+        } finally {
+            pool.end(k, System.currentTimeMillis() - t0, ok)
+        }
     }
 
     private class BadReply(msg: String) : Exception(msg)

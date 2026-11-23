@@ -26,7 +26,7 @@ object TrProfile {
 
     private const val SAVED = "trp_saved"
     /** الإعدادات اللي بتتحفظ مع بعض */
-    private val keys = listOf("tr_kind", "tr_engine", "lang", "conv_dialect", "tone_strength", "tr_slider", "tr_dia_last", "tr_bal", "fastmode", "dual_listen")   // (v1098) الثلاثة الأخيرة = أوضاع 1095
+    private val keys = listOf("tr_kind", "tr_engine", "lang", "conv_dialect", "tone_strength", "tr_slider", "tr_dia_last", "tr_bal", "tr_one", "fastmode", "dual_listen")   // (v1098) الثلاثة الأخيرة = أوضاع 1095
 
     /** نقي (متختبر): النوع من القيم الخام */
     fun modeOf(kind: String, convDialect: String, lang: String): Int {
@@ -86,7 +86,7 @@ object TrProfile {
     private fun cur(k: String): String = when (k) {
         "tr_kind" -> kind()
         "tr_engine" -> engine()
-        "tr_bal" -> if (Cfg.bool(k, false)) "1" else "0"
+        "tr_bal", "tr_one" -> if (Cfg.bool(k, false)) "1" else "0"
         "fastmode" -> if (Cfg.bool(k, false)) "1" else "0"
         "dual_listen" -> Cfg.int(k, 1).toString()
         "tr_slider" -> TrSlider.pos().toString()

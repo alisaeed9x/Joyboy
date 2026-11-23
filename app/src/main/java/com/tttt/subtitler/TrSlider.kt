@@ -13,7 +13,7 @@ package com.tttt.subtitler
 object TrSlider {
     const val KEY = "tr_slider"
     const val MAX = 10
-    const val SPEED = 0; const val BAL = 1; const val ACC = 2
+    const val SPEED = 0; const val BAL = 1; const val ACC = 2; const val ONE = 3   // (v1197) ONE = وضع المفتاح الواحد
 
     /** speed = true: بلوك بيزوّد السرعة (شغّال من 0 لحد t). speed = false: بيزوّد الدقة (شغّال من t لحد 10). wired = اتوصّل بالـEngine في 1095 */
     class Block(val id: String, val label: String, val speed: Boolean, val t: Int, val wired: Boolean)
@@ -45,12 +45,12 @@ object TrSlider {
     private val byId: Map<String, Block> = blocks.associateBy { it.id }
 
     fun clamp(p: Int) = p.coerceIn(0, MAX)
-    fun zone(p: Int): Int = when (clamp(p)) { in 0..3 -> SPEED; in 4..6 -> BAL; else -> ACC }
-    private fun defOf(z: Int) = when (z) { SPEED -> 2; BAL -> 5; else -> 8 }
+    fun zone(p: Int): Int = when (clamp(p)) { in 0..3 -> SPEED; 4 -> ONE; in 5..6 -> BAL; else -> ACC }   // (v1197) 4 = 🔑 مفتاح واحد
+    private fun defOf(z: Int) = when (z) { SPEED -> 2; ONE -> 4; BAL -> 5; else -> 8 }
 
     /** المنطقة الحالية من إعدادات v1095 الفعلية (اللي ممكن تتغيّر من أي قايمة) */
     fun zoneNow(): Int = try {
-        if (Cfg.bool("tr_bal", false)) BAL else if (Cfg.bool("fastmode", false)) SPEED else ACC
+        if (Cfg.bool("tr_bal", false)) (if (Cfg.bool("tr_one", false)) ONE else BAL) else if (Cfg.bool("fastmode", false)) SPEED else ACC
     } catch (_: Throwable) { ACC }
 
     /** نقي: هل البلوك شغّال عند الموضع p؟ (id مجهول = شغّال، عشان ما نكسرش حاجة بالغلط) */
@@ -73,9 +73,10 @@ object TrSlider {
             val q = clamp(p); val z = zone(q); val was = zoneNow()
             Cfg.put(KEY, q.toString())
             if (z != was) when (z) {
-                SPEED -> { Cfg.put("tr_bal", "0"); Cfg.put("fastmode", "1") }
-                BAL -> { Cfg.put("tr_bal", "1") }
-                else -> { Cfg.put("tr_bal", "0"); Cfg.put("fastmode", "0"); Cfg.put("dual_listen", "2") }
+                SPEED -> { Cfg.put("tr_bal", "0"); Cfg.put("tr_one", "0"); Cfg.put("fastmode", "1") }
+                ONE -> { Cfg.put("tr_bal", "1"); Cfg.put("tr_one", "1") }
+                BAL -> { Cfg.put("tr_bal", "1"); Cfg.put("tr_one", "0") }
+                else -> { Cfg.put("tr_bal", "0"); Cfg.put("tr_one", "0"); Cfg.put("fastmode", "0"); Cfg.put("dual_listen", "2") }
             }
         } catch (_: Throwable) {}
     }
@@ -84,16 +85,17 @@ object TrSlider {
     fun speedBlocks(): List<Block> = blocks.filter { it.speed && it.wired }
     fun accuracyBlocks(): List<Block> = blocks.filter { !it.speed && it.wired }
 
-    /** (v1134) 4 محطات حقيقية بدل 11 موضع: أسرع (0-1) · سريع (2-3) · متوازن (4-6) · دقيق (7-10). الموضع الداخلي (0..10) لسه هو اللي بيتحفظ وبيتقرا في Engine */
-    const val STATIONS = 4
-    private val REP = intArrayOf(1, 2, 5, 8)
-    fun station(p: Int): Int = when (clamp(p)) { 0, 1 -> 0; 2, 3 -> 1; 4, 5, 6 -> 2; else -> 3 }
+    /** (v1197) 5 محطات: أسرع (0-1) · سريع (2-3) · 🔑 مفتاح واحد (4) · متوازن (5-6) · دقيق (7-10). الموضع الداخلي (0..10) لسه هو اللي بيتحفظ وبيتقرا في Engine */
+    const val STATIONS = 5
+    private val REP = intArrayOf(1, 2, 4, 5, 8)
+    fun station(p: Int): Int = when (clamp(p)) { 0, 1 -> 0; 2, 3 -> 1; 4 -> 2; 5, 6 -> 3; else -> 4 }
     fun posOf(s: Int): Int = REP[s.coerceIn(0, STATIONS - 1)]
 
     fun title(p: Int): String = when (station(p)) {
         0 -> "⚡ أسرع"
         1 -> "⚡ سريع"
-        2 -> "⚖ متوازن (المحرك البسيط)"
+        2 -> "🔑 مفتاح واحد"
+        3 -> "⚖ متوازن (المحرك البسيط)"
         else -> "🎯 دقيق"
     }
 }
