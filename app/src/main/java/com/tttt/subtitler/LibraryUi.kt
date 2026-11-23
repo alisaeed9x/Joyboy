@@ -804,7 +804,7 @@ class LibraryUi(
         val title = ui.text("", if (tabUi) 14.5f else 13f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
         val sub = ui.text("", if (tabUi) 12f else 11f, th.muted).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END }
         val dts = dots { }.apply { setPadding(ui.dp(6), ui.dp(2), ui.dp(2), ui.dp(2)) }
-        val fill = View(act).apply { setBackgroundColor(th.primary) }
+        val fill = View(act).apply { setBackgroundColor(th.progress) }
         val rest = View(act)
         val bar = LinearLayout(act).apply {
             layoutDirection = View.LAYOUT_DIRECTION_LTR; background = ui.box(th.border, Color.TRANSPARENT, 2); clipToOutline = true
@@ -1078,7 +1078,7 @@ class LibraryUi(
         val state = ui.text("", 11f, th.primary).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END }
         val vBadge = newBadge()
         val titleRow = LinearLayout(act).apply { gravity = Gravity.CENTER_VERTICAL; addView(title, LinearLayout.LayoutParams(0, -2, 1f)); addView(vBadge, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(6) }) }
-        val fill = View(act).apply { setBackgroundColor(th.primary) }
+        val fill = View(act).apply { setBackgroundColor(th.progress) }
         val rest = View(act)
         val bar = LinearLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR; background = ui.box(th.border, Color.TRANSPARENT, 2); clipToOutline = true
             addView(fill, LinearLayout.LayoutParams(0, -1, 0f)); addView(rest, LinearLayout.LayoutParams(0, -1, 1f)); visibility = View.GONE }

@@ -13,6 +13,8 @@ import com.tttt.subtitler.mtui.ThemeMode
 class Theme(val id: String, val name: String, val bg: Int, val surface: Int, val card: Int, val border: Int,
             val primary: Int, val accent: Int, val text: Int, val muted: Int, val danger: Int, val success: Int) {
     val isLight: Boolean get() = lum(bg) > 0.5
+    /** (v1208) فيروزي هادي لحالات التقدّم/المشاهدة (لمسة بس، مش لون مسيطر) */
+    val progress: Int get() = if (isLight) 0xFF3E8E88.toInt() else 0xFF6CC4BC.toInt()
     /** (v913) لون النص/الأيقونة فوق primary — accent MeeTube أبيض في الداكن وأسود في الفاتح فالنص لازم يتعكس */
     val onPrimary: Int get() = if (lum(primary) > 0.5) 0xFF0F0F0F.toInt() else 0xFFFFFFFF.toInt()
     companion object {
