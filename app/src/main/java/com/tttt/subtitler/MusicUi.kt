@@ -157,7 +157,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private val nowTitle = ui.text("", 14f, Color.WHITE, true).apply { setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END; textAlignment = View.TEXT_ALIGNMENT_TEXT_START }
     private val nowSub = ui.text("", 11f, C_DIM).apply { setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END; textAlignment = View.TEXT_ALIGNMENT_TEXT_START }
     private val miniArt = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = ui.box(0xFF332C26.toInt(), Color.TRANSPARENT, 12); clipToOutline = true }
-    private val miniFill = View(act).apply { setBackgroundColor(0x40A070FF) }
+    private val miniFill = View(act).apply { setBackgroundColor(0x404DB6AC) }
     private val miniPlay = GlyphBtn(act, "play", 22)
     private val miniNext = GlyphBtn(act, "next", 20)
     private val miniBar = FrameLayout(act).apply {

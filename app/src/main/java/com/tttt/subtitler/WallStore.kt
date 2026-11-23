@@ -93,7 +93,7 @@ class WallStore(
         }
         input = et
         bar.addView(et, LinearLayout.LayoutParams(0, -2, 1f))
-        bar.addView(btn("🔍", 0xFF7C4DFF.toInt()) { doSearch() }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
+        bar.addView(btn("🔍", 0xFF8B6B50.toInt()) { doSearch() }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
         col.addView(bar, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
 
         val st = TextView(act).apply { textSize = 12f; setTextColor(0xAAFFFFFF.toInt()); setPadding(dp(4), dp(8), dp(4), dp(4)) }
@@ -233,7 +233,7 @@ class WallStore(
 
         var full: Bitmap? = null
         val bar = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(10), dp(14), dp(18)); setBackgroundColor(0xB0000000.toInt()) }
-        val setBtn = btn("✅ خليها الخلفية الافتراضية", 0xFF7C4DFF.toInt()) {
+        val setBtn = btn("✅ خليها الخلفية الافتراضية", 0xFF8B6B50.toInt()) {
             val b = full
             if (b == null) Toast.makeText(act, "استنى لحد ما الصورة تنزل", Toast.LENGTH_SHORT).show() else { applyDefault(b); d.dismiss() }
         }

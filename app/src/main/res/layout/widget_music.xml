@@ -40,7 +40,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="شغّل من مكتبة الموسيقى"
-            android:textColor="#FFD5E3F5"
+            android:textColor="#FFE6D8C5"
             android:textSize="12sp"
             android:maxLines="1"
             android:ellipsize="end" />
@@ -73,7 +73,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text=""
-                android:textColor="#FFD5E3F5"
+                android:textColor="#FFE6D8C5"
                 android:textSize="11sp"
                 android:maxLines="1" />
         </LinearLayout>

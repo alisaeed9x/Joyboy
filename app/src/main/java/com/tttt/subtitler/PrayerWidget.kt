@@ -297,7 +297,7 @@ internal object PrayerCard {
     }
 
     private fun drawBg(cv: Canvas, bmp: Bitmap?, w: Float, h: Float) {
-        if (bmp == null) { cv.drawColor(0xFF14213D.toInt()); return }
+        if (bmp == null) { cv.drawColor(0xFF1F1A16.toInt()); return }
         val iw = bmp.width.toFloat(); val ih = bmp.height.toFloat()
         val aspect = w / h
         var sw = iw; var sh = iw / aspect
@@ -347,7 +347,7 @@ internal object PrayerCard {
 
         val clip = Path(); clip.addRoundRect(RectF(0f, 0f, wDp, hDp), 22f, 22f, Path.Direction.CW)
         cv.save(); cv.clipPath(clip)
-        val fadeCol = if (dark) 0xFF0A1226.toInt() else 0xFFEEF0F4.toInt()
+        val fadeCol = if (dark) 0xFF15110E.toInt() else 0xFFEEF0F4.toInt()
         val fadeRgb = fadeCol and 0x00FFFFFF
         val fadeA = if (dark) 0xE6000000.toInt() else 0xF2000000.toInt()
 
@@ -365,8 +365,8 @@ internal object PrayerCard {
 
         // ألوان الثيم
         val txtMain = if (dark) WHITE else 0xFF1E293B.toInt()
-        val txtSub = if (dark) 0xFFB8C4D9.toInt() else 0xFF64748B.toInt()
-        val iconCol = if (dark) 0xFFA9C4FF.toInt() else 0xFF475569.toInt()
+        val txtSub = if (dark) 0xFFCDBFAE.toInt() else 0xFF64748B.toInt()
+        val iconCol = if (dark) 0xFFD4B896.toInt() else 0xFF475569.toInt()
         val panelFill = if (dark) 0xE60E1730.toInt() else 0xF5FFFFFF.toInt()
         val panelStroke = if (dark) 0x40FFFFFF else 0x22000000
         val tileFill = if (dark) 0xE67A5F2B.toInt() else 0xFFFCE7B6.toInt()

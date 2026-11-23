@@ -147,7 +147,7 @@ class LibraryUi(
     private lateinit var distBtn: TextView   // (v460) بقى فيلد عشان القايمة الجانبية تزامن أيقونته
     // ===== فولدر «المصطادة من الإنترنت» (بلون مميز) + التحديد المتعدد =====
     private val WEB_KEY = "__web__"
-    private val WEBC = 0xFFB39DDB.toInt()   // لافندر هادي للعين (مش أخضر)
+    private val WEBC = 0xFFD4B896.toInt()   // لافندر هادي للعين (مش أخضر)
     private val webFolder = FolderItem(WEB_KEY, "الفيديوهات المصطادة", "", emptyList())
     private var webList: List<WebVid> = emptyList()
     private var webSrc = 0                       // (v337) فولدر المصطادة: 0 الكل · 1 من يوتيوب (اللي اتشغّل من صفحة يوتيوب) · 2 من المتصفح/اللينكات

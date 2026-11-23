@@ -182,11 +182,11 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
         p.style = Paint.Style.FILL; p.shader = null
         if (thin) {   // (v107) الارتفاع نسبة من الفيديو (2.5%): 3 خطوط متساوية
             val hh = height / 3f
-            if (buf.isNotEmpty()) strip(c, w, 0f, hh, buf, 0xFF22D3EE.toInt(), null)
+            if (buf.isNotEmpty()) strip(c, w, 0f, hh, buf, 0xFF7FD1C8.toInt(), null)
             if (pend.isNotEmpty()) strip(c, w, 0f, hh, pend, 0xFFF59E0B.toInt(), null)
-            if (refine.isNotEmpty()) strip(c, w, 0f, hh, refine, 0xFF3B82F6.toInt(), null)
+            if (refine.isNotEmpty()) strip(c, w, 0f, hh, refine, 0xFF3E9E96.toInt(), null)
             p.color = 0x44FFFFFF; c.drawRect(0f, hh, w, 2f * hh, p)
-            p.color = 0xFF3B82F6.toInt(); c.drawRect(0f, hh, w * shown.coerceIn(0f, 1f), 2f * hh, p)
+            p.color = 0xFF3E9E96.toInt(); c.drawRect(0f, hh, w * shown.coerceIn(0f, 1f), 2f * hh, p)
             strip(c, w, 2f * hh, hh, cov, 0xFF22C55E.toInt(), 0x33FFFFFF)
             if (sent.isNotEmpty()) strip(c, w, 2f * hh, hh, sent, SENT_BLUE, null, 5f * d)
             return
@@ -196,9 +196,9 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
             val cy = height / 2f - 3f * d * kk
             val tr = 2f * d * kk
             // الشريط التالت (فوق): الجمل اللي لسه هتتغير — بيظهر بس لما فيه تغيير شغال
-            if (buf.isNotEmpty()) strip(c, w, 3f * d, 3f * d * kk, buf, 0xFF22D3EE.toInt(), 0x3322D3EE)
+            if (buf.isNotEmpty()) strip(c, w, 3f * d, 3f * d * kk, buf, 0xFF7FD1C8.toInt(), 0x337FD1C8)
             if (pend.isNotEmpty()) strip(c, w, 3f * d, 3f * d * kk, pend, 0xFFF59E0B.toInt(), if (buf.isEmpty()) 0x33F59E0B else null)
-            if (refine.isNotEmpty()) strip(c, w, 3f * d, 3f * d * kk, refine, 0xFF3B82F6.toInt(), null)
+            if (refine.isNotEmpty()) strip(c, w, 3f * d, 3f * d * kk, refine, 0xFF3E9E96.toInt(), null)
             val trd = tr * (1f + 0.55f * grow)   // (v1169) الشريط بيتخن بنعومة وانت ماسكه (الرسم بس — أماكن الخطوط اللي تحته ثابتة)
             p.color = th.border
             rf.set(0f, cy - trd, w, cy + trd); c.drawRoundRect(rf, 3f * d, 3f * d, p)
@@ -211,12 +211,12 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
                 val ih = (tr * 0.7f).coerceAtLeast(2f * d)
                 strip(c, w, cy + tr - ih - 1f * d, ih, cov, 0xFF22C55E.toInt(), null)
                 if (sent.isNotEmpty()) strip(c, w, cy + tr - ih - 1f * d, ih, sent, SENT_BLUE, null, 5f * d)
-                if (vis.isNotEmpty()) strip(c, w, cy - tr + 1f * d, ih * 0.8f, vis, 0xFF93C5FD.toInt(), null)
+                if (vis.isNotEmpty()) strip(c, w, cy - tr + 1f * d, ih * 0.8f, vis, 0xFFA8DCD6.toInt(), null)
             } else {
                 // الشريط التاني (تحت): أخضر = فيه جملة ترجمة فعلًا (بيتقطع عند الفجوات)
                 strip(c, w, cy + tr + 3f * d * kk, 4f * d * kk, cov, 0xFF22C55E.toInt(), th.border)
                 if (sent.isNotEmpty()) strip(c, w, cy + tr + 3f * d * kk, 4f * d * kk, sent, SENT_BLUE, null, 5f * d)
-                if (vis.isNotEmpty()) strip(c, w, cy + tr + 8.5f * d * kk, 3f * d * kk, vis, 0xFF3B82F6.toInt(), null)
+                if (vis.isNotEmpty()) strip(c, w, cy + tr + 8.5f * d * kk, 3f * d * kk, vis, 0xFF3E9E96.toInt(), null)
             }
             val r = (3.5f + 2f * grow) * d * (if (big) 2.4f else 1f)   // (v1169) المقبض بيكبر بالأنيميشن مش بقفزة
             val tcx = px.coerceIn(r, w - r)
@@ -226,25 +226,25 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
             return
         }
         val cy = height / 2f; val th6 = (2f + 1.4f * grow) * d
-        if (buf.isNotEmpty()) strip(c, w, 2f * d, 3f * d, buf, 0xFF22D3EE.toInt(), 0x3322D3EE)
+        if (buf.isNotEmpty()) strip(c, w, 2f * d, 3f * d, buf, 0xFF7FD1C8.toInt(), 0x337FD1C8)
         if (pend.isNotEmpty()) strip(c, w, 2f * d, 3f * d, pend, 0xFFF59E0B.toInt(), if (buf.isEmpty()) 0x33F59E0B else null)
-        if (refine.isNotEmpty()) strip(c, w, 2f * d, 3f * d, refine, 0xFF3B82F6.toInt(), null)
+        if (refine.isNotEmpty()) strip(c, w, 2f * d, 3f * d, refine, 0xFF3E9E96.toInt(), null)
         p.style = Paint.Style.FILL; p.shader = null
         p.color = 0x38FFFFFF
         rf.set(0f, cy - th6, w, cy + th6); c.drawRoundRect(rf, th6, th6, p)
         val px = w * shown.coerceIn(0f, 1f)
-        if (px > 0f && MtLook.glowOn()) haloFill(c, px, cy, th6, 0xFF3B82F6.toInt(), grow)   // (v1170)
-        if (px > 0f && px < w && MtGlass.on()) glow.draw(c, px, cy, (6f + 4f * grow) * d, 0xFF3B82F6.toInt())
-        if (px > 0f) gradFill(c, px, cy - th6, cy + th6, th6, 0xFF60A5FA.toInt(), 0xFF3B82F6.toInt())
+        if (px > 0f && MtLook.glowOn()) haloFill(c, px, cy, th6, 0xFF3E9E96.toInt(), grow)   // (v1170)
+        if (px > 0f && px < w && MtGlass.on()) glow.draw(c, px, cy, (6f + 4f * grow) * d, 0xFF3E9E96.toInt())
+        if (px > 0f) gradFill(c, px, cy - th6, cy + th6, th6, 0xFF6CC4BC.toInt(), 0xFF3E9E96.toInt())
         strip(c, w, cy + th6 + 4f * d, 3f * d, cov, 0xFF22C55E.toInt(), 0x2EFFFFFF)
         if (sent.isNotEmpty()) strip(c, w, cy + th6 + 4f * d, 3f * d, sent, SENT_BLUE, null, 5f * d)
-        if (vis.isNotEmpty()) strip(c, w, cy + th6 + 8.5f * d, 3f * d, vis, 0xFF3B82F6.toInt(), null)
+        if (vis.isNotEmpty()) strip(c, w, cy + th6 + 8.5f * d, 3f * d, vis, 0xFF3E9E96.toInt(), null)
         val r = (5.5f + 3.5f * grow) * d
         val tx = px.coerceIn(r, w - r)
         p.style = Paint.Style.FILL; p.shader = null
-        if (MtLook.glowOn()) thumbHalo(c, tx, cy, r, 0xFF3B82F6.toInt(), grow) else { p.color = 0x303B82F6; c.drawCircle(tx, cy, r + (4f + 5f * grow) * d, p) }   // هالة (v1170)
+        if (MtLook.glowOn()) thumbHalo(c, tx, cy, r, 0xFF3E9E96.toInt(), grow) else { p.color = 0x303E9E96; c.drawCircle(tx, cy, r + (4f + 5f * grow) * d, p) }   // هالة (v1170)
         if (drawThumb(c, tx, cy, r)) return
-        knob(c, tx, cy, r, 0xFF60A5FA.toInt(), 0xFF3B82F6.toInt())
+        knob(c, tx, cy, r, 0xFF6CC4BC.toInt(), 0xFF3E9E96.toInt())
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
