@@ -47,7 +47,17 @@ object MtGlass {
     // ===== (v897) زجاج حقيقي شفاف فوق الخلفية المتحركة (MtAurora) — الكروت مابقتش لون صلب =====
     /** كارت زجاجي: تدرّج شفاف (لمعة من فوق) + حافة مضيئة شعرية. بيتحط مكان كارت th.card الصلب */
     fun glassCard(th: Theme, radiusPx: Float, d: Float): GradientDrawable {
-        mt("bg_glass_card", radiusPx)?.let { return it }   // (v909) bg_glass_card بتاع MeeTube نفسه (fill + stroke شعري من colors_mobile)
+        mt("bg_glass_card", radiusPx)?.let { g ->   // (v909) bg_glass_card بتاع MeeTube نفسه (fill + stroke شعري من colors_mobile)
+            // (v1204) لمعة ناعمة من فوق لتحت: الكارت أفتح شوية عند الحافة العليا وبيهدى لتحت — عمق من غير ضوضاء
+            try {
+                val f = fill(th); val a = Color.alpha(f); val rgb = f and 0x00FFFFFF
+                val top = ((minOf(255, (a * (if (th.isLight) 1.0f else 2.1f)).toInt())) shl 24) or rgb
+                val bot = ((minOf(255, (a * (if (th.isLight) 0.55f else 0.65f)).toInt())) shl 24) or rgb
+                g.setOrientation(GradientDrawable.Orientation.TOP_BOTTOM)
+                g.setColors(intArrayOf(top, bot))
+            } catch (_: Throwable) {}
+            return g
+        }
         val amoled = th.bg == 0xFF000000.toInt()
         val top = if (th.isLight) 0xB8FFFFFF.toInt() else if (amoled) 0x20FFFFFF else 0x2BFFFFFF
         val bot = if (th.isLight) 0x7AFFFFFF else if (amoled) 0x0DFFFFFF else 0x14FFFFFF
@@ -95,7 +105,10 @@ object MtGlass {
 
     /** زرار أساسي: لون التمييز بلمعة خفيفة من فوق (زي sheen الزجاج) */
     fun primary(th: Theme, radiusPx: Float): GradientDrawable =
-        GradientDrawable().apply { setColor(th.primary); cornerRadius = radiusPx }   // (v909) زي زرار MeeTube الرئيسي (bg_next_button_primary): كبسولة مصمتة من غير تدرّج
+        GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,   // (v1204) تدرّج رأسي هادي (لمعة من فوق) + حافة شعرية بدل المصمت المسطّح
+            if (Theme.lum(th.primary) > 0.5) intArrayOf(th.primary, Glass.blend(th.primary, Color.BLACK, 0.14f))
+            else intArrayOf(Glass.blend(th.primary, Color.WHITE, 0.18f), th.primary)
+        ).apply { cornerRadius = radiusPx; setStroke(1, if (Theme.lum(th.primary) > 0.5) 0x33FFFFFF else 0x26FFFFFF) }
 
     /** كبسولة زجاجية (زرار ثانوي) */
     /** (v908) drawable MeeTube الأصلي (res/drawable/<name>.xml) بنصف قطر Joyboy — لو مش لاقيه يرجع null */
