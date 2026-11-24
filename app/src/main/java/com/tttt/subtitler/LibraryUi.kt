@@ -473,7 +473,7 @@ class LibraryUi(
         body.addView(toastTv, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
         body.addView(resumeBtn, FrameLayout.LayoutParams(ui.dp(58), ui.dp(58), Gravity.BOTTOM or Gravity.LEFT).apply { setMargins(ui.dp(20), 0, 0, ui.dp(24)) })
         // سحب لتحت من أول القايمة = ريفريش
-        var y0 = 0f; var pulling = false; var pd = 0f; var wasLock = false
+        var y0 = 0f; var pulling = false; var pd = 0f; var wasLock = false; var heroGesture = false
         val thr = ui.dp(60).toFloat(); val lockThr = ui.dp(125).toFloat()
         listV.setOnScrollListener(object : AbsListView.OnScrollListener {   // (v1224) السكرول بيرجّع الكارت صغير
             override fun onScrollStateChanged(v: AbsListView?, st: Int) {}
@@ -481,7 +481,7 @@ class LibraryUi(
         })
         listV.setOnTouchListener { v, e ->
             when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { y0 = e.rawY; pulling = false; wasLock = false; false }
+                MotionEvent.ACTION_DOWN -> { y0 = e.rawY; pulling = false; wasLock = false; heroGesture = Design.isNew() && !heroExpanded && dashBox.visibility == View.VISIBLE; false }
                 MotionEvent.ACTION_MOVE -> {
                     if (refreshing) return@setOnTouchListener false
                     val dy = e.rawY - y0
@@ -493,6 +493,10 @@ class LibraryUi(
                     if (pulling) {
                         val cap = if (inHidden) ui.dp(95).toFloat() else ui.dp(150).toFloat()
                         pd = ((e.rawY - y0) * 0.5f).coerceIn(0f, cap)
+                        if (heroGesture) {   // (v1240) أول سحبة بتكبّر الكارت بس، من غير ريفريش — الريفريش في السحبة اللي بعدها
+                            if (pd > ui.dp(30)) { heroExpand(true); ptr.alpha = 0f; listV.translationY = 0f; return@setOnTouchListener true }
+                            return@setOnTouchListener true
+                        }
                         if (pd > ui.dp(30) && Design.isNew()) heroExpand(true)   // (v1224) السحب لتحت بيكبّر كارت كمّل المشاهدة
                         listV.translationY = pd; ptr.translationY = pd - ui.dp(50)
                         ptr.alpha = (pd / ui.dp(40)).coerceIn(0f, 1f)
@@ -508,6 +512,7 @@ class LibraryUi(
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     if (pulling) {
                         pulling = false
+                        if (heroGesture) { heroGesture = false; endPull(); return@setOnTouchListener true }
                         if (wasLock && e.actionMasked == MotionEvent.ACTION_UP) {
                             wasLock = false; endPull(); gate { openHidden() }
                         } else if (pd >= thr && e.actionMasked == MotionEvent.ACTION_UP) {
@@ -713,7 +718,7 @@ class LibraryUi(
     private fun heroExpand(on: Boolean) {
         if (!Design.isNew() || on == heroExpanded) return
         heroExpanded = on; dashKey = Int.MIN_VALUE
-        try { android.transition.TransitionManager.beginDelayedTransition(dashBox) } catch (_: Throwable) {}
+        try { android.transition.TransitionManager.beginDelayedTransition(dashBox, android.transition.AutoTransition().apply { duration = 300; interpolator = android.view.animation.DecelerateInterpolator(1.6f) }) } catch (_: Throwable) {}
         updateHero()
     }
     private fun roundClip(v: View, rDp: Int) {

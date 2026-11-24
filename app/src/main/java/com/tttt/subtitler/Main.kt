@@ -1992,6 +1992,7 @@ class MainActivity : Activity() {
             }
         } catch (e: Throwable) { LogStore.err("Main:ytDockTake", e) }
         try { hideBrowserLoading() } catch (_: Throwable) {}   // (دمج v1071)
+        try { if (Design.isNew()) UpdateSheet.checkOnLaunch(this) } catch (_: Throwable) {}   // (v1240) فحص التحديث عند الفتح
         try { UpdateSheet.whatsNew(this) } catch (_: Throwable) {}   // (v1221) إيه الجديد أول فتح بعد التحديث
         TabNav.pendingMain?.let { t -> TabNav.pendingMain = null; try { onNewIntent(Intent().putExtra("tab", t)) } catch (e: Throwable) { LogStore.err("Main:pendingTab", e) } }   // (v973) REORDER_TO_FRONT من غير onNewIntent
         try { DataCapsule.attach(this) } catch (_: Throwable) {}   // (v799)
