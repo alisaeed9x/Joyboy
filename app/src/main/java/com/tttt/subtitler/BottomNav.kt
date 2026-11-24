@@ -96,6 +96,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         // (v1037) «الاستوديو» اتمسح خالص — بس «📚 مكتبة الترجمات» (من v990) فضلت لأنها مستقلة (مش جزء منه)
         if (!tvDev) trl.add(MoreItem("📚", "مكتبة الترجمات", false) { try { TrLibUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:trlib", e) } })
         if (!tvDev) trl.add(MoreItem("🗂", "سجل اللوجات", false) { try { LogArchiveUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:logarc", e) } })
+        if (!tvDev) trl.add(MoreItem("🎞", "ستريمر", false) { try { collapseMore(); StreamerUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:streamer", e) } })   // (v1254)
         val ctl = ArrayList<MoreItem>()
         if (!tvDev && !lite) ctl.add(MoreItem("📱", "الريموت", false) { try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } })
         if (!tvDev) ctl.add(MoreItem("📡", "ريموت IR", false) { try { IrCatalogUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:ir", e) } })
