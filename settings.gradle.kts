@@ -17,6 +17,7 @@ gradle.extra["mediaServiceCoreRoot"] = File(mt, "MediaServiceCore")
 gradle.extra["sharedModulesConstants"] = File(mt, "SharedModules/constants.gradle")
 
 include(":app")
+include(":plugin-aniyomi")   // (v1257) بلاجن Aniyomi: APK منفصل
 fun mod(name: String, dir: String) { include(name); project(name).projectDir = File(mt, dir) }
 mod(":mediaserviceinterfaces", "MediaServiceCore/mediaserviceinterfaces")
 mod(":youtubeapi", "MediaServiceCore/youtubeapi")

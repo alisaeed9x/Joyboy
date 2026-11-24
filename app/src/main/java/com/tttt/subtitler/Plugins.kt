@@ -23,7 +23,13 @@ object Plugins {
         val out = ArrayList<PluginEntry>()
         for (i in 0 until a.length()) {
             val o = a.optJSONObject(i) ?: continue
-            val e = PluginEntry(o.optString("id"), o.optString("name"), o.optString("desc"), o.optString("pkg"), o.optLong("versionCode"), o.optString("versionName"), o.optString("url"), o.optString("sha256"))
+            var vc = o.optLong("versionCode"); var vn = o.optString("versionName"); var url = o.optString("url"); var sha = o.optString("sha256")
+            val meta = o.optString("meta")
+            if (meta.isNotEmpty()) try {
+                val m = JSONObject(StreamerNet.get(meta))
+                vc = m.optLong("versionCode"); vn = m.optString("versionName"); url = m.optString("url"); sha = m.optString("sha256")
+            } catch (_: Throwable) { url = "" }
+            val e = PluginEntry(o.optString("id"), o.optString("name"), o.optString("desc"), o.optString("pkg"), vc, vn, url, sha)
             if (e.id.isNotEmpty() && e.pkg.isNotEmpty()) out.add(e)
         }
         return out
