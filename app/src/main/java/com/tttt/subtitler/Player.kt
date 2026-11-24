@@ -904,7 +904,7 @@ class PlayerActivity : Activity(), Host {
     private fun hasSoftSubNow(): Boolean {
         val u = uri?.toString() ?: ""
         if (u.isNotEmpty() && sfDoneUri == u) return true
-        return try { sfSidecar() != null || castSubFile?.exists() == true || mobileSub?.exists() == true || sfNativeCount() > 0 } catch (_: Throwable) { false }
+        return try { (sfSidecar()?.let { sc -> !SrtWriter.isOurs(this, sc) } == true) || castSubFile?.exists() == true || mobileSub?.exists() == true || sfNativeCount() > 0 } catch (_: Throwable) { false }
     }
     private fun modeLabelNow(): String = try {
         if (!engineStarted && sfDoneLabel.isNotEmpty() && sfDoneUri.isNotEmpty() && sfDoneUri == (uri?.toString() ?: "")) sfDoneLabel else modeName()
