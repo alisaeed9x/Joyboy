@@ -868,6 +868,20 @@ object MtTranslate : JoyboyPlayerHost.Provider {
     }
 
     /** 🎙 دبلجة بصوت Edge (سلمى/شاكر) من الجمل المترجمة */
+    // (v1229) «ترجم الأول وبعدين دبّلج» — زي Player
+    @Volatile private var dubAfterTr = false
+    @Volatile private var dubForce = false
+    private var dubWait = 0
+    private val dubPoll = object : Runnable {
+        override fun run() {
+            if (!dubAfterTr || act == null) { dubAfterTr = false; return }
+            val done = try { eng?.fullyDone() == true } catch (_: Throwable) { false }
+            if (done) { dubAfterTr = false; dubForce = true; act?.let { Notice.show(it, "✅ الترجمة خلصت — بدأت الدبلجة", 2000L) }; dubToggle(); return }
+            if (++dubWait > 1500) { dubAfterTr = false; act?.let { Notice.show(it, "⌛ الترجمة طوّلت — دوس دبّلج لما تخلص", 2600L) }; return }
+            ui.postDelayed(this, 4000L)
+        }
+    }
+
     fun dubToggle() {
         val a = act ?: return
         val e = eng; val p = player ?: return
@@ -876,7 +890,17 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         if (dubBusy) { dubCancel = true; Notice.show(a, "⏹ بلغي الدبلجة…", 1600L); return }
         val subs = e?.subs ?: sideSubs
         val segs = if (subs == null) emptyList() else Dub.segsOf(subs)
-        if (segs.isEmpty()) { Notice.show(a, "مفيش جمل مترجمة لسه — ترجم الأول وبعدين دبّلج", 2600L); return }
+        val force = dubForce; dubForce = false
+        val needFull = TrProfile.uiMode() == TrProfile.DUB && e != null && !(try { e.fullyDone() } catch (_: Throwable) { false })
+        if (!force && (segs.isEmpty() || needFull)) {   // (v1229)
+            if (dubAfterTr) { dubAfterTr = false; ui.removeCallbacks(dubPoll); Notice.show(a, "⏹ ألغيت الدبلجة التلقائية", 1800L); return }
+            dubAfterTr = true; dubWait = 0
+            if (on) Notice.show(a, "⏳ الترجمة شغّالة — الدبلجة هتبدأ أول ما تخلص (دوس دبّلج تاني لو عايز تلغيها)", 3000L)
+            else { Notice.show(a, "🎙 هترجم الفيديو الأول وبعدها الدبلجة تبدأ لوحدها", 3000L); toggle() }
+            ui.removeCallbacks(dubPoll); ui.postDelayed(dubPoll, 4000L)
+            return
+        }
+        if (segs.isEmpty()) { Notice.show(a, "مفيش كلام مترجم يتدبلج في الفيديو ده", 2600L); return }
         val dur = try { p.duration } catch (_: Throwable) { -1L }
         val total = if (dur > 0) dur / 1000.0 else 0.0
         val key = Store.keyFor(if (engKey.isNotEmpty()) engKey else (curId() ?: "x"))

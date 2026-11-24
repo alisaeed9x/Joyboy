@@ -8,6 +8,8 @@ import android.media.MediaPlayer
 import android.media.PlaybackParams
 import android.os.Handler
 import android.os.Looper
+import org.json.JSONArray
+import org.json.JSONObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -280,9 +282,10 @@ object Dub {
         val voice = voice()
         val out = fileFor(ctx, key)
         val meta = File(out.path + ".meta")
-        val h = hashOf(segs, voice)
+        val h = hashOf(segs, voice) + (if (Tashkeel.enabled()) "|tsk1" else "")
         if (out.exists() && meta.exists() && meta.readText() == h) return out
         val tmp = File(ctx.cacheDir, "dub_tts").also { it.mkdirs() }
+        val say = if (Tashkeel.enabled()) { try { Tashkeel.apply(ctx, segs.map { it.text }, cancelled) } catch (_: Throwable) { segs.map { it.text } } } else segs.map { it.text }   // (v1229) نص النطق (مشكّل) — الجمل المعروضة زي ما هي
         val total = maxOf(totalSec, (segs.last().end + 1.0))
         val mix = ShortArray((total * RATE).toInt() + RATE)
         var fails = 0
@@ -293,12 +296,13 @@ object Dub {
             val slot = minOf(s.end - s.start + TOL, nextStart - s.start).coerceAtLeast(0.7)
             val sv = s.voice.ifBlank { voice }
             val base = s.rate
-            var clip = clipFor(tmp, s.text, sv, base, s.pitch, s.vol)
+            val said = say.getOrNull(i) ?: s.text
+            var clip = clipFor(tmp, said, sv, base, s.pitch, s.vol)
             if (clip == null) { if (++fails >= 6 && i < 7) return null; continue }   // أول جمل كلها فاشلة = مفيش نت/الخدمة واقفة
             var dur = clip.data.size.toDouble() / clip.rate
             if (dur > slot * 1.03) {
                 val pct = Math.ceil(((1.0 + base / 100.0) * (dur / slot) - 1.0) * 100.0).toInt().coerceIn(maxOf(5, base), MAX_FAST + maxOf(base, 0))
-                val c2 = clipFor(tmp, s.text, sv, pct, s.pitch, s.vol)
+                val c2 = clipFor(tmp, said, sv, pct, s.pitch, s.vol)
                 if (c2 != null) { clip = c2; dur = clip.data.size.toDouble() / clip.rate }
             }
             val pcm = Pcm.resample(clip, RATE)
@@ -367,5 +371,73 @@ class DubPlay(private val p: androidx.media3.exoplayer.ExoPlayer) {
         try { mp?.release() } catch (_: Throwable) {}
         if (mp != null) try { p.volume = savedVol } catch (_: Throwable) {}
         mp = null; ready = false
+    }
+}
+
+/**
+ * (v1229) تشكيل الجمل العربي قبل النطق (Edge TTS بيقرا أحسن بكتير مع الحركات). الجمل المعروضة ما بتتغيّرش — التشكيل للصوت بس.
+ * بيتعمل بجيميناي (مفاتيحك الحقيقية) على دفعات، وبيتخزّن لكل جملة عشان ما يتعادش. لو فشل/مفيش مفتاح: بيتقري من غير تشكيل.
+ * بيتأكد إن الحروف ما اتغيّرتش (التشكيل بس)، وإلا بيرفض الرد. dub_tashkeel=0 بيقفله.
+ */
+object Tashkeel {
+    fun enabled(): Boolean = Cfg.int("dub_tashkeel", 1) != 0
+    private const val BATCH = 40
+    private val MARKS = Regex("[\\u064B-\\u0652\\u0670\\u0640]")
+    private fun plain(s: String): String = s.replace(MARKS, "").replace(Regex("\\s+"), "")
+    private fun hasArabic(s: String): Boolean = s.any { it in '\u0621'..'\u064A' }
+    private fun already(s: String): Boolean {
+        val d = s.count { it in '\u064B'..'\u0652' }; val a = s.count { it in '\u0621'..'\u064A' }
+        return a == 0 || d * 3 >= a
+    }
+    private fun md5(s: String): String = MessageDigest.getInstance("MD5").digest(s.toByteArray()).joinToString("") { String.format(Locale.US, "%02x", it) }
+
+    fun apply(ctx: Context, texts: List<String>, cancelled: () -> Boolean): List<String> {
+        val out = texts.toMutableList()
+        val dir = File(ctx.cacheDir, "dub_tsk").also { it.mkdirs() }
+        val todo = ArrayList<Int>()
+        for ((i, t) in texts.withIndex()) {
+            if (!hasArabic(t) || already(t)) continue
+            val f = File(dir, md5(t) + ".txt")
+            if (f.exists() && f.length() > 0) { try { out[i] = f.readText(Charsets.UTF_8); continue } catch (_: Throwable) {} }
+            todo.add(i)
+        }
+        if (todo.isEmpty()) return out
+        val keys = try { SubFileTr.realGemKeys() } catch (_: Throwable) { emptyList() }
+        if (keys.isEmpty()) return out
+        val model = Cfg.str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT }
+        var kStart = 0
+        for (chunk in todo.chunked(BATCH)) {
+            if (cancelled()) break
+            val sb = StringBuilder()
+            sb.append("شكّل النصوص العربية التالية تشكيلًا كاملًا وصحيحًا (فتحة وضمة وكسرة وسكون وشدة وتنوين) عشان تتنطق بالفصحى نطقًا سليمًا.\n")
+            sb.append("- ممنوع تغيّر أي حرف أو كلمة أو تضيف أو تحذف أو تعيد ترتيب — الحركات بس.\n")
+            sb.append("- سيب الأرقام وعلامات الترقيم والرموز زي ما هي.\n")
+            sb.append("- ارجع JSON بس بالشكل {\"items\":[{\"i\":0,\"t\":\"...\"}]} بنفس أرقام السطور.\n\nالسطور:\n")
+            for ((n, gi) in chunk.withIndex()) sb.append(n).append(": ").append(texts[gi].replace("\n", " ")).append("\n")
+            var done = false
+            var attempt = 0
+            while (!done && attempt < minOf(3, keys.size * 2) && !cancelled()) {
+                val key = keys[(kStart + attempt) % keys.size]; attempt++
+                try {
+                    val r = Api.generate(model, key, sb.toString(), null, 8192, 0.1, true, false)
+                    val raw = r.text.trim()
+                    val arr = if (raw.startsWith("[")) JSONArray(raw) else JSONObject(raw).optJSONArray("items")
+                    if (arr != null) {
+                        for (k in 0 until arr.length()) {
+                            val o = arr.optJSONObject(k) ?: continue
+                            val n = o.optInt("i", -1); val t = o.optString("t", "").trim()
+                            if (n !in chunk.indices || t.isEmpty()) continue
+                            val gi = chunk[n]
+                            if (plain(t) != plain(texts[gi])) continue   // لو غيّر كلمات نرفضه ونسيب الأصل
+                            out[gi] = t
+                            try { File(dir, md5(texts[gi]) + ".txt").writeText(t, Charsets.UTF_8) } catch (_: Throwable) {}
+                        }
+                        done = true
+                    }
+                } catch (_: Throwable) {}
+            }
+            kStart++
+        }
+        return out
     }
 }

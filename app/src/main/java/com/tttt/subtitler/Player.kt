@@ -2946,7 +2946,7 @@ class PlayerActivity : Activity(), Host {
                 if (!started) {
                     val tx = trIsTx()
                     val soft = hasSoftSubNow()
-                    chipB.text = if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else if (soft) "💬 سوفت سب · " + modeShort() + " ▾" else (if (tx) "✍ تفريغ · " else "▶ ترجم · ") + modeShort() + " ▾"
+                    chipB.text = if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else if (soft) "💬 سوفت سب · " + modeShort() + " ▾" else (if (tx) "✍ تفريغ · " else if (TrProfile.uiMode() == TrProfile.DUB) "🎙 دبّلج · " else "▶ ترجم · ") + modeShort() + " ▾"
                     chipB.background = ui.box(if (soft) 0xFF2E7D32.toInt() else if (tx) 0xFF2A8C8C.toInt() else 0xFFE53935.toInt(), 0x33FFFFFF, 12)
                 }
                 else {
@@ -2970,7 +2970,7 @@ class PlayerActivity : Activity(), Host {
                 tr.visibility = View.VISIBLE; gearB.visibility = View.VISIBLE   // (v1097)
                 val tx = trIsTx()
                 val soft = hasSoftSubNow()
-                LoadUi.set(tr, if (!engineStarted) (if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else if (soft) "💬 سوفت سب · " + modeShort() + " ▾" else (if (tx) "✍ تفريغ · " else "▶ ترجم · ") + modeShort() + " ▾") else (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + dotsNow() + " ▾")
+                LoadUi.set(tr, if (!engineStarted) (if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else if (soft) "💬 سوفت سب · " + modeShort() + " ▾" else (if (tx) "✍ تفريغ · " else if (TrProfile.uiMode() == TrProfile.DUB) "🎙 دبّلج · " else "▶ ترجم · ") + modeShort() + " ▾") else (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + dotsNow() + " ▾")
                 tr.background = ui.box(if (!engineStarted) (if (soft) 0xFF2E7D32.toInt() else if (tx) 0xFF2A8C8C.toInt() else 0xFFE53935.toInt()) else (if (paused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF2A8C8C.toInt()), 0x33FFFFFF, 10)
                 pz2.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 cx2.visibility = if (engineStarted) View.VISIBLE else View.GONE
@@ -3458,6 +3458,8 @@ class PlayerActivity : Activity(), Host {
     /** قبل البداية: بيبدأ على طول بالنوع والمحرك المحفوظين (⚙). بعد البداية (أو سوفت صب شغّال): قايمة الأدوات زي الأول */
     private fun trMainClick(anchor: View) {
         if (engineStarted || sfBusy.isNotEmpty() || sfLive.isNotEmpty()) { translateMenu(anchor); return }
+        if (TrProfile.uiMode() == TrProfile.DUB && !dubBypass) { dubToggle(); return }   // (v1229) وضع الدبلجة: الزرار بيدبلج (ولو مفيش ترجمة بيترجم الأول)
+        dubBypass = false
         val key = uri?.toString() ?: ""
         uri?.let { vu -> if (SubSel.needsChoice(this, vu, subCands(true))) { subSelectSheet(anchor); return } }   // (v1137) أكتر من ملف ترجمة ومفيش اختيار: نسأل
         if (hasSoftSubNow() && softAskedFor != key) { sfChoiceDialog(anchor); return }
@@ -3494,6 +3496,7 @@ class PlayerActivity : Activity(), Host {
             val diaBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             val qBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             val qNote = shNote("سلايدر سريع ↔ دقيق بيشتغل مع ترجمة جيميناي بس (مش مع التفريغ ولا وشبر)")
+            val dubNote = shNote("🎙 وضع الدبلجة: زرار «دبّلج» بيترجم فصحى الأول لو مفيش ترجمة، وبعدين بيشكّل الجمل ويدبلجها بصوت عربي لكل شخصية ونبرة المشاعر")   // (v1229)
             fun paintSave() { try { TrProfile.save() } catch (_: Throwable) {} }   // (v1140) حفظ تلقائي: أي تغيير بيتحفظ لكل الفيديوهات على طول (مفيش زرار حفظ)
             fun paintDia() {
                 diaBox.removeAllViews()
@@ -3530,20 +3533,24 @@ class PlayerActivity : Activity(), Host {
                 if (TrProfile.styleIsLiteral()) diaBox.addView(shNote("الأسلوب حرفي — الشدة مش هتأثر (غيّره من 🌐 اللهجة والأسلوب)", true))
             }
             fun refresh() {
-                val m = TrProfile.mode()
-                modeTitle.text = when (m) { TrProfile.TX -> "✍ تفريغ بس (من غير ترجمة)"; TrProfile.MSA -> "🔤 ترجمة فصحى"; else -> "🗣 ترجمة بلهجة" }
+                val m = TrProfile.uiMode()
+                modeTitle.text = when (m) { TrProfile.TX -> "✍ تفريغ بس (من غير ترجمة)"; TrProfile.MSA -> "🔤 ترجمة فصحى"; TrProfile.DUB -> "🎙 وضع الدبلجة (فصحى + تشكيل + صوت)"; else -> "🗣 ترجمة بلهجة" }
+                dubNote.visibility = if (m == TrProfile.DUB) View.VISIBLE else View.GONE
                 diaBox.visibility = if (m == TrProfile.DIA && !off) View.VISIBLE else View.GONE
                 qBox.visibility = if (m != TrProfile.TX && !off) View.VISIBLE else View.GONE
                 qNote.visibility = if (qBox.visibility == View.VISIBLE) View.GONE else View.VISIBLE
             }
             col.addView(modeTitle, LinearLayout.LayoutParams(-1, -2))
-            var lastM = TrProfile.mode().let { if (off && it == TrProfile.DIA) TrProfile.MSA else it }
+            val mModes = if (off) listOf(TrProfile.TX, TrProfile.MSA, TrProfile.DUB) else listOf(TrProfile.TX, TrProfile.MSA, TrProfile.DIA, TrProfile.DUB)   // (v1229) موضع رابع: دبلجة
+            var lastM = TrProfile.uiMode().let { if (off && it == TrProfile.DIA) TrProfile.MSA else it }
             val msb = SeekBar(this).apply {
-                layoutDirection = View.LAYOUT_DIRECTION_LTR; max = if (off) 1 else 2; progress = lastM
+                layoutDirection = View.LAYOUT_DIRECTION_LTR; max = mModes.size - 1; progress = mModes.indexOf(lastM).coerceAtLeast(0)
                 setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                     override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
-                        if (!u || p == lastM) return
-                        val prevM = lastM; val pd = curEngDia(); lastM = p; TrProfile.setMode(p); engSync(); updateTr(); paintDia(); refresh(); trLiveApply("mode", prevM, pd); paintSave()   // (v1099) T4
+                        if (!u) return
+                        val mm = mModes.getOrNull(p) ?: return
+                        if (mm == lastM) return
+                        val prevM = if (lastM == TrProfile.DUB) TrProfile.MSA else lastM; val pd = curEngDia(); lastM = mm; TrProfile.setMode(mm); engSync(); updateTr(); paintDia(); refresh(); trLiveApply("mode", prevM, pd); paintSave()   // (v1099) T4
                     }
                     override fun onStartTrackingTouch(s: SeekBar?) {}
                     override fun onStopTrackingTouch(s: SeekBar?) {}
@@ -3553,9 +3560,11 @@ class PlayerActivity : Activity(), Host {
             val mends = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
             mends.addView(ui.text("✍ تفريغ", 11.5f, 0xFF9AA0A6.toInt()), LinearLayout.LayoutParams(0, -2, 1f))
             mends.addView(ui.text("🔤 فصحى", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
-            if (!off) mends.addView(ui.text("🗣 لهجة", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.END }, LinearLayout.LayoutParams(0, -2, 1f))
+            if (!off) mends.addView(ui.text("🗣 لهجة", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
+            mends.addView(ui.text("🎙 دبلجة", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.END }, LinearLayout.LayoutParams(0, -2, 1f))   // (v1229)
             col.addView(mends, LinearLayout.LayoutParams(-1, -2))
             col.addView(diaBox, LinearLayout.LayoutParams(-1, -2))
+            col.addView(dubNote)   // (v1229)
             if (off) col.addView(shNote("الأوفلاين بيترجم فصحى بس — اللهجة والشدة محتاجين جيميناي"))
             trSliderSection(qBox) { paintSave() }
             col.addView(qBox, LinearLayout.LayoutParams(-1, -2))
@@ -7845,13 +7854,38 @@ class PlayerActivity : Activity(), Host {
     private var dubPlay: DubPlay? = null
     @Volatile private var dubBusy = false
     @Volatile private var dubCancel = false
+    // (v1229) «ترجم الأول وبعدين دبّلج»: لو دوست دبّلج ومفيش ترجمة كاملة، بنشغّل الترجمة العادية ونستنى تخلص (بنسأل كل ٤ ثواني) وبعدها الدبلجة تبدأ لوحدها
+    @Volatile private var dubAfterTr = false
+    @Volatile private var dubForce = false
+    @Volatile private var dubBypass = false
+    private var dubWait = 0
+    private fun trComplete(): Boolean = try { trPct >= 100 || (::realEngine.isInitialized && realEngine.fullyDone()) } catch (_: Throwable) { false }
+    private val dubPoll = object : Runnable {
+        override fun run() {
+            if (!dubAfterTr || isDestroyed) { dubAfterTr = false; return }
+            if (trComplete()) { dubAfterTr = false; dubForce = true; say("✅ الترجمة خلصت — بدأت الدبلجة"); dubToggle(); return }
+            if (!engineStarted && dubWait > 8) { dubAfterTr = false; say("⚠ الترجمة ماشتغلتش — الدبلجة التلقائية اتلغت"); return }
+            if (++dubWait > 1500) { dubAfterTr = false; say("⌛ الترجمة طوّلت — الدبلجة التلقائية اتلغت، دوس دبّلج لما تخلص"); return }
+            h.postDelayed(this, 4000L)
+        }
+    }
+    private fun dubAutoTr() {
+        if (dubAfterTr) { dubAfterTr = false; h.removeCallbacks(dubPoll); say("⏹ ألغيت الدبلجة التلقائية"); return }
+        if (remote) { say("🎙 الدبلجة مش متاحة وإنت متحكم في التلفزيون"); return }
+        dubAfterTr = true; dubWait = 0
+        if (engineStarted) say("⏳ الترجمة شغّالة — الدبلجة هتبدأ أول ما تخلص (دوس دبّلج تاني لو عايز تلغيها)")
+        else { say("🎙 هترجم الفيديو الأول وبعدها الدبلجة تبدأ لوحدها"); dubBypass = true; trMainClick(window.decorView) }
+        h.removeCallbacks(dubPoll); h.postDelayed(dubPoll, 4000L)
+    }
 
     private fun dubToggle() {
         val dp = dubPlay
         if (dp != null && dp.active) { dp.stop(); say("🎙 الدبلجة اتقفلت — صوت الفيديو الأصلي رجع"); return }
         if (dubBusy) { dubCancel = true; say("⏹ بلغي الدبلجة…"); return }
         val segs = Dub.segsOf(engine.subs)
-        if (segs.isEmpty()) { say("مفيش جمل مترجمة لسه — ترجم الأول وبعدين دبّلج"); return }
+        val force = dubForce; dubForce = false
+        if (!force && (segs.isEmpty() || (TrProfile.uiMode() == TrProfile.DUB && !trComplete()))) { dubAutoTr(); return }   // (v1229)
+        if (segs.isEmpty()) { say("مفيش كلام مترجم يتدبلج في الفيديو ده"); return }
         val dur = try { player.duration } catch (_: Throwable) { -1L }
         val total = if (dur > 0) dur / 1000.0 else 0.0
         val key = Store.keyFor(vid)
