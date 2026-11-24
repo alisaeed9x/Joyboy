@@ -115,9 +115,14 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private fun tileView(act: Activity, t: MoreItem, onDone: () -> Unit): View = LinearLayout(act).apply {
         orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(ui.dp(2), ui.dp(8), ui.dp(2), ui.dp(7))   // (v991) بلاطات أصغر عشان تتسع كلها (4 في الصف على الموبايل)
         background = ui.box(if (t.on) Glass.alpha(th.primary, 0x28) else th.card, if (t.on) th.primary else th.border, 14, if (t.on) 2 else 1)
-        val ic = IconTextView(act).apply { text = t.emoji; textSize = 21f; gravity = Gravity.CENTER; includeFontPadding = false }
-        val lb = ui.text(t.label, 10.5f, if (t.on) th.primary else th.text, true).apply { gravity = Gravity.CENTER; maxLines = 2; setPadding(0, ui.dp(4), 0, 0) }
-        addView(ic, LinearLayout.LayoutParams(-2, ui.dp(28)))
+        val nw = Design.isNew()   // (v1225) الشكل الجديد: أيقونة جوه دايرة ملوّنة وبلاطة أكبر
+        if (nw) setPadding(ui.dp(4), ui.dp(12), ui.dp(4), ui.dp(10))
+        val ic = IconTextView(act).apply {
+            text = t.emoji; textSize = if (nw) 22f else 21f; gravity = Gravity.CENTER; includeFontPadding = false
+            if (nw) background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(Glass.alpha(th.primary, 0x26)) }
+        }
+        val lb = ui.text(t.label, if (nw) 11.5f else 10.5f, if (t.on) th.primary else th.text, true).apply { gravity = Gravity.CENTER; maxLines = 2; setPadding(0, ui.dp(if (nw) 6 else 4), 0, 0) }
+        addView(ic, if (nw) LinearLayout.LayoutParams(ui.dp(46), ui.dp(46)) else LinearLayout.LayoutParams(-2, ui.dp(28)))
         addView(lb, LinearLayout.LayoutParams(-1, -2))
         isClickable = true; isFocusable = true
         Glass.pressable(this)
@@ -129,7 +134,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private fun moreSheet(act: Activity) {
         val d = android.app.Dialog(act)
         d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
-        val cols = if (rail || act.resources.displayMetrics.widthPixels >= ui.dp(600)) 5 else 4   // (v991) كانت 4/3
+        val cols = if (rail || act.resources.displayMetrics.widthPixels >= ui.dp(600)) 5 else if (Design.isNew()) 3 else 4   // (v991) كانت 4/3 · (v1225) الجديد 3 في الصف
         val glass = MtGlass.on()
         val sheetR = ui.dp(28).toFloat()
         val box = LinearLayout(act).apply {
