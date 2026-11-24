@@ -12,6 +12,8 @@ object Models {
     val quota = mapOf(DEFAULT to 1000, OLD_ALIAS to 1000, "gemini-3.1-flash-lite" to 1000, "gemini-2.5-flash-lite" to 1500, "gemini-3-flash" to 1500,
         "gemini-2.5-flash" to 1500, "gemini-3.5-flash" to 250, "gemini-2.5-pro" to 50)
     /** (v227) موديل بديل لما الأساسي يرجّع 503 ورا بعض */
+    /** (v1242) بطلب صاحب التطبيق (واتساب): موديل واحد flash-lite-latest لكل المفاتيح، والاحتياطي في المفاتيح مش في تغيير الموديل. false = مفيش تبديل موديل */
+    const val FALLBACK = false
     private val dead = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     @Volatile private var avail: List<String>? = null
     /** (v1241) موديل اتأكد إنه مش متاح (404): مابنجرّبوش تاني في الجلسة دي */
