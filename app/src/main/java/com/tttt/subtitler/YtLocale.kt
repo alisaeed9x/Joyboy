@@ -11,7 +11,7 @@ object YtLocale {
     fun hl(): String {
         val v = try { Cfg.str("yt_hl", "auto").trim().lowercase() } catch (_: Throwable) { "auto" }
         if (v.isNotEmpty() && v != "auto") return v
-        val d = try { Locale.getDefault().language.lowercase() } catch (_: Throwable) { "" }
+        val d = try { I18n.code() } catch (_: Throwable) { "" }   // (v1270) تلقائي = لغة التطبيق المختارة
         return if (d.isBlank() || d == "und") "ar" else d
     }
 
@@ -24,6 +24,6 @@ object YtLocale {
     fun acceptLanguage(): String { val h = hl(); return if (h == "en") "en-" + gl() + ",en;q=0.9" else h + "-" + gl() + "," + h + ";q=0.9,en;q=0.8" }
 
     /** اسم اللغة المعروض في الإعدادات */
-    val names = listOf("تلقائي (لغة الجهاز)", "العربية", "English")
+    val names = listOf("تلقائي (لغة التطبيق)", "العربية", "English")
     val values = listOf("auto", "ar", "en")
 }

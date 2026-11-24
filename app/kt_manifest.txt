@@ -327,3 +327,4 @@ com/tttt/subtitler/Upd.kt
 com/tttt/subtitler/Notes.kt
 com/tttt/subtitler/I18n.kt
 com/tttt/subtitler/UpdDlService.kt
+com/tttt/subtitler/LangPicker.kt

@@ -162,7 +162,9 @@ object I18n {
     /** نص الواجهة بلغة التطبيق (العربي يرجع زي ما هو) */
     fun tr(s: String): String {
         val l = code()
-        if (l == "ar" || s.length < 2 || s.length > 70 || s.indexOf('\n') >= 0 || !hasArabic(s)) return s
+        if (l == "ar" || s.length < 2 || s.length > 200 || !hasArabic(s)) return s
+        if (s.length > 70 && s.any { it in '0'..'9' }) return s
+        if (LANGS.any { it.second == s }) return s
         dictLook(s, l)?.let { return it }
         load(l)
         synchronized(this) {
@@ -181,7 +183,7 @@ object I18n {
         val s = t.toString()
         val r = tr(s)
         if (r !== s) { synchronized(views) { views[v] = t }; return r }
-        if (hasArabic(s) && s.length <= 70) synchronized(views) { views[v] = t }
+        if (hasArabic(s) && s.length <= 200) synchronized(views) { views[v] = t }
         return t
     }
 
@@ -225,10 +227,41 @@ object I18n {
     fun refreshAll() {
         val snap = synchronized(views) { views.entries.map { it.key to it.value } }
         inHook = false
-        for ((v, o) in snap) try { v.text = o } catch (_: Throwable) {}
+        for ((v, o) in snap) try { if (v is IconTextView) v.text = o else { val r = tr(o.toString()); if (r != v.text.toString()) v.text = r } } catch (_: Throwable) {}
+    }
+
+    private val swept = WeakHashMap<Activity, Boolean>()
+    private fun sweep(v: View) {
+        if (v is TextView) {
+            try {
+                if (v !is IconTextView) {
+                    val t = v.text
+                    if (t != null && t.isNotEmpty() && hasArabic(t.toString())) {
+                        val r = tr(t.toString())
+                        if (r != t.toString()) { synchronized(views) { views[v] = t }; v.text = r } else synchronized(views) { views[v] = t }
+                    }
+                    val h = v.hint
+                    if (h != null && hasArabic(h.toString())) { val r = tr(h.toString()); if (r != h.toString()) v.hint = r }
+                }
+            } catch (_: Throwable) {}
+        }
+        if (v is android.view.ViewGroup) for (i in 0 until v.childCount) sweep(v.getChildAt(i))
+    }
+    private fun watch(a: Activity) {
+        if (synchronized(swept) { swept.put(a, true) } != null) return
+        try {
+            val root = a.window.decorView
+            var posted = false
+            root.viewTreeObserver.addOnGlobalLayoutListener {
+                if (code() == "ar" || posted) return@addOnGlobalLayoutListener
+                posted = true
+                main.postDelayed({ posted = false; try { sweep(root) } catch (_: Throwable) {} }, 350L)
+            }
+        } catch (_: Throwable) {}
     }
 
     private fun apply(a: Activity) {
+        watch(a)
         try {
             val d = if (isRtl()) View.LAYOUT_DIRECTION_RTL else if (code() == "ar") View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
             a.window.decorView.layoutDirection = d
@@ -238,12 +271,11 @@ object I18n {
     private fun firstRun(a: Activity) {
         try { Cfg.ensure(a); if (Cfg.str("lang_chosen", "") == "1") return } catch (_: Throwable) { return }
         if (a !is MainActivity) return
-        val names = arrayOf("🌐 Auto").plus(LANGS.map { it.second })
         try {
-            AlertDialog.Builder(a).setTitle("🌐 " + languageWord()).setCancelable(false).setItems(names) { _, i ->
-                if (i == 0) { Cfg.put("app_lang", "auto"); Cfg.put("lang_chosen", "1") } else setAppLang(LANGS[i - 1].first)
+            LangPicker.show(a, languageWord(), "auto", false) { c ->
+                if (c == "auto") { Cfg.put("app_lang", "auto"); Cfg.put("lang_chosen", "1") } else setAppLang(c)
                 a.recreate()
-            }.show()
+            }
         } catch (_: Throwable) {}
     }
 

@@ -597,12 +597,11 @@ class MainActivity : Activity() {
             TabDef("applang", I18n.languageWord(), { listOf<View>(
                 ui.noHint(),
                 ui.section("🌐 " + I18n.languageWord(), true,
-                    ui.chips(listOf("Auto") + I18n.LANGS.map { it.second }, { if (I18n.setting() == "auto") "Auto" else I18n.nameOf(I18n.setting()) }) { n ->
-                        if (n == "Auto") { Cfg.put("app_lang", "auto"); Cfg.put("lang_chosen", "1") } else I18n.setAppLang(I18n.LANGS.first { it.second == n }.first)
+                    LangPicker.settingRow(this, ui, I18n.languageWord(), { I18n.setting() }) { c ->
+                        if (c == "auto") { Cfg.put("app_lang", "auto"); Cfg.put("lang_chosen", "1") } else I18n.setAppLang(c)
                         recreate() }),
                 ui.section("🗣 لغة الترجمة (مستقلة عن لغة التطبيق)", true,
-                    ui.chips(listOf("Auto") + I18n.LANGS.map { it.second }, { if (Cfg.str("tr_lang", "auto") == "auto") "Auto" else I18n.nameOf(Cfg.str("tr_lang", "auto")) }) { n ->
-                        I18n.setTranslationLang(if (n == "Auto") "auto" else I18n.LANGS.first { it.second == n }.first) })) }, false, "", "🌐"),
+                    LangPicker.settingRow(this, ui, "🗣 لغة الترجمة", { Cfg.str("tr_lang", "auto") }) { c -> I18n.setTranslationLang(c) })) }, false, "", "🌐"),
             // ===== 🚀 خط الترجمة: الخطة (تفريغ ← ترجمة ← لهجة) + اللهجة والأسلوب + البرومبتات =====
             tab("general", { listOf<View>(
                 ui.noHint(),

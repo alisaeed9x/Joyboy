@@ -1160,8 +1160,15 @@ class BrowserActivity : Activity() {
         }
         if (escapeGoogle && u.trimEnd('/') == GOOGLE) { escapeGoogle = false; if (saver.loadOfflineHome(w, t)) return }   // (v1016)
         saver.beforeLoad(w, t, u)   // (v783)
-        val hdr = saver.headersFor(u)
-        if (hdr != null && u.startsWith("http")) w.loadUrl(u, hdr) else w.loadUrl(u)   // Save-Data: on لما التوفير شغّال
+        var u2 = u
+        try {   // (v1270) يوتيوب جوه المتصفح بلغة التطبيق: باراميتر hl + هيدر Accept-Language
+            if (u.startsWith("http") && Regex("^https?://([a-z0-9-]+\\.)*(youtube\\.com|youtu\\.be)(/|\\?|$)", RegexOption.IGNORE_CASE).containsMatchIn(u) && !u.contains("hl=") && !u.contains("#")) {
+                u2 = u + (if (u.contains("?")) "&" else "?") + "hl=" + YtLocale.hl()
+            }
+        } catch (_: Throwable) {}
+        val hdr0 = saver.headersFor(u)
+        val hdr: Map<String, String>? = if (u.startsWith("http")) (hdr0 ?: emptyMap()) + ("Accept-Language" to YtLocale.acceptLanguage()) else hdr0
+        if (hdr != null && u.startsWith("http")) w.loadUrl(u2, hdr) else w.loadUrl(u)   // Save-Data: on لما التوفير شغّال
     }
 
     private fun showUrl(u: String?, force: Boolean = false) {

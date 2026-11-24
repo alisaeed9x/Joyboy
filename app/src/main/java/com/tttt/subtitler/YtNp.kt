@@ -152,8 +152,10 @@ object YtNp {
     private val YT get() = ServiceList.YouTube
     @Volatile private var ready = false
 
+    @Volatile private var readyHl = ""
     @Synchronized fun init() {
-        if (ready) return
+        if (ready && readyHl == YtLocale.hl()) return
+        readyHl = YtLocale.hl()
         NewPipe.init(YtDownloader, Localization(YtLocale.hl(), YtLocale.gl()), ContentCountry(YtLocale.gl()))   // (v471) اللغة من مكان واحد (YtLocale)
         ready = true
     }
