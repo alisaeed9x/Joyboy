@@ -224,7 +224,12 @@ object Cfg {
         for (k in listOf("tone_style", "style")) { val v = p.all[k]; if (v is String && v == "+18") e.putString(k, "تلقائي") }
         e.putInt("cfgv", CfgCodec.VERSION).apply()
     }
-    fun str(k: String, d: String = "") = TrNorm.fix(k, CfgCodec.str(raw(k), d))   // (v1199) لهجات/أساليب قديمة بتتوحّد (TrNorm)
+    fun str(k: String, d: String = ""): String {
+        if (k == "lang" && str("lang_chosen", "") == "1") { try { val tc = I18n.translationCode(); if (tc != "ar") return I18n.nameOf(tc) } catch (_: Throwable) {} }   // (v1266) لغة الترجمة المختارة (مش عربي) هي الهدف
+        return TrNorm.fix(k, CfgCodec.str(raw(k), d))
+    }
+    @Suppress("unused")
+    private fun strOld(k: String, d: String = "") = TrNorm.fix(k, CfgCodec.str(raw(k), d))
     fun bool(k: String, d: Boolean) = CfgCodec.bool(raw(k), d)
     fun keys(k: String) = str(k).lines().map { it.trim() }.filter { it.length > 10 }
     fun int(k: String, d: Int) = CfgCodec.int(raw(k), d)

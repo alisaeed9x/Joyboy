@@ -82,10 +82,88 @@ object I18n {
     }
     private fun hasArabic(s: String): Boolean { for (ch in s) if (ch in '\u0600'..'\u06FF') return true; return false }
 
+    private val DICT: List<Array<String>> = listOf(
+        arrayOf("الفيديوهات","Videos","Vídeos","视频"),
+        arrayOf("الموسيقى","Music","Música","音乐"),
+        arrayOf("المتصفح","Browser","Navegador","浏览器"),
+        arrayOf("المخزن","Storage","Almacenamiento","存储"),
+        arrayOf("مركز التحميل","Downloads","Descargas","下载中心"),
+        arrayOf("الإعدادات","Settings","Ajustes","设置"),
+        arrayOf("المزيد","More","Más","更多"),
+        arrayOf("الرئيسية","Home","Inicio","首页"),
+        arrayOf("الاشتراكات","Subscriptions","Suscripciones","订阅"),
+        arrayOf("أنا","Me","Yo","我"),
+        arrayOf("الريموت","Remote","Mando","遥控"),
+        arrayOf("الكليبورد","Clipboard","Portapapeles","剪贴板"),
+        arrayOf("ريموت IR","IR remote","Mando IR","红外遥控"),
+        arrayOf("العناية","Care","Cuidado","护理"),
+        arrayOf("ميديا","Media","Medios","媒体"),
+        arrayOf("محلي","Local","Local","本地"),
+        arrayOf("مكتبة الترجمات","Subtitle library","Biblioteca de subtítulos","字幕库"),
+        arrayOf("سجل اللوجات","Logs","Registros","日志"),
+        arrayOf("وضع TV","TV mode","Modo TV","电视模式"),
+        arrayOf("النت والداتا","Network & data","Red y datos","网络与数据"),
+        arrayOf("مركز التحديث","Update center","Centro de actualizaciones","更新中心"),
+        arrayOf("إرسال التحديث للتلفزيون","Send update to TV","Enviar actualización a la TV","发送更新到电视"),
+        arrayOf("شرح الاستخدام","How to use","Cómo usar","使用说明"),
+        arrayOf("الأقسام","Sections","Secciones","分区"),
+        arrayOf("الترجمة","Translation","Traducción","翻译"),
+        arrayOf("تحكم وريموت","Control & remote","Control y mando","控制与遥控"),
+        arrayOf("النظام والتحديث","System & updates","Sistema y actualizaciones","系统与更新"),
+        arrayOf("خط الترجمة","Translation pipeline","Flujo de traducción","翻译流程"),
+        arrayOf("المفاتيح","Keys","Claves","密钥"),
+        arrayOf("التفريغ والصوت","Transcription & audio","Transcripción y audio","转写与音频"),
+        arrayOf("الموديل والأداء","Model & performance","Modelo y rendimiento","模型与性能"),
+        arrayOf("شكل الترجمة","Subtitle style","Estilo de subtítulos","字幕样式"),
+        arrayOf("المظهر","Appearance","Apariencia","外观"),
+        arrayOf("التلفزيون","Television","Televisión","电视"),
+        arrayOf("المشغّل","Player","Reproductor","播放器"),
+        arrayOf("مشغّل الموسيقى","Music player","Reproductor de música","音乐播放器"),
+        arrayOf("الخلفية والتشغيل","Background & running","Segundo plano","后台运行"),
+        arrayOf("الاصطياد والترجمة الحية","Capture & live translation","Captura y traducción en vivo","捕获与实时翻译"),
+        arrayOf("الأمان والنسخ","Security & backup","Seguridad y copia","安全与备份"),
+        arrayOf("إغلاق","Close","Cerrar","关闭"),
+        arrayOf("لاحقًا","Later","Más tarde","稍后"),
+        arrayOf("تحديث","Update","Actualizar","更新"),
+        arrayOf("تثبيت","Install","Instalar","安装"),
+        arrayOf("مش دلوقتي","Not now","Ahora no","暂不"),
+        arrayOf("تمام","OK","Vale","好的"),
+        arrayOf("مفيش تحديثات جديدة","No new updates","Sin actualizaciones nuevas","没有新更新"),
+        arrayOf("أنت على آخر تحديث","You are up to date","Estás al día","已是最新版本"),
+        arrayOf("فيه تحديث جديد","Update available","Actualización disponible","有新更新"),
+        arrayOf("تحميل التحديث","Download update","Descargar actualización","下载更新"),
+        arrayOf("من الأول","From the start","Desde el inicio","从头开始"),
+        arrayOf("بيفحص…","Checking…","Comprobando…","检查中…"),
+        arrayOf("إلغاء","Cancel","Cancelar","取消"),
+        arrayOf("حفظ","Save","Guardar","保存"),
+        arrayOf("حذف","Delete","Eliminar","删除"),
+        arrayOf("بحث","Search","Buscar","搜索"),
+        arrayOf("فتح","Open","Abrir","打开"),
+        arrayOf("تصدير","Export","Exportar","导出"),
+        arrayOf("استيراد","Import","Importar","导入"),
+        arrayOf("الجودة","Quality","Calidad","画质"),
+        arrayOf("الجمل","Sentences","Frases","句子"),
+        arrayOf("تحديث تلقائي","Auto update","Actualización automática","自动更新"),
+        arrayOf("لهجة","Dialect","Dialecto","方言"),
+        arrayOf("فصحى","Formal","Formal","标准语"),
+        arrayOf("ملاحظات","Notes","Notas","备注"),
+        arrayOf("ميزة جديدة","New","Nuevo","新功能"),
+        arrayOf("تعديل","Changed","Cambio","修改"),
+        arrayOf("إصلاح","Fixed","Arreglo","修复"),
+        arrayOf("اللغة","Language","Idioma","语言"))
+    private fun dictLook(s: String, l: String): String? {
+        val col = when (l) { "en" -> 1; "es" -> 2; "zh" -> 3; else -> return null }
+        for (r in DICT) if (r[0] == s) return r[col]
+        val sp = s.indexOf(' ')
+        if (sp > 0) { val pre = s.substring(0, sp); if (!hasArabic(pre)) { val rest = s.substring(sp + 1); for (r in DICT) if (r[0] == rest) return pre + " " + r[col] } }
+        return null
+    }
+
     /** نص الواجهة بلغة التطبيق (العربي يرجع زي ما هو) */
     fun tr(s: String): String {
         val l = code()
         if (l == "ar" || s.length < 2 || s.length > 70 || s.indexOf('\n') >= 0 || !hasArabic(s)) return s
+        dictLook(s, l)?.let { return it }
         load(l)
         synchronized(this) {
             val v = mem[s]
