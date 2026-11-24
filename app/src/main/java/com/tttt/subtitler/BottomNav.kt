@@ -111,7 +111,9 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         sys.add(MoreItem("🎨", "التصميم: " + Design.label(Design.cur()), false) { try { Design.pick(act) } catch (e: Throwable) { LogStore.err("Nav:design", e) } })   // (v1219) تبديل الشكل جديد/قديم
         if (!tvDev) sys.add(MoreItem("🎓", "شرح الاستخدام", false) { try { collapseMore(); Tour.replay(act) } catch (e: Throwable) { LogStore.err("Nav:tour", e) } })   // (v1258)
         sys.add(MoreItem(DEFS[7].first, "الإعدادات", 7 == active) { onPick(7) })
-        return listOf("الأقسام" to secs, "الترجمة" to trl, "تحكم وريموت" to ctl, "النظام والتحديث" to sys)
+        val tiles = ArrayList<MoreItem>()
+        for (t in HtmlTiles.all) tiles.add(MoreItem(t.emoji, t.title, false) { HtmlTiles.open(act, t) })   // (v1275) بلاطات HTML
+        return listOf("الأقسام" to secs, "الترجمة" to trl, "تحكم وريموت" to ctl) + (if (tiles.isNotEmpty()) listOf("ألعاب وأدوات" to tiles) else emptyList()) + listOf("النظام والتحديث" to sys)
     }
 
     private fun keyOf(m: MoreItem): String = m.label.substringBefore(":")
