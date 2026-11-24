@@ -41,6 +41,7 @@ object GhCiUi {
         head.addView(ui.text("آخر 3 بيلدات", 13f, th.text, true), LinearLayout.LayoutParams(0, -2, 1f))
         val refresh = ui.text("🔄", 17f, th.primary, true).apply { setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4)) }
         head.addView(refresh, LinearLayout.LayoutParams(-2, -2))
+        col.addView(Upd.centerViews(a, ui, th), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(8) })   // (v1259)
         col.addView(head, LinearLayout.LayoutParams(-1, -2))
         val runBox = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         col.addView(runBox, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(4) })

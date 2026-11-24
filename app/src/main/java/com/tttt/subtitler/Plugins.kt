@@ -49,6 +49,30 @@ object Plugins {
     @Suppress("DEPRECATION")
     private fun sigBytes(pi: android.content.pm.PackageInfo?): ByteArray? = try { pi?.signatures?.firstOrNull()?.toByteArray() } catch (_: Throwable) { null }
 
+    fun cacheFile(c: Context, e: PluginEntry): File = File(File(c.cacheDir, "plugins").apply { mkdirs() }, e.id + "-" + e.vcode + ".apk")
+
+    fun ready(c: Context, e: PluginEntry, f: File): Boolean = f.isFile && verify(c, e, f) == null && (installedCode(c, e.pkg) ?: 0L) < e.vcode
+
+    /** رسالة خطأ لو الملف مش سليم (sha256 + الحزمة + التوقيع بنفس مفتاح Joyboy)، وإلا null */
+    @Suppress("DEPRECATION")
+    fun verify(c: Context, e: PluginEntry, f: File): String? {
+        try {
+            if (e.sha256.isNotEmpty()) {
+                val md = java.security.MessageDigest.getInstance("SHA-256")
+                f.inputStream().use { ins -> val b = ByteArray(65536); while (true) { val n = ins.read(b); if (n < 0) break; md.update(b, 0, n) } }
+                val h = md.digest().joinToString("") { "%02x".format(it) }
+                if (!h.equals(e.sha256, true)) return "الملف اتبدّل أو اتبوّظ (sha256 مش مطابق)"
+            }
+            val pm = c.packageManager
+            val info = pm.getPackageArchiveInfo(f.path, PackageManager.GET_SIGNATURES) ?: return "الملف مش APK صالح"
+            if (info.packageName != e.pkg) return "الـAPK ده مش بتاع البلاجن ده"
+            val mine = sigBytes(pm.getPackageInfo(c.packageName, PackageManager.GET_SIGNATURES))
+            val theirs = sigBytes(info)
+            if (mine == null || theirs == null || !mine.contentEquals(theirs)) return "البلاجن مش موقّع بمفتاح Joyboy، اترفض"
+            return null
+        } catch (x: Throwable) { return "تعذّر فحص الملف" }
+    }
+
     @Suppress("DEPRECATION")
     fun download(c: Context, e: PluginEntry): File {
         val dir = File(c.cacheDir, "plugins"); dir.mkdirs()
@@ -157,13 +181,5 @@ class PluginsUi(private val act: Activity, private val ui: Ui, private val th: T
         root.addView(ui.button("🔄 تحديث القايمة") { load() })
     }
 
-    private fun go(e: PluginEntry) {
-        Notice.show(act, "⏳ بنزّل " + e.name + "…", 2000L)
-        Thread {
-            try {
-                val f = Plugins.download(act, e)
-                onUi { TvUpdate.install(act, f) }
-            } catch (x: Throwable) { onUi { Notice.show(act, "⚠ " + (x.message ?: "فشل").take(90), 3500L) } }
-        }.also { it.isDaemon = true }.start()
-    }
+    private fun go(e: PluginEntry) { Upd.startPlugin(act, e) }
 }

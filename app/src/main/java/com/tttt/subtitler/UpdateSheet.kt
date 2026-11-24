@@ -30,6 +30,7 @@ object UpdateSheet {
         val notes = ui.text("بنجيب التغييرات...", 13f, th.text)
         col.addView(title)
         col.addView(notes, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
+        col.addView(Upd.centerViews(a, ui, th), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })   // (v1259)
         val sv: View = col   // (v1247) GAlert بيلف المحتوى في سكرول بحد أقصى ٦٠٪ من الشاشة، والأزرار ثابتة تحته
         var apkUrl = ""
         var upToDateFlag = false
@@ -37,7 +38,7 @@ object UpdateSheet {
         val g = GAlert(a).setView(sv)
         g.setNegativeButton("لاحقًا", null)
         g.setPositiveButton("تحميل") { _, _ ->
-            if (!upToDateFlag) try { a.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(if (apkUrl.isNotBlank()) apkUrl else page)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            if (!upToDateFlag) try { if (Upd.app != null) Upd.startApp(a) else a.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(if (apkUrl.isNotBlank()) apkUrl else page)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             catch (e: Throwable) { LogStore.err("UpdateSheet:open", e) }
         }
         val d: Dialog = g.show()
@@ -77,8 +78,8 @@ object UpdateSheet {
 
 
     @Volatile private var ucChecked = false
-    private fun verParts(s: String): List<Int> = Regex("(\\d+(?:\\.\\d+)*)").find(s)?.value?.split(".")?.map { it.toIntOrNull() ?: 0 } ?: emptyList()
-    private fun isNewer(remote: List<Int>, local: List<Int>): Boolean {
+    internal fun verParts(s: String): List<Int> = Regex("(\\d+(?:\\.\\d+)*)").find(s)?.value?.split(".")?.map { it.toIntOrNull() ?: 0 } ?: emptyList()
+    internal fun isNewer(remote: List<Int>, local: List<Int>): Boolean {
         for (i in 0 until maxOf(remote.size, local.size)) { val r = remote.getOrElse(i) { 0 }; val l = local.getOrElse(i) { 0 }; if (r != l) return r > l }
         return false
     }
@@ -135,7 +136,7 @@ object UpdateSheet {
 
     @Volatile private var wnChecked = false
     /** (v1245) ملاحظات التحديث مجمّعة بالقسم (الميديا / الإعدادات / ...): كل نقطة عليها رقم النسخة اللي نزلت فيها، من الأحدث للأقدم لحد النسخة المثبّتة. latestOnly = آخر نسخة بس */
-    private fun cumulative(ver: String, latestOnly: Boolean = false): String {
+    internal fun cumulative(ver: String, latestOnly: Boolean = false): String {
         return try {
             val c = URL("https://api.github.com/repos/alisaeed9x/Joyboy/releases?per_page=30").openConnection() as HttpURLConnection
             c.connectTimeout = 8000; c.readTimeout = 12000
@@ -182,7 +183,7 @@ object UpdateSheet {
     }
 
     /** (v1245) ملاحظات التحديث: بس اللي جديد في النسخة. بنقطع قايمة الملفات الأوتوماتيكة والنسخة الاحتياطية وخطوط الفصل اللي CI بيضيفها */
-    private fun clean(b: String): String {
+    internal fun clean(b: String): String {
         var t = b
         val cut = t.indexOf("## 🗂")
         if (cut >= 0) t = t.substring(0, cut)

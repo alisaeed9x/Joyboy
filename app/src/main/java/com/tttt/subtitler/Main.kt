@@ -1923,6 +1923,7 @@ class MainActivity : Activity() {
         try { startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("tv_show", show)); finish() }
         catch (_: Throwable) { showTabFn(0) }
     }
+    fun updateUpdBadge() { try { navUi?.badge(BottomNav.MORE, Upd.count) } catch (_: Throwable) {} }   // (v1259) بادج أحمر على «المزيد»
     fun updateYtBadge() { navUi?.badge(4, try { YtNotify.badgeCount() } catch (_: Throwable) { 0 }) }   // (v1107) عدّاد الفيديوهات الجديدة على «الاشتراكات»
     /** (v475) الشريط السفلي: وانت في يوتيوب بيعرض (الرئيسية · الاشتراكات · أنا)؛ اللايت ترتيبه ثابت (الرئيسية · الاشتراكات · محلي · أنا) */
     fun syncNav() {
@@ -1994,7 +1995,6 @@ class MainActivity : Activity() {
             }
         } catch (e: Throwable) { LogStore.err("Main:ytDockTake", e) }
         try { hideBrowserLoading() } catch (_: Throwable) {}   // (دمج v1071)
-        try { if (Design.isNew()) UpdateSheet.checkOnLaunch(this) } catch (_: Throwable) {}   // (v1240) فحص التحديث عند الفتح
         try { UpdateSheet.whatsNew(this) } catch (_: Throwable) {}   // (v1221) إيه الجديد أول فتح بعد التحديث
         TabNav.pendingMain?.let { t -> TabNav.pendingMain = null; try { onNewIntent(Intent().putExtra("tab", t)) } catch (e: Throwable) { LogStore.err("Main:pendingTab", e) } }   // (v973) REORDER_TO_FRONT من غير onNewIntent
         try { DataCapsule.attach(this) } catch (_: Throwable) {}   // (v799)
@@ -2005,6 +2005,7 @@ class MainActivity : Activity() {
         if (!fromPlayer) CrashLog.showIfAny(this)
         if (!fromPlayer) ClipOverlay.ensure(this)   // (v735) مراقب الكليبورد بإذن العرض فوق التطبيقات (بيشتغل لوحده أول ما الإذن يتفعّل)
         if (!fromPlayer) ModelWatch.maybeCheck(this)   // (v141) فحص يومي لموديل flash-lite أحدث
+        if (!fromPlayer) { Upd.onChange = { updateUpdBadge() }; updateUpdBadge(); Upd.onOpen(this) }   // (v1259) فحص التحديث عند كل فتح + البادج
         if (!fromPlayer) Tour.maybeMain(this)   // (v1258) جولة أول تشغيل
         if (!fromPlayer) GhCi.onForeground(this)   // (v856) فشل ورك فلو GitHub ← إشعار + تحميل اللوج · تحديث جاهز ← تثبيت
         // المخفي بيتقفل تاني لو التطبيق قعد في الخلفية أكتر من دقيقة

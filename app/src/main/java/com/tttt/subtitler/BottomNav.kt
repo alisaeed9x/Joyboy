@@ -51,7 +51,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private var moreHost: FrameLayout? = null
     private var moreScroll: android.widget.HorizontalScrollView? = null
     private var moreAnim: android.animation.ValueAnimator? = null
-    private class MoreItem(val emoji: String, val label: String, val on: Boolean, val longPress: (() -> Unit)? = null, val tap: () -> Unit)
+    private class MoreItem(val emoji: String, val label: String, val on: Boolean, val longPress: (() -> Unit)? = null, val tap: () -> Unit) { var badge = 0 }
 
     private fun moreCell(act: Activity, mi: MoreItem, w: Int): View = LinearLayout(act).apply {
         orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(0, ui.dp(3), 0, ui.dp(2))
@@ -107,7 +107,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         }) { TvModeFab.toggle(act) })
         val sys = ArrayList<MoreItem>()
         sys.add(MoreItem("📊", "النت والداتا", false) { try { collapseMore(); NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } })
-        if (!tvDev) sys.add(MoreItem("🔄", "مركز التحديث", false) { try { if (Design.isNew()) UpdateSheet.show(act) else GhCiUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:gh", e) } })   // (v861) تحديث البرنامج + تحديث التلفزيون + لوج الفشل
+        if (!tvDev) sys.add(MoreItem("🔄", "مركز التحديث", false) { try { if (Design.isNew()) UpdateSheet.show(act) else GhCiUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:gh", e) } }.also { it.badge = Upd.count })   // (v861) تحديث البرنامج + تحديث التلفزيون + لوج الفشل
         if (!tvDev) sys.add(MoreItem("📤", "إرسال التحديث للتلفزيون", false) { try { RemoteClient.forcePushFlow(act) } catch (e: Throwable) { LogStore.err("Nav:pushUpd", e) } })   // (v1048) من صفحة «المزيد» مباشرة
         sys.add(MoreItem("🎨", "التصميم: " + Design.label(Design.cur()), false) { try { Design.pick(act) } catch (e: Throwable) { LogStore.err("Nav:design", e) } })   // (v1219) تبديل الشكل جديد/قديم
         if (!tvDev) sys.add(MoreItem("🎓", "شرح الاستخدام", false) { try { collapseMore(); Tour.replay(act) } catch (e: Throwable) { LogStore.err("Nav:tour", e) } })   // (v1258)
@@ -115,7 +115,20 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         return listOf("الأقسام" to secs, "الترجمة" to trl, "تحكم وريموت" to ctl, "النظام والتحديث" to sys)
     }
 
-    private fun tileView(act: Activity, t: MoreItem, onDone: () -> Unit): View = LinearLayout(act).apply {
+    private fun tileView(act: Activity, t: MoreItem, onDone: () -> Unit): View {
+        val inner = tileInner(act, t, onDone)
+        if (t.badge <= 0) return inner
+        return FrameLayout(act).apply {
+            addView(inner, FrameLayout.LayoutParams(-1, -2))
+            addView(android.widget.TextView(act).apply {
+                text = if (t.badge > 99) "99+" else t.badge.toString(); textSize = 10f; setTextColor(0xFFFFFFFF.toInt()); gravity = Gravity.CENTER; includeFontPadding = false
+                setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(ui.dp(5), 0, ui.dp(5), 0); minWidth = ui.dp(18)
+                background = GradientDrawable().apply { setColor(0xFFE53935.toInt()); cornerRadius = ui.dp(9).toFloat() }
+            }, FrameLayout.LayoutParams(-2, ui.dp(18), Gravity.TOP or Gravity.END).apply { setMargins(ui.dp(6), ui.dp(6), ui.dp(6), 0) })
+        }
+    }
+
+    private fun tileInner(act: Activity, t: MoreItem, onDone: () -> Unit): View = LinearLayout(act).apply {
         orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(ui.dp(2), ui.dp(8), ui.dp(2), ui.dp(7))   // (v991) بلاطات أصغر عشان تتسع كلها (4 في الصف على الموبايل)
         background = ui.box(if (t.on) Glass.alpha(th.primary, 0x28) else th.card, if (t.on) th.primary else th.border, 14, if (t.on) 2 else 1)
         val nw = Design.isNew()   // (v1225) الشكل الجديد: أيقونة جوه دايرة ملوّنة وبلاطة أكبر
