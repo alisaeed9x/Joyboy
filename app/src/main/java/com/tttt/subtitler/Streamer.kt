@@ -180,7 +180,7 @@ class StreamerUi(private val act: Activity, private val ui: Ui, private val th: 
     fun show() {
         srcs = StreamerSources.all(act)
         val d = ui.sheet(act, "🎞 ستريمر", listOf<View>(root), solid = true)
-        (d as? GDialog)?.onBack = { if (stack.size > 1) { stack.removeAt(stack.size - 1); stack.last().invoke(); true } else false }
+        (d as? GDialog)?.onBack = { if (stack.size > 1) { stack.removeAt(stack.size - 1); val top: () -> Unit = stack[stack.size - 1]; top(); true } else false }
         dlg = d
         go { home() }
         d.show()
