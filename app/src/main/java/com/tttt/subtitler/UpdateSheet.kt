@@ -65,4 +65,46 @@ object UpdateSheet {
             }
         }.start()
     }
+
+    @Volatile private var wnChecked = false
+    private fun clean(b: String) = b.replace(Regex("<[^>]+>"), "").replace(Regex("(?m)^#+\\s*"), "").replace("`", "").take(4000)
+
+    /** (v1221) أول فتح بعد التحديث: بيعرض «إيه الجديد» في النسخة اللي اتنصّبت (من ملاحظات الـRelease)، ويتغيّر لوحده مع كل نسخة. */
+    fun whatsNew(a: Activity) {
+        if (wnChecked) return
+        wnChecked = true
+        val ver = try { a.packageManager.getPackageInfo(a.packageName, 0).versionName ?: "" } catch (_: Throwable) { "" }
+        if (ver.isBlank() || Cfg.str("wn_seen") == ver) return
+        Thread {
+            try {
+                val c = URL("https://api.github.com/repos/alisaeed9x/Joyboy/releases?per_page=15").openConnection() as HttpURLConnection
+                c.connectTimeout = 10000; c.readTimeout = 15000
+                c.setRequestProperty("Accept", "application/vnd.github+json")
+                val arr = org.json.JSONArray(c.inputStream.bufferedReader().readText())
+                var name = ""; var body = ""
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    if (o.optString("name").contains("v$ver")) { name = o.optString("name"); body = o.optString("body"); break }
+                }
+                Cfg.put("wn_seen", ver)
+                if (body.isBlank()) return@Thread
+                val txt = clean(body)
+                a.runOnUiThread {
+                    try {
+                        if (a.isFinishing) return@runOnUiThread
+                        val th = Themes.current()
+                        val ui = Ui(a, th)
+                        val col = LinearLayout(a).apply {
+                            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+                            setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4))
+                        }
+                        col.addView(ui.text("✨ إيه الجديد في $name", 17f, th.text, true))
+                        col.addView(ui.text(txt, 13f, th.text), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
+                        val sv = ScrollView(a).apply { isVerticalScrollBarEnabled = false; addView(col) }
+                        GAlert(a).setView(sv).setPositiveButton("تمام", null).show()
+                    } catch (e: Throwable) { LogStore.err("UpdateSheet:wn-ui", e) }
+                }
+            } catch (e: Throwable) { LogStore.err("UpdateSheet:wn", e) }
+        }.start()
+    }
 }
