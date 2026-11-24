@@ -189,10 +189,10 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
             return e.rawX >= loc[0] && e.rawX <= loc[0] + v.width && e.rawY >= loc[1] && e.rawY <= loc[1] + v.height
         }
     }.apply { layoutDirection = View.LAYOUT_DIRECTION_LTR; isClickable = true }
-    private val bg = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFF3A3A3A.toInt(), 0xFF141414.toInt(), 0xFF080808.toInt(), BLACK))
-    private var bgColor = 0xFF3A3A3A.toInt()
+    private val bg = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, if (Design.isNew()) intArrayOf(0xFF2A2352.toInt(), 0xFF120F24.toInt(), 0xFF07070D.toInt(), BLACK) else intArrayOf(0xFF3A3A3A.toInt(), 0xFF141414.toInt(), 0xFF080808.toInt(), BLACK))   // (v1226) الجديد: أورورا بنفسجي غامق
+    private var bgColor = if (Design.isNew()) 0xFF2A2352.toInt() else 0xFF3A3A3A.toInt()
     private var bgAnim: ValueAnimator? = null
-    private val orb = OrbView(act).apply { accent = BLUE }
+    private val orb = OrbView(act).apply { accent = if (Design.isNew()) 0xFF7CF3D0.toInt() else BLUE }   // (v1226) الجديد: نعناعي
     private val fTitle = ui.text("مفيش حاجة شغّالة", 16f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END }
     private val fArtist = ui.text("", 12f, C_DIM).apply { gravity = Gravity.CENTER; setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END }
     // (v294) زرار واحد بس جنب اسم الأغنية: «المعلومات غلط» ← يدوّر من الأول (الاسم والمغني والألبوم + الغلاف والكلمات). باقي الأزرار القديمة اتشالت.
