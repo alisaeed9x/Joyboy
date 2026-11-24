@@ -378,7 +378,7 @@ class LibraryUi(
         // الهيدر: العنوان يمين، وأزرار (رابط · فتح من الملفات · إعدادات · ريفريش) — الريفريش في أقصى الشمال
         val head = LinearLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(4)) }
         head.addView(backV)
-        head.addView(hbtn("☰") { openDrawer() })   // (v460) القايمة الجانبية: أقسام المكتبة على طريقة MX Player
+        if (!Design.isNew()) head.addView(hbtn("☰") { openDrawer() })   // (v460) القايمة الجانبية: أقسام المكتبة على طريقة MX Player
         val tcol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; addView(titleTv); addView(subTv) }
         head.addView(tcol, LinearLayout.LayoutParams(0, -2, 1f))
         // ▣ تحديد الكل (ضغطة مطولة: تحديد / إلغاء) · ⋮ و ✕ بيظهروا بس وفيه تحديد
@@ -414,7 +414,9 @@ class LibraryUi(
             toastMsg(if (dist() == "flat") "🗂 كل الملفات في قايمة واحدة" else "📁 عرض بالفولدرات")
         }
         val labels = VideoLib.sortLabels.map { it.second }
+        ui.chipCompact = Design.isNew()
         val chips = ui.chips(labels, { VideoLib.sortLabelOf(sortKey()) }) { n -> Cfg.put(K + "lib_sort", VideoLib.sortKeyOf(n)); render() }
+        ui.chipCompact = false
         val toolRow = LinearLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(8), ui.dp(2), ui.dp(8), ui.dp(2)) }
         toolRow.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; layoutDirection = View.LAYOUT_DIRECTION_RTL; addView(chips) }, LinearLayout.LayoutParams(0, -2, 1f))
         toolRow.addView(distBtn); toolRow.addView(gridBtn)

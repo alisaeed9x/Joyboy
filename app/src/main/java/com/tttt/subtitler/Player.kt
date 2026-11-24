@@ -3467,7 +3467,8 @@ class PlayerActivity : Activity(), Host {
     // ===================== (v1097) T2: زرار «ترجم» على طول + ⚙ إعدادات الترجمة + سلايدر سريع ↔ دقيق =====================
     private fun trIsTx(): Boolean = TrProfile.kind() == "transcribe"
     /** قبل البداية: بيبدأ على طول بالنوع والمحرك المحفوظين (⚙). بعد البداية (أو سوفت صب شغّال): قايمة الأدوات زي الأول */
-    private fun trMainClick(anchor: View) {
+    private fun trMainClick(anchor: View, direct: Boolean = false) {
+        if (Design.isNew() && !direct && !dubBypass) { trOptionsDialog(anchor); return }
         if (engineStarted || sfBusy.isNotEmpty() || sfLive.isNotEmpty()) { translateMenu(anchor); return }
         if (TrProfile.uiMode() == TrProfile.DUB && !dubBypass) { dubToggle(); return }   // (v1229) وضع الدبلجة: الزرار بيدبلج (ولو مفيش ترجمة بيترجم الأول)
         dubBypass = false
@@ -3481,6 +3482,26 @@ class PlayerActivity : Activity(), Host {
             tx -> startGeminiTranscribe()
             off -> whisperStart()
             else -> geminiStart()
+        }
+    }
+
+    /** (v1236) التصميم الجديد: دوسة على زرار ترجم/دبلج بتفتح خيارات في نص الشاشة: ترجم · كمّل · من الأول · إعادة الترجمة */
+    private fun trOptionsDialog(anchor: View) {
+        shDialog(320) { col, close ->
+            val dub = TrProfile.uiMode() == TrProfile.DUB
+            val started = engineStarted
+            val paused = ::engine.isInitialized && engine.userPaused
+            col.addView(shHead(if (dub) "🎙 دبلجة / ترجمة" else "🌐 الترجمة", if (started) (trPct.toString() + "% · " + subCountNow() + " جملة") else "اختار وهيبدأ على طول"))
+            col.addView(shRow(if (dub) "🎙 دبلج / استئناف" else "▶ ترجم") { close(); h.post { trMainClick(anchor, true) } })
+            col.addView(shRow("⏯ كمّل") { close(); h.post { if (started && paused) beginTranslate() else if (started) say("الترجمة شغّالة بالفعل") else trMainClick(anchor, true) } })
+            col.addView(shRow("🔁 من الأول") { close(); h.post {
+                if (::engine.isInitialized && started) { val k = redoKeep; player.seekTo(0); redoGo("🔄 بترجم من الأول…") { syncTxFlag("إعادة من الأول"); engine.redoAll(k) } }
+                else say("ابدأ الترجمة الأول (▶ ترجم) وبعدها تقدر تعيدها من الأول") } })
+            col.addView(shRow("🔄 إعادة الترجمة", "", true) { close(); h.post { if (::engine.isInitialized && started) redoDialog(anchor) else batchDialog() } })
+            if (started) col.addView(shDuo(
+                shBtn(if (paused) "▶ كمّل" else "⏸ إيقاف مؤقت", if (paused) SH_BLUE else SH_GRAY) { close(); if (paused) beginTranslate() else pauseTranslate() },
+                shBtn("⏹ إلغاء", SH_RED) { close(); h.post { cancelDialog() } }))
+            col.addView(shRow("إغلاق") { close() })
         }
     }
 
@@ -3584,8 +3605,8 @@ class PlayerActivity : Activity(), Host {
             if (::realEngine.isInitialized && !remote && realEngine.applied.isNotEmpty())
                 col.addView(shRow("( ) شيل الأقواس من الجمل المتغيّرة", realEngine.applied.size.toString() + " جملة") { realEngine.clearMarks(); touchSubs(); again() })   // (v1099) T4
             // (v1098) حفظ: الإعدادات دي بتتطبّق تلقائي على أي فيديو تاني تفتحه بعد كده
-            col.addView(shRow("🔀 اختار نظام تاني (جيميناي · وشبر · تفريغ)", "", true) { close(); h.post { translateMenu(anchor) } })
-            col.addView(shRow("🔧 إعدادات متقدمة", "", true) { close(); h.post { modeSettings(anchor) } })
+            if (!Design.isNew()) col.addView(shRow("🔀 اختار نظام تاني (جيميناي · وشبر · تفريغ)", "", true) { close(); h.post { translateMenu(anchor) } })
+            if (!Design.isNew()) col.addView(shRow("🔧 إعدادات متقدمة", "", true) { close(); h.post { modeSettings(anchor) } })
             col.addView(shRow("إغلاق") { close() })
             refresh()
         }
@@ -5320,15 +5341,15 @@ class PlayerActivity : Activity(), Host {
         gTool.addView(pd("📥 استيراد ملف ترجمة (بيترجم فورًا)") { doImport() })
         gTool.addView(pd("📂 فتح فيديو") { doOpen() })
         // (v1025) اللي اتشال من الشريط العلوي لقلّة الاستعمال بقى هنا
-        gTool.addView(pd("📜 اللوج") { toggleLog() })
-        gTool.addView(pd("🧑 الشخصيات") { showChars() })
-        gTool.addView(pd("☑ اسألني عند الخروج (تبديل)") {
+        if (!Design.isNew()) gTool.addView(pd("📜 اللوج") { toggleLog() })
+        if (!Design.isNew()) gTool.addView(pd("🧑 الشخصيات") { showChars() })
+        if (!Design.isNew()) gTool.addView(pd("☑ اسألني عند الخروج (تبديل)") {
             val on = !Cfg.bool("ask_bg_exit", true)
             Cfg.put("ask_bg_exit", if (on) "1" else "0")
             giShowFn(if (on) "هسألك لما تخرج: كمّل في الخلفية ولا لا" else "لما تخرج: الترجمة بتتقفل من غير سؤال ومن غير خلفية")
         })
         // (v1020) ✨ تحسين الصورة اتنقل برّه القايمة: زرار لوحده جنب ☰ في الشريط العلوي
-        gTool.addView(pd("🕳 سد الفجوات") {   // (v1196) كان بيقول «بحاول» حتى لو مفيش حاجة تتسد أو الترجمة واقفة
+        if (!Design.isNew()) gTool.addView(pd("🕳 سد الفجوات") {   // (v1196) كان بيقول «بحاول» حتى لو مفيش حاجة تتسد أو الترجمة واقفة
                 val fc = try { engine.failedCount() } catch (_: Throwable) { 0 }
                 val wasPaused = try { engine.paused } catch (_: Throwable) { false }
                 if (fc == 0 && !wasPaused) { say("🕳 مفيش مقاطع فاشلة دلوقتي — الفجوات اللي فيها صوت من غير ترجمة بتتسد تلقائي أثناء الترجمة") }
@@ -5348,18 +5369,18 @@ class PlayerActivity : Activity(), Host {
             if (vs.isEmpty()) gVer.addView(ui.text("مفيش نسخ محفوظة لسه", 12f, Color.WHITE).apply { setPadding(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(8)) })
             vs.forEachIndexed { i, v -> gVer.addView(pd("${v.name} — ${v.subs.size} جملة") { restoreVersion(i) }) }
         }
-        gTool.addView(pk("🗂 ترجمات الفيديو ›") { fillVer(); dismissPop(); togglePop(menuB, gVer, false) })
-        gTool.addView(pd("🔄 إعادة ترجمة") { batchDialog() })
+        if (!Design.isNew()) gTool.addView(pk("🗂 ترجمات الفيديو ›") { fillVer(); dismissPop(); togglePop(menuB, gVer, false) })
+        if (!Design.isNew()) gTool.addView(pd("🔄 إعادة ترجمة") { batchDialog() })
         gTool.addView(pd("🎙 دبلجة عربي (تشغيل/إيقاف)") { dubToggle() })   // (v418)
         gTool.addView(pd("🗣 صوت الدبلجة: سلمى ⇄ شاكر") { dubVoiceSwap() })   // (v418)
         gTool.addView(pd("👁 الوضع البصري") { visualDialog() })
         gTool.addView(pd("🌙 ترجمة بالخلفية") { translateInBackground() })
-        gTool.addView(pd("📶 استهلاك النت") { netDialog() })
-        gTool.addView(pd("📜 ذكّرني") { recapDialog() })
-        gTool.addView(pd("😴 مؤقت النوم") { sleepDialog() })   // (v452)
-        gTool.addView(pd("📸 لقطة إطار") { snapFrame() })   // (v469) B12
-        gTool.addView(pd("📑 فصول الفيديو") { chaptersSheet() })   // (v469) B9
-        gTool.addView(pd("⏭ التالي تلقائي: " + if (Cfg.str("autoplay_next", "1") == "1") "شغّال" else "مقفول") { v -> val on = Cfg.str("autoplay_next", "1") != "1"; Cfg.put("autoplay_next", if (on) "1" else "0"); v.text = "⏭ التالي تلقائي: " + (if (on) "شغّال" else "مقفول") })   // (v469) B13
+        if (!Design.isNew()) gTool.addView(pd("📶 استهلاك النت") { netDialog() })
+        if (!Design.isNew()) gTool.addView(pd("📜 ذكّرني") { recapDialog() })
+        if (!Design.isNew()) gTool.addView(pd("😴 مؤقت النوم") { sleepDialog() })   // (v452)
+        if (!Design.isNew()) gTool.addView(pd("📸 لقطة إطار") { snapFrame() })   // (v469) B12
+        if (!Design.isNew()) gTool.addView(pd("📑 فصول الفيديو") { chaptersSheet() })   // (v469) B9
+        if (!Design.isNew()) gTool.addView(pd("⏭ التالي تلقائي: " + if (Cfg.str("autoplay_next", "1") == "1") "شغّال" else "مقفول") { v -> val on = Cfg.str("autoplay_next", "1") != "1"; Cfg.put("autoplay_next", if (on) "1" else "0"); v.text = "⏭ التالي تلقائي: " + (if (on) "شغّال" else "مقفول") })   // (v469) B13
         // (v356) اتشالت من القايمة: ترجمة جوجل بقت اختيار جوه خط الترجمة (الإعدادات ▸ 🚀). الدالة googleTranslateNow() لسه موجودة.
         // gTool.addView(pd("🌍 ترجمة جوجل (من غير API)") { googleTranslateNow() })
         // (v87) الإعدادات: قايمة صغيرة منسدلة بالأقسام — دوسة على قسم تفتحه دايركت (من غير شاشة القايمة الكبيرة)
@@ -5455,7 +5476,7 @@ class PlayerActivity : Activity(), Host {
         val auxRow = FlowRow(this).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL }
         auxRow.addView(makeTrRow(true))
         val lgIcon = trLgB   // (v224) هيتحطوا جنب 🗣 في الشريط السفلي
-        fsBar.addView(auxRow, LinearLayout.LayoutParams(-1, -2))
+        if (!Design.isNew()) fsBar.addView(auxRow, LinearLayout.LayoutParams(-1, -2))
         fsBar.addView(timeRow, LinearLayout.LayoutParams(-1, ui.dp(30)))
         // صف الأدوات الصغيرة (فوق أزرار الشاشة) على اليمين: Aa (حجم/توقيت) · 📋 اللوج · 📝 الجمل · CC · 💬 وضع الترجمة
         val toolRow = FrameLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR }
@@ -5513,7 +5534,7 @@ class PlayerActivity : Activity(), Host {
         val rotBarB = ui.fsCircle("⛶") { toggleFs(); showChrome() }.apply { textSize = 18f }   // (v1019) ⛶ الشاشة الكاملة/التدوير — نفس أيقونة زرار MeeTube بالظبط
         val pipBarB = ui.fsCircle("⧉") { enterPip() }
         (noticeBtn.parent as? ViewGroup)?.removeView(noticeBtn)
-        rightB.addView(noticeBtn, LinearLayout.LayoutParams(-2, ui.dp(34)).apply { marginEnd = ui.dp(8) })
+        if (!Design.isNew()) rightB.addView(noticeBtn, LinearLayout.LayoutParams(-2, ui.dp(34)).apply { marginEnd = ui.dp(8) })
         rightB.addView(pipBarB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)))
         rightB.addView(fsBarFs, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginStart = ui.dp(4) })   // (v1019) نفس ترتيب MeeTube: ⤢ ثم ⛶
         rightB.addView(rotBarB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginStart = ui.dp(4) })
@@ -5532,12 +5553,12 @@ class PlayerActivity : Activity(), Host {
             fun lp(i: Int) = LinearLayout.LayoutParams(if (i == 0) -2 else ui.dp(38), ui.dp(38)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) }
             leftB.addView(lockB, lockLp()); leftB.addView(aiB); smallIcon(lgIcon); smallIcon(audRouteB)
             (noticeBtn.parent as? ViewGroup)?.removeView(noticeBtn)
-            rightB.addView(noticeBtn, LinearLayout.LayoutParams(-2, ui.dp(34)).apply { marginEnd = ui.dp(8) })
+            if (!Design.isNew()) rightB.addView(noticeBtn, LinearLayout.LayoutParams(-2, ui.dp(34)).apply { marginEnd = ui.dp(8) })
             rightB.addView(pipBarB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)))
             rightB.addView(fsBarFs, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginStart = ui.dp(4) })   // (v1019) نفس ترتيب MeeTube: ⤢ ثم ⛶
             rightB.addView(rotBarB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginStart = ui.dp(4) })
             // من الشمال لليمين (LTR): 🔁 📋 📝 🔤 ⏱ 💬 CC ☰  ← يعني ☰ على اليمين جنب عداد الجمل
-            tbRow.addView(toolBtns[4], lp(4)); tbRow.addView(spdB, lp(1)); tbRow.addView(toolBtns[2], lp(2)); tbRow.addView(rtB, lp(6))   // (v1025)
+            tbRow.addView(toolBtns[4], lp(4)); tbRow.addView(spdB, lp(1)); tbRow.addView(toolBtns[2], lp(2)); if (Design.isNew()) tbRow.addView(toolBtns[1], lp(1)) else tbRow.addView(rtB, lp(6))   // (v1025)
             tbRow.addView(textB, LinearLayout.LayoutParams(-2, ui.dp(38)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
             tbRow.addView(toolBtns[0], lp(0)); tbRow.addView(toolBtns[5], lp(5)); // (v1141) 📝 ترجمات الفيديو اتشال من الشريط (الشكل القديم) — القايمة لسه من ☰ → 🗂 ترجمات الفيديو
             // (v378) 🎙 فصل الصوت و HD و 📃 اتشالوا من الشريط العلوي (الجودة رجعت جنب زرار الترجمة، والتالي بقى لوحة تحت الأزرار)
@@ -5616,6 +5637,14 @@ class PlayerActivity : Activity(), Host {
             if (tbl.topMargin != tp) { tbl.topMargin = tp; tb.layoutParams = tbl; placeFloatFn() }
         }
         if (::badgeRowV.isInitialized) badgeRowV.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, orr, ob -> if (r - l != orr - ol || b - t != ob - ot) fixTopRowFn() }   // (v265) في ملء الشاشة الهامش بيكبر عشان الشريط مايغطّيش الكبسولات   // (v90) يمين، جنب عداد الجمل
+        if (Design.isNew()) {
+            chromeFrame.addView(auxRow, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(ui.dp(12), 0, ui.dp(12), ui.dp(170)) })
+            fsBar.addOnLayoutChangeListener { _, _, t, _, b, _, _, _, _ ->
+                val alp = auxRow.layoutParams as FrameLayout.LayoutParams
+                val nb = (fsBar.layoutParams as FrameLayout.LayoutParams).bottomMargin + (b - t) + ui.dp(8)
+                if (alp.bottomMargin != nb) { alp.bottomMargin = nb; auxRow.layoutParams = alp }
+            }
+        }
         chromeFrame.addView(fsBar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { if (Design.isNew()) setMargins(ui.dp(12), 0, ui.dp(12), ui.dp(6)) else setMargins(0, 0, 0, ui.dp(6)) })
         // زرار القفل الصغير: بيظهر لما تلمس الشاشة وهي مقفولة
         lockOv = ui.fsCircle("🔒") { setLock(false) }.apply { visibility = View.GONE }
@@ -7969,7 +7998,9 @@ class PlayerActivity : Activity(), Host {
         h.removeCallbacks(dubLiveTick); h.postDelayed(dubLiveTick, 1500L)
     }
 
+    private var dubTapAt = 0L
     private fun dubToggle() {
+        if (Design.isNew()) { val nowT = System.currentTimeMillis(); if (nowT - dubTapAt < 1500L) return; dubTapAt = nowT }
         val dp = dubPlay
         if (dp != null && dp.active) { dubLiveOn = false; h.removeCallbacks(dubLiveTick); dp.stop(); say("🎙 الدبلجة اتقفلت — صوت الفيديو الأصلي رجع"); return }
         if (dubBusy) { dubCancel = true; say("⏹ بلغي الدبلجة…"); return }

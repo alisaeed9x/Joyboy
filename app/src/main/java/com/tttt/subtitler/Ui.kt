@@ -108,6 +108,7 @@ class Ui(val ctx: Context, var th: Theme) {
         setOnCheckedChangeListener { _, v -> onChange(v); if (isShown) Motion.pop(this, 0.94f) }
     }
     /** صف chips بيلف على أكتر من سطر؛ بيرجّع الـ container، والاختيار بيتبلّغ بـ onPick */
+    var chipCompact = false
     fun chips(items: List<String>, selected: () -> String, onPick: (String) -> Unit): LinearLayout {
         val all = ArrayList<Pair<String, TextView>>()
         var built = false
@@ -121,7 +122,7 @@ class Ui(val ctx: Context, var th: Theme) {
         var row: LinearLayout? = null; var w = 0
         val max = ctx.resources.displayMetrics.widthPixels - dp(70)
         for (label in items) {
-            val tv = IconTextView(ctx).apply { text = label; textSize = 13f; setPadding(dp(12), dp(11), dp(12), dp(11)) }   // (v458) chips ~48dp لمس
+            val tv = IconTextView(ctx).apply { text = label; textSize = if (chipCompact) 11f else 13f; if (chipCompact) setPadding(dp(9), dp(5), dp(9), dp(5)) else setPadding(dp(12), dp(11), dp(12), dp(11)) }   // (v458) chips ~48dp لمس
             tv.measure(0, 0); val tw = tv.measuredWidth + dp(8)
             if (row == null || w + tw > max) { row = LinearLayout(ctx).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL }; col.addView(row); w = 0 }
             w += tw

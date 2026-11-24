@@ -427,6 +427,7 @@ class DubPlay(private val p: androidx.media3.exoplayer.ExoPlayer) {
                     if (c != null) { val m = MediaPlayer(); m.setDataSource(c.file.absolutePath); m.prepare(); mp = m }
                 }
                 val m = mp; val cc = curChunk
+                if (Design.isNew()) p.volume = if (cc != null) 0f else savedVol
                 if (m != null && cc != null) {
                     val want = (posMs - (cc.t0 * 1000).toLong()).toInt().coerceAtLeast(0)
                     if (p.isPlaying) {
@@ -446,7 +447,7 @@ class DubPlay(private val p: androidx.media3.exoplayer.ExoPlayer) {
         stop()
         chunks.clear(); curChunk = null
         live = true; offsetMs = vidOffsetMs
-        savedVol = p.volume; p.volume = Dub.origVol()
+        savedVol = p.volume; if (!Design.isNew()) p.volume = Dub.origVol()
         h.post(liveTick)
     }
 
