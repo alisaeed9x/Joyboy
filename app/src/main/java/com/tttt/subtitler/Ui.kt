@@ -101,9 +101,9 @@ class Ui(val ctx: Context, var th: Theme) {
     }
     private fun plainSwitchRow(t: String, on: Boolean, onChange: (Boolean) -> Unit): Switch = IconSwitch(ctx).apply {   // (v909) الشكل القديم: تلفزيون + احتياطي لو سويتش MeeTube مااتبناش
         text = t; isChecked = on; setTextColor(th.text); textSize = 14f; setPadding(0, dp(6), 0, dp(6)); minHeight = dp(48)   // (v458)
-        if (MtGlass.on()) try {   // (v893) سويتش MeeTube: مقبض أبيض · مسار لون التمييز مفعّل / رمادي غامق مقفول (v905: الزجاجي بيرسم نفسه)
+        try {   // (v1280) مفعّل = أخضر · مقفول = أحمر، في كل الأشكال
             thumbTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
-            trackTintList = android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(th.primary, 0xFF3A3A3F.toInt()))
+            trackTintList = android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(0xFF22C55E.toInt(), 0xFFE5484D.toInt()))
         } catch (_: Throwable) {}
         setOnCheckedChangeListener { _, v -> onChange(v); if (isShown) Motion.pop(this, 0.94f) }
     }

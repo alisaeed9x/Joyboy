@@ -95,8 +95,8 @@ public class GlassSwitch extends SwitchMaterial {
         mDp = getResources().getDisplayMetrics().density;
         mSimple = NavLens.lowEnd(context);
         mSlop = ViewConfiguration.get(context).getScaledTouchSlop();
-        mOn = ContextCompat.getColor(context, R.color.meetube_switch_on);
-        mOff = ContextCompat.getColor(context, R.color.meetube_switch_off);
+        mOn = 0xFF22C55E;   // (v1280) مفعّل = أخضر
+        mOff = 0xFFE5484D;  // (v1280) مقفول = أحمر
         setThumbDrawable(new ColorDrawable(Color.TRANSPARENT));
         setTrackDrawable(new ColorDrawable(Color.TRANSPARENT));
         setBackground(null);

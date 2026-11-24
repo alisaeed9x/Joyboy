@@ -681,7 +681,7 @@ class MainActivity : Activity() {
                 ui.section("🎨 الشكل", false,
                     ui.noHint(),
                     ui.noHint(),
-                    ui.slider("درجة الدفء", Cfg.int("warm", 0), 0, 100, "%") { Cfg.put("warm", it.toString()); refreshWarm() }),
+                    ui.noHint()),
                 ui.section("📱 نوع الجهاز (موبايل · تابلت · تلفزيون)", false,
                     ui.noHint(),
                     ui.chips(listOf("🔄 تلقائي", "📱 موبايل", "📟 تابلت", "📺 تلفزيون"), { DeviceUi.label(DeviceUi.pref()) }) { n ->
@@ -1105,6 +1105,7 @@ class MainActivity : Activity() {
         // (v1112) نداء SplashArt.show اتشال من واجهة الموبايل — السبلاش للتلفزيون بس (TvHome)
         try { LogStore.add("⏱ Main.onCreate = " + (android.os.SystemClock.uptimeMillis() - t0Boot) + "ms") } catch (_: Throwable) {}
         // (v469) D2 طبقة الفلتر الدافئ فوق محتوى الشاشة (ما بتمنعش اللمس: View عادية من غير مستمعات، والعناصر العائمة فوقها)
+        try { if (Cfg.int("warm", 0) != 0) Cfg.put("warm", "0") } catch (_: Throwable) {}   // (v1280) دفء الشاشة اتشال
         warmView = View(this).apply { isClickable = false; isFocusable = false; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
         frame.addView(warmView, FrameLayout.LayoutParams(-1, -1))
         refreshWarm()
