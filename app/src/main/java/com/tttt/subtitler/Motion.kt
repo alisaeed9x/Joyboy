@@ -18,6 +18,9 @@ import android.view.animation.DecelerateInterpolator
 import android.view.animation.LayoutAnimationController
 import android.view.animation.TranslateAnimation
 import java.util.WeakHashMap
+import androidx.dynamicanimation.animation.DynamicAnimation
+import androidx.dynamicanimation.animation.SpringAnimation
+import androidx.dynamicanimation.animation.SpringForce
 
 /**
  * (v312) أنيميشنز مركزية خفيفة: كلها قصيرة (≤ 300ms) وبتتبع «مقياس مدة الأنيميشن» بتاع النظام
@@ -47,11 +50,25 @@ object Motion {
         v.animate().setStartDelay(0L).scaleX(1f).scaleY(1f).setDuration(Skins.dur(280L)).setInterpolator(Skins.interp(2.6f)).start()
     }
 
+    private val springs = WeakHashMap<View, HashMap<DynamicAnimation.ViewProperty, SpringAnimation>>()
+
+    /** (v1247) سبرينج فيزيائي (androidx.dynamicanimation الموجودة أصلًا في المشروع): بيبدأ بسرعة الحركة الحالية فمفيش قفزة سرعة لو الحركة اتقطعت، وبيستقر ناعم (damping قريب من الحرج: من غير ارتداد ظاهر). لو الحركات مقفولة من النظام بيحط القيمة فورًا */
+    fun spring(v: View, prop: DynamicAnimation.ViewProperty, to: Float, stiffness: Float = 380f, damping: Float = 0.9f) {
+        try {
+            if (Skins.dur(100L) <= 0L) { cancelSprings(v); prop.setValue(v, to); return }
+            val m = springs.getOrPut(v) { HashMap() }
+            val s = m.getOrPut(prop) { SpringAnimation(v, prop).apply { spring = SpringForce(to) } }
+            s.spring.setFinalPosition(to).setStiffness(stiffness).setDampingRatio(damping)
+            s.start()
+        } catch (e: Throwable) { try { prop.setValue(v, to) } catch (_: Throwable) {} }
+    }
+    fun cancelSprings(v: View) { try { springs[v]?.values?.forEach { if (it.isRunning) it.cancel() } } catch (_: Throwable) {} }
+
     /** (v1203) استقرار الأيقونة لما تتفعّل: من أصغر شوية ومنزّلة 3dp لمكانها في اتجاه واحد (expo-out) — من غير قفزة لفوق ورجوع */
     fun bounce(v: View) {
-        v.animate().cancel()
+        v.animate().cancel(); cancelSprings(v)
         v.scaleX = 0.86f; v.scaleY = 0.86f; v.translationY = dp(v, 3f)
-        v.animate().setStartDelay(0L).scaleX(1f).scaleY(1f).translationY(0f).setDuration(Skins.dur(380L)).setInterpolator(MtGlass.EXPO_OUT).start()
+        spring(v, DynamicAnimation.SCALE_X, 1f, 420f, 0.88f); spring(v, DynamicAnimation.SCALE_Y, 1f, 420f, 0.88f); spring(v, DynamicAnimation.TRANSLATION_Y, 0f, 420f, 0.9f)   // (v1247) سبرينج بدل expo-out
     }
 
     private val blurring = WeakHashMap<View, Animator>()

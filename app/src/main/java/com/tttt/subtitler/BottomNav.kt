@@ -391,10 +391,10 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         if (animate) {
             moving = true
             indicator.animate().cancel()
-            indicator.animate().setStartDelay(0L).translationX(x).setDuration(if (glassNav) 320L else 300L).setInterpolator(if (glassNav) MtGlass.EMPHASIZED else MtGlass.EXPO_OUT).start()
+            Motion.spring(indicator, androidx.dynamicanimation.animation.DynamicAnimation.TRANSLATION_X, x, 330f, 0.86f)   // (v1247) الكبسولة بتتحرك بسبرينج: لو اتقطعت بتكمل من سرعتها من غير نتشة
             indicator.removeCallbacks(doneMoving); indicator.postDelayed(doneMoving, 360L)   // (v1119) RenderThread
         } else {
-            indicator.animate().cancel(); moving = false
+            indicator.animate().cancel(); Motion.cancelSprings(indicator); moving = false
             indicator.translationX = x
         }
         return true

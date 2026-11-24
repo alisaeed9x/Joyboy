@@ -705,7 +705,6 @@ class MainActivity : Activity() {
                     *MtLook.views(this, ui, th).toTypedArray()) else null,
                 ui.section("🎞 الجودة الافتراضية", true,
                     ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { n -> val qh = ytQv[ytQ.indexOf(n).coerceAtLeast(0)]; Cfg.put("yt_maxh", qh.toString()); TvQ.askPin(this, qh) },   // (v1163)
-                    ui.switchRow("🔍 حدّة الفيديو (عرض SurfaceView زي المشغّل القديم)", Cfg.bool("sharp_surface", true)) { Cfg.put("sharp_surface", if (it) "1" else "0") },
                     ui.noHint()),
                 ui.section("⚡ السلاسة والفريمات", false,
                     ui.chips(MtSmooth.hzChoices(this), { MtSmooth.hzLabel(this) }) { n -> MtSmooth.setHz(this, n) },

@@ -2960,7 +2960,7 @@ class PlayerActivity : Activity(), Host {
                     chipB.text = if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else if (soft) "💬 سوفت سب · " + modeShort() + " ▾" else (if (tx) "✍ تفريغ · " else if (TrProfile.uiMode() == TrProfile.DUB) "🎙 دبّلج · " else "▶ ترجم · ") + modeShort() + " ▾"
                     val aur = Design.isNew() && !soft && !tx
                     chipB.background = if (aur) auroraPill(12) else ui.box(if (soft) 0xFF2E7D32.toInt() else if (tx) 0xFF2A8C8C.toInt() else 0xFFE53935.toInt(), 0x33FFFFFF, 12)
-                    if (Design.isNew()) chipB.setTextColor(if (aur) 0xFF0B0A18.toInt() else Color.WHITE)
+                    if (Design.isNew()) chipB.setTextColor(if (aur && !ui.th.isLight) 0xFF0B0A18.toInt() else Color.WHITE)
                 }
                 else {
                     LoadUi.set(chipB, (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + dotsNow() + " ▾")
@@ -2987,7 +2987,7 @@ class PlayerActivity : Activity(), Host {
                 LoadUi.set(tr, if (!engineStarted) (if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else if (soft) "💬 سوفت سب · " + modeShort() + " ▾" else (if (tx) "✍ تفريغ · " else if (TrProfile.uiMode() == TrProfile.DUB) "🎙 دبّلج · " else "▶ ترجم · ") + modeShort() + " ▾") else (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + dotsNow() + " ▾")
                 val aur2 = Design.isNew() && !engineStarted && !soft && !tx
                 tr.background = if (aur2) auroraPill(10) else ui.box(if (!engineStarted) (if (soft) 0xFF2E7D32.toInt() else if (tx) 0xFF2A8C8C.toInt() else 0xFFE53935.toInt()) else (if (paused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF2A8C8C.toInt()), 0x33FFFFFF, 10)
-                if (Design.isNew()) tr.setTextColor(if (aur2) 0xFF0B0A18.toInt() else Color.WHITE)
+                if (Design.isNew()) tr.setTextColor(if (aur2 && !ui.th.isLight) 0xFF0B0A18.toInt() else Color.WHITE)
                 pz2.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 cx2.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 pz2.playing = !paused
@@ -7954,7 +7954,10 @@ class PlayerActivity : Activity(), Host {
         }.start()
     }
     private fun fsPlayDp(): Int = if (Design.isNew()) 64 else 56
-    private fun auroraPill(rDp: Int): GradientDrawable = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xFF7CF3D0.toInt(), 0xFF8B7CFF.toInt())).apply { cornerRadius = ui.dp(rDp).toFloat() }
+    private fun auroraPill(rDp: Int): GradientDrawable {
+        if (ui.th.isLight) return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xCCEF5350.toInt(), 0xCCC62828.toInt())).apply { cornerRadius = ui.dp(rDp).toFloat(); setStroke(maxOf(1, ui.dp(1)), 0x66FFFFFF) }   // (v1247) الفاتح: زجاجي بالأحمر القديم بدل النعناعي
+        return GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xFF7CF3D0.toInt(), 0xFF8B7CFF.toInt())).apply { cornerRadius = ui.dp(rDp).toFloat() }
+    }
     private fun trComplete(): Boolean = try { trPct >= 100 || (::realEngine.isInitialized && realEngine.fullyDone()) } catch (_: Throwable) { false }
     private val dubPoll = object : Runnable {
         override fun run() {

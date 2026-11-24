@@ -30,7 +30,7 @@ object UpdateSheet {
         val notes = ui.text("بنجيب التغييرات...", 13f, th.text)
         col.addView(title)
         col.addView(notes, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
-        val sv = ScrollView(a).apply { isVerticalScrollBarEnabled = false; addView(col) }
+        val sv: View = col   // (v1247) GAlert بيلف المحتوى في سكرول بحد أقصى ٦٠٪ من الشاشة، والأزرار ثابتة تحته
         var apkUrl = ""
         var upToDateFlag = false
         var page = "https://github.com/alisaeed9x/Joyboy/releases/latest"
@@ -117,7 +117,7 @@ object UpdateSheet {
                         col.addView(ui.text(name + "  (عندك v" + ver + ")", 13f, th.muted), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2) })
                         col.addView(ui.text("إيه اللي اتغيّر:", 15f, th.text, true), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(12) })
                         col.addView(ui.text(txt, 15f, th.text), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
-                        val sv = ScrollView(a).apply { isVerticalScrollBarEnabled = false; addView(col) }
+                        val sv: View = col   // (v1247) GAlert بيلف المحتوى في سكرول بحد أقصى ٦٠٪ من الشاشة، والأزرار ثابتة تحته
                         val g = GAlert(a).setView(sv)
                         g.setNegativeButton("مش دلوقتي") { _, _ -> Cfg.put("upd_skip", tag) }
                         g.setPositiveButton("تحديث") { _, _ ->
@@ -218,7 +218,7 @@ object UpdateSheet {
                         }
                         col.addView(ui.text("✨ إيه الجديد في $name", 17f, th.text, true))
                         col.addView(ui.text(txt, 13f, th.text), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
-                        val sv = ScrollView(a).apply { isVerticalScrollBarEnabled = false; addView(col) }
+                        val sv: View = col   // (v1247) GAlert بيلف المحتوى في سكرول بحد أقصى ٦٠٪ من الشاشة، والأزرار ثابتة تحته
                         GAlert(a).setView(sv).setPositiveButton("تمام", null).show()
                     } catch (e: Throwable) { LogStore.err("UpdateSheet:wn-ui", e) }
                 }

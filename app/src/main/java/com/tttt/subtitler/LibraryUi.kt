@@ -762,6 +762,7 @@ class LibraryUi(
         val card = LinearLayout(act).apply {
             orientation = if (exp) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8))   // (v1247) هامش متساوي ٨dp من الأربع جهات حوالين الصورة
             val cols = if (th.isLight) intArrayOf(th.card, th.surface) else intArrayOf(0x337CF3D0, 0x338B7CFF)
             background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, cols).apply { cornerRadius = ui.dp(20).toFloat(); setStroke(ui.dp(1), th.border) }
             isClickable = true
@@ -769,7 +770,8 @@ class LibraryUi(
         }
         roundClip(card, 20)
         val iv = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(th.border) }
-        val info = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)) }
+        roundClip(iv, 12)   // (v1247) زوايا الصورة مدوّرة (٢٠ − ٨) فالإطار حواليها متساوي
+        val info = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(4), ui.dp(8), ui.dp(4)) }
         info.addView(ui.text("▶ كمّل المشاهدة" + (if (exp) "  ·  وقفت عند " + fmtT(hr.posSec) else ""), 11.5f, th.primary, true))
         info.addView(ui.text(hv.title, if (exp) 15f else 13.5f, th.text, true).apply { maxLines = if (exp) 2 else 1; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(3) })
         val bar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; background = ui.box(th.border, th.border, 3) }
