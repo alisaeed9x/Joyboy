@@ -104,7 +104,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             GAlert(act).setTitle("📺 التلفزيون").setItems(labels) { _, _ -> TvModeFab.toggleAlways(act) }.setNegativeButton("إغلاق", null).show()
         }) { TvModeFab.toggle(act) })
         val sys = ArrayList<MoreItem>()
-        sys.add(MoreItem("📊", "النت والداتا", false) { try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } })
+        sys.add(MoreItem("📊", "النت والداتا", false) { try { collapseMore(); NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } })
         if (!tvDev) sys.add(MoreItem("🔄", "مركز التحديث", false) { try { if (Design.isNew()) UpdateSheet.show(act) else GhCiUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:gh", e) } })   // (v861) تحديث البرنامج + تحديث التلفزيون + لوج الفشل
         if (!tvDev) sys.add(MoreItem("📤", "إرسال التحديث للتلفزيون", false) { try { RemoteClient.forcePushFlow(act) } catch (e: Throwable) { LogStore.err("Nav:pushUpd", e) } })   // (v1048) من صفحة «المزيد» مباشرة
         sys.add(MoreItem("🎨", "التصميم: " + Design.label(Design.cur()), false) { try { Design.pick(act) } catch (e: Throwable) { LogStore.err("Nav:design", e) } })   // (v1219) تبديل الشكل جديد/قديم
@@ -207,6 +207,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     // (v939) عدّاد إعادة محاولة وضع الكبسولة: الخلية لسه ما اتقاستش — بنعيد لحد 10 مرات وبعدين نقف بدل ما ندوّر للأبد
     private var placeTries = 0
     private var capAnim: android.animation.ValueAnimator? = null
+    private var firstShow = true   // (v1253) أول ظهور للكبسولة بعد ما تتحط في مكانها بس (كانت بتبان بنص الحجم/في الحافة قبل أول قياس)
     private lateinit var rowLL: LinearLayout
     private val glassNav = MtGlass.on() && !rail   // (v893) تبويب مضيء (lit tab) بدل خط المؤشّر
     private val indicator = View(act).apply {
@@ -244,7 +245,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                 addView(box, if (idx == NET) LinearLayout.LayoutParams(ui.dp(54), ui.dp(30)) else LinearLayout.LayoutParams(ui.dp(38), ui.dp(20)))
                 addView(lab, LinearLayout.LayoutParams(-2, -2))
                 Glass.pressable(this)
-                setOnClickListener { if (idx == MORE) { set(idx); toggleMore(act) } else if (idx == REMOTE) { set(idx); try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else if (idx == CARE) { set(idx); collapseMore(); try { CareUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:care", e) } } else if (idx == IR) { set(idx); collapseMore(); try { IrCatalogUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:ir", e) } } else if (idx == NET) { set(idx); collapseMore(); try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } } else { collapseMore(); val leaves = act !is MainActivity || idx == 2 || idx == 3 || idx == 4   // (v911) كل اللي بيفتح شاشة تانية (متصفح/مخزن/يوتيوب)؛ التبويبات الداخلية في Main عندها أنيميشنها
+                setOnClickListener { if (idx == MORE) { set(idx); toggleMore(act) } else if (idx == REMOTE) { set(idx); try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else if (idx == CARE) { set(idx); collapseMore(); try { CareUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:care", e) } } else if (idx == IR) { set(idx); collapseMore(); try { IrCatalogUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:ir", e) } } else if (idx == NET) { collapseMore(); try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } } else { collapseMore(); val leaves = act !is MainActivity || idx == 2 || idx == 3 || idx == 4   // (v911) كل اللي بيفتح شاشة تانية (متصفح/مخزن/يوتيوب)؛ التبويبات الداخلية في Main عندها أنيميشنها
                     if (leaves && !rail && cellOf(idx) != cellOf(active) && !navPending) {   // (v911) الشاشات التانية Activity لوحدها: كانت بتتفتح/تتقفل لحظة الدوسة فمفيش عدسة ولا انزلاق ولا ضغطة، والفتح الثقيل كان بيتزامن مع الأنيميشن فيقطّع. دلوقتي الأنيميشن بيخلّص الأول وبعدها الانتقال
                         val prev = active; val inMain = act is MainActivity
                         navPending = true; set(idx)
@@ -323,6 +324,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             view.addView(host, LinearLayout.LayoutParams(-1, 0))
             view.addView(wrap, LinearLayout.LayoutParams(-1, -2))
         }
+        if (glassNav) { indicator.alpha = 0f; indicator.postDelayed({ if (indicator.alpha < 1f && !moving) { place(false); indicator.alpha = 1f } }, 900L) }   // (v1253)
         paint()
         badge(4, 0)
         // (v941) وضع الكبسولة أول مرة تحت الخلية النشطة: الشريط اللي بيتبني في شاشة تانية (متصفح/ملفات/يوتيوب) كان بيسيب الكبسولة على الحافة
@@ -445,6 +447,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         } else {
             indicator.animate().cancel(); Motion.cancelSprings(indicator); capAnim?.cancel(); moving = false
             indicator.translationX = x
+            if (firstShow && glassNav) { firstShow = false; if (indicator.alpha < 1f) indicator.alpha = 1f }
         }
         return true
     }

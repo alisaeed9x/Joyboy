@@ -39,6 +39,9 @@ class Found(val url: String, val kind: String, val title: String = "", @Volatile
     /** (v976) Origin الحقيقي للطلب (لو المشغّل الخارجي بيبعته) — اللي نجح في فحص اللينك */
     @Volatile var origin = ""   // (v847) ref = الـReferer الحقيقي للطلب (إطار المشغّل) · page = صفحة المتصفح (للعنوان/التجميع)
     @Volatile var size = -1L
+    /** (v1253) HLS: قايمة رئيسية فيها كل الجودات (master) أو قايمة جودة واحدة (media). بيتحدد وقت الفحص */
+    @Volatile var master = false
+    @Volatile var mediaPl = false
     @Volatile var mime = ""
     /** (v1156) مؤكَّد من جوه الصفحة: الطلب رد 2xx فعلًا أو عنصر الفيديو حمّل المدة (من صيّاد الإطارات) — مش مجرد اسم لينك */
     @Volatile var conf = false

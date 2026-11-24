@@ -810,16 +810,19 @@ class BrowserActivity : Activity() {
         try { if (profOk()) androidx.webkit.ProfileStore.getInstance().getProfile(PRIV_PROFILE)?.let { it.cookieManager.removeAllCookies(null); it.cookieManager.flush(); it.webStorage.deleteAllData() } } catch (_: Throwable) {}
     }
     private var privIsoWarned = false
+    private val privNoIso = HashSet<Long>()   // (v1253) تبويبات متخفية العزل فيها مش متأكَّد: ما بتحمّلش أي صفحة (بدل ما تشارك كوكيز/تخزين المتصفح العادي)
     private fun privIsoWarn() { if (privIsoWarned) return; privIsoWarned = true; try { Notice.show(this, "⚠ المتخفي مش معزول على جهازك — حدّث «Android System WebView» من المتجر", 4500L) } catch (_: Throwable) {} }
     private fun makeWebView(t: BTab): WebView {
         if (PopupGuard.learned.isEmpty()) try { PopupGuard.learned.addAll(prefs().getStringSet("pop_learned", emptySet()) ?: emptySet()) } catch (_: Throwable) {}   // (v816)
         val w = if (t.priv) PrivWebView(this) else WebView(this)   // (v1188) المتخفي: الكيبورد ما بيتعلّمش الكلمات اللي بتكتبها (زي كروم المتخفي)
         if (t.priv) {
             w.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            privNoIso.add(t.id)
             if (!profOk()) { LogStore.add("⚠ (v1188) المتخفي: الـWebView على الجهاز مابيدعمش عزل الملفات (MULTI_PROFILE) — كوكيز وتخزين جوجل مشتركة مع التصفح العادي"); privIsoWarn() }
             else try {
                 androidx.webkit.ProfileStore.getInstance().getOrCreateProfile(PRIV_PROFILE); androidx.webkit.WebViewCompat.setProfile(w, PRIV_PROFILE)   // (v1174) لازم قبل أي استخدام تاني للـWebView
                 val pn = try { androidx.webkit.WebViewCompat.getProfile(w).name } catch (_: Throwable) { "?" }
+                if (pn == PRIV_PROFILE) privNoIso.remove(t.id)
                 if (pn == PRIV_PROFILE) LogStore.add("🕶 (v1188) المتخفي: ملف منفصل «$pn» شغّال — كوكيز وتخزين جوجل معزولين") else { LogStore.add("⚠ (v1188) المتخفي: الملف اللي اتفعّل «$pn» مش «$PRIV_PROFILE» — العزل مش شغّال"); privIsoWarn() }
             } catch (e: Throwable) { LogStore.add("⚠ (v1188) المتخفي: فشل عزل الملف — " + (e.message ?: e.javaClass.simpleName).take(120)); privIsoWarn() }
         }
@@ -1021,7 +1024,7 @@ class BrowserActivity : Activity() {
     // ===== إدارة التبويبات =====
     /** url = null: تبويب فاضي بيستنى WebViewTransport (نافذة جديدة من صفحة) */
     private fun newTab(url: String?, switchTo: Boolean, opener: Long = -1L, priv: Boolean = false): BTab {
-        val t = BTab(nextId++); t.opener = opener; t.priv = priv
+        val t = BTab(nextId++); t.opener = opener; t.priv = priv || (opener >= 0L && tabs.any { it.id == opener && it.priv })   // (v1253) التبويب اللي بيتفتح من تبويب متخفي يفضل متخفي (كان بيتفتح عادي ويشارك الكوكيز/التخزين)
         t.desktop = prefs().getBoolean("br_desktop_default", false)
         if (url == null) { t.wv = makeWebView(t); t.loaded = true } else t.url = url
         tabs.add(t)
@@ -1150,6 +1153,11 @@ class BrowserActivity : Activity() {
     }
     private fun loadIn(w: WebView, t: BTab, u: String) {
         t.url = u; t.errUrl = ""
+        if (t.priv && privNoIso.contains(t.id) && u.startsWith("http")) {   // (v1253) العزل مش شغّال: ارفض بدل ما تشارك بيانات التصفح العادي
+            try { w.loadUrl("about:blank") } catch (_: Throwable) {}
+            Notice.show(this, "🔒 المتخفي اتوقّف: جهازك مابيعزلش بيانات المتخفي عن العادي. حدّث «Android System WebView» من المتجر", 5000L)
+            return
+        }
         if (escapeGoogle && u.trimEnd('/') == GOOGLE) { escapeGoogle = false; if (saver.loadOfflineHome(w, t)) return }   // (v1016)
         saver.beforeLoad(w, t, u)   // (v783)
         val hdr = saver.headersFor(u)
@@ -2110,6 +2118,7 @@ class BrowserActivity : Activity() {
             var pl = httpPeek(f.url, hd, 40_000) ?: return VRes(false, false, -1L, pk.mime)
             var plUrl = f.url
             var text = String(pl.body, Charsets.UTF_8)
+            f.master = text.contains("#EXT-X-STREAM-INF"); f.mediaPl = !f.master   // (v1253)
             if (text.contains("#EXT-X-STREAM-INF")) {
                 val v = text.lines().map { it.trim() }.firstOrNull { it.isNotEmpty() && !it.startsWith("#") } ?: return VRes(false, true, -1L, pk.mime)
                 plUrl = resolveUrl(f.url, v)
@@ -2815,7 +2824,12 @@ class BrowserActivity : Activity() {
         val gone0 = HashSet<Grp>(); val into0 = HashMap<Grp, Grp>()
         for ((pk, gs) in out0.groupBy { pgOf(it) }) {
             if (pk.isEmpty()) continue
-            val ad = gs.filter { isAdaptive(it) }; val fx = gs.filter { isFixed(it) }
+            val ad0 = gs.filter { isAdaptive(it) }; val fx = gs.filter { isFixed(it) }
+            // (v1253) لقطة رئيسية واحدة (master/DASH فيها كل الجودات) + قوايم جودة ثابتة (480/1080…) لنفس الصفحة: نفس الفيديو ← نخلّي الرئيسية بس ونشيل المكرر
+            val mG = ad0.filter { g -> g.qs.any { it.f.master || it.f.kind == "DASH" } }
+            val mediaG = if (mG.size == 1) ad0.filter { g -> g !in mG && g.qs.all { it.f.mediaPl } } else emptyList()
+            mediaG.forEach { gone0.add(it) }
+            val ad = ad0.filter { it !in mediaG }
             val seenH0 = HashSet<Int>()
             if (ad.size == 1 && fx.isNotEmpty()) {
                 val mq = (ad[0].qs + fx.flatMap { it.qs }.sortedByDescending { it.h }).filter { q -> q.h <= 0 || seenH0.add(q.h) }

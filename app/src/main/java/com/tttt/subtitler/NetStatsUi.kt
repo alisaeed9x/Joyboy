@@ -267,6 +267,9 @@ class NetStatsUi(private val act: Activity, private val ui: Ui, private val th: 
         NetLedger.flushNow()
         render()
         val d = ui.sheet(act, "📶 استهلاك الداتا", listOf<View>(col), solid = true)   // (v924) معتمة: الإعدادات اللي وراها كانت بتبان وتلخبط
+        d.setCancelable(true); d.setCanceledOnTouchOutside(true)
+        (d as? GDialog)?.onBack = { closeAll(); true }   // (v1253) رجوع = يقفل كل صفحات النت ويرجّعك للي وراها (كانت بتفضل فوق المزيد)
+        d.setOnDismissListener { dialogs.remove(d) }
         dialogs.add(d); d.show()
     }
 }

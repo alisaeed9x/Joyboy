@@ -68,7 +68,7 @@ object UpdateSheet {
                         title.text = "✅ أنت على آخر تحديث"
                         try { (d as? android.app.AlertDialog)?.getButton(android.content.DialogInterface.BUTTON_POSITIVE)?.text = "تمام" } catch (_: Throwable) {}
                         upToDateFlag = true
-                    } else if (tName.isNotBlank()) title.text = "⬆ $tName"
+                    } else if (tName.isNotBlank()) title.text = "⬆ $tName   (النسخة اللي عندك: v$ver)"
                     notes.text = cleanTxt.ifBlank { "مفيش ملاحظات للنسخة دي." }
                 } catch (_: Throwable) {}
             }
@@ -114,7 +114,8 @@ object UpdateSheet {
                             setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6))
                         }
                         col.addView(ui.text("🔔 فيه تحديث جديد", 19f, th.primary, true))
-                        col.addView(ui.text(name + "  (عندك v" + ver + ")", 13f, th.muted), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2) })
+                        col.addView(ui.text("الجديد: " + name, 14f, th.text, true), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(4) })
+                        col.addView(ui.text("النسخة اللي عندك دلوقتي: v" + ver, 14f, th.muted), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2) })
                         col.addView(ui.text("إيه اللي اتغيّر:", 15f, th.text, true), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(12) })
                         col.addView(ui.text(txt, 15f, th.text), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
                         val sv: View = col   // (v1247) GAlert بيلف المحتوى في سكرول بحد أقصى ٦٠٪ من الشاشة، والأزرار ثابتة تحته
@@ -162,7 +163,10 @@ object UpdateSheet {
                     val m = Regex("^(?:[-*•]|\\d+[.)])\\s+(.*)$").find(s)
                     val txt = m?.groupValues?.get(1) ?: s
                     if (!items.containsKey(sec)) { items[sec] = ArrayList(); order.add(sec) }
-                    items[sec]!!.add(txt + "  (" + tag + ")")
+                    val lst = items[sec]!!
+                    val suf = "  (" + tag + ")"
+                    if (m == null && lst.isNotEmpty() && lst.last().endsWith(suf)) lst[lst.size - 1] = lst.last().removeSuffix(suf) + " " + txt + suf   // (v1253) سطر بيكمّل البند اللي قبله: مش بند لوحده
+                    else lst.add(txt + suf)
                 }
                 if (latestOnly) break
             }
