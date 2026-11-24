@@ -904,7 +904,12 @@ class PlayerActivity : Activity(), Host {
     private fun hasSoftSubNow(): Boolean {
         val u = uri?.toString() ?: ""
         if (u.isNotEmpty() && sfDoneUri == u) return true
-        return try { (sfSidecar()?.let { sc -> !SrtWriter.isOurs(this, sc) } == true) || castSubFile?.exists() == true || mobileSub?.exists() == true || sfNativeCount() > 0 } catch (_: Throwable) { false }
+        return try {
+            val sc = sfSidecar()
+            val ours = sc != null && SrtWriter.isOurs(this, sc)
+            val realSide = if (sc == null) false else if (!ours) true else subCands().any { f -> !SrtWriter.isOurs(this, f) }
+            realSide || castSubFile?.exists() == true || mobileSub?.exists() == true || (sfNativeCount() - (if (ours) 1 else 0)) > 0
+        } catch (_: Throwable) { false }
     }
     private fun modeLabelNow(): String = try {
         if (!engineStarted && sfDoneLabel.isNotEmpty() && sfDoneUri.isNotEmpty() && sfDoneUri == (uri?.toString() ?: "")) sfDoneLabel else modeName()
@@ -2717,7 +2722,7 @@ class PlayerActivity : Activity(), Host {
         if (logArcPlay != null) { if (!auto) say("🗂 إنت بتشوف ترجمات لوج محفوظ — افتح الفيديو عادي لو عايز تترجم من جديد"); return }   // (v1167)
         val asked = trAsked; trAsked = false
         if (!auto && softGate()) return
-        if (::engine.isInitialized && (sfShown || (sfDoneUri.isNotEmpty() && sfDoneUri == (uri?.toString() ?: "")))) sfClearForBatch()
+        if (::engine.isInitialized && (sfShown || (sfDoneUri.isNotEmpty() && sfDoneUri == (uri?.toString() ?: "")))) sfClearForBatch() else sfBatchFresh = false
         if (Cfg.str("hard_mode", "0") == "1" && !SourceMode.keepHard()) {   // (v291) الهجين بهارد سب محتاج hard_mode=1 والصوت شغّال
             Cfg.put("hard_mode", "0")   // (v240) أي ترجمة صوتية بتطلّعك من وضع الهارد سب
             // (v261) ووقّف الوضع البصري بتاع الهارد سب كمان، وإلا بيفضل شغّال جنب الترجمة الصوتية
@@ -2739,7 +2744,8 @@ class PlayerActivity : Activity(), Host {
                 Notice.show(this, "✍ الفيديو ده متفرّغ بالفعل 100% — عرضت النص الأصلي (للتفريغ من الأول: 🔁 إعادة)", 4200L)
                 return
             }
-            Notice.show(this, "✓ الفيديو ده مترجم 100% — مترجمتش حاجة (لو عايز تعيد: 🔁 إعادة)", 3600L)
+            Notice.show(this, "✓ الفيديو ده مترجم 100% — اختار تعيد من فين", 3600L)
+            if (!auto && !asked && !remote) h.post { try { redoDialog(window.decorView) } catch (_: Throwable) {} }
             return
         }
         // (v685) فيه ترجمة محفوظة ناقصة: اسأل (كمّل الباقي / من مكان التشغيل / من الأول وجديد) بدل ما يكمّل لوحده
