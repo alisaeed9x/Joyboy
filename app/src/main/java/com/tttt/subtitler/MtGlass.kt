@@ -34,14 +34,18 @@ object MtGlass {
 
     // ===== ألوان الزجاج — بتتقرا من موارد MeeTube نفسها (colors_mobile.xml: values = فاتح · values-night = داكن) =====
     // (v907) كانت أرقام منسوخة؛ دلوقتي المصدر مورد MeeTube (MeeRes) والرقم اللي هنا مجرد fallback لو المورد مش لاقيه.
-    fun fill(th: Theme): Int = MeeRes.color("meetube_glass_fill", 0x17FFFFFF, 0x0D000000)
-    fun stroke(th: Theme): Int = MeeRes.color("meetube_glass_stroke", 0x24FFFFFF, 0x1A000000)
-    fun rim(th: Theme): Int = MeeRes.color("meetube_glass_rim", 0x3DFFFFFF, 0x1F000000)
-    fun sheen(th: Theme): Int = MeeRes.color("meetube_glass_sheen", 0x1AFFFFFF, 0x80FFFFFF.toInt())
+    /** (v1281) شريط «الشفافية والبلر» (glass_level 0..100، الافتراضي 50 = الشكل الحالي): فوق 50 أشفّ وأبلر، تحت 50 أعتم وأخف بلر */
+    @JvmStatic fun level(): Int = try { Cfg.int("glass_level", 50).coerceIn(0, 100) } catch (_: Throwable) { 50 }
+    @JvmStatic fun blurScale(): Float = 0.4f + level() / 50f * 0.6f   // 0.4 .. 1.6
+    @JvmStatic fun ak(c: Int): Int { val k = (150 - level()) / 100f; val a = (((c ushr 24) and 0xFF) * k).toInt().coerceIn(0, 255); return (a shl 24) or (c and 0x00FFFFFF) }
+    fun fill(th: Theme): Int = ak(MeeRes.color("meetube_glass_fill", 0x17FFFFFF, 0x0D000000))
+    fun stroke(th: Theme): Int = ak(MeeRes.color("meetube_glass_stroke", 0x24FFFFFF, 0x1A000000))
+    fun rim(th: Theme): Int = ak(MeeRes.color("meetube_glass_rim", 0x3DFFFFFF, 0x1F000000))
+    fun sheen(th: Theme): Int = ak(MeeRes.color("meetube_glass_sheen", 0x1AFFFFFF, 0x80FFFFFF.toInt()))
     /** (v1207) التحديد (تبويب الشريط السفلي · chip مختار) بصبغة لون التمييز الدافي (Mocha/Latte) بدل الرمادي المحايد */
     fun selected(th: Theme): Int = (0x2B shl 24) or (th.primary and 0x00FFFFFF)
     /** (v1206) سطح الشيت/الدايلوج بلون سطح الثيم الدافي (كان رمادي مزرق من MeeTube وبيتنافر مع Espresso/Vanilla) */
-    fun sheet(th: Theme): Int = ((if (th.isLight) 0xEB else 0xE6) shl 24) or (th.surface and 0x00FFFFFF)
+    fun sheet(th: Theme): Int = ak(((if (th.isLight) 0xEB else 0xE6) shl 24) or (th.surface and 0x00FFFFFF))
     fun navInactive(th: Theme): Int = MeeRes.color("meetube_nav_inactive", 0xADFFFFFF.toInt(), 0x99000000.toInt())
     /** شريط سفلي: لون الصفحة مرفوع شوية (زجاج من غير حاجة تتبلّر تحته: «9% أبيض عشان يبان على الصفحة المسطّحة») */
     fun barSolid(th: Theme): Int = Glass.blend(th.bg, if (th.isLight) Color.BLACK else Color.WHITE, 0.07f)

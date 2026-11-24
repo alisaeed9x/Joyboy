@@ -272,7 +272,7 @@ public final class SheetGlass {
                     boolean copied = result == PixelCopy.SUCCESS;
                     if (copied && !mLive) {
                         // The message pill is frosted, not see-through: twice the blur, shapes gone.
-                        blur(page, mTint != 0 ? BLUR_RADIUS * 2 : BLUR_RADIUS);
+                        blur(page, Math.max(1, Math.round((mTint != 0 ? BLUR_RADIUS * 2 : BLUR_RADIUS) * com.tttt.subtitler.MtGlass.blurScale())));
                     }
                     show(copied ? page : null, origin, pageW, pageH);
                 }, mMain);
@@ -395,7 +395,7 @@ public final class SheetGlass {
             if (live && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 mBlurNode = new android.graphics.RenderNode("MeeTube sheet glass");
                 mBlurNode.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(
-                        LIVE_BLUR_PX / SCALE, LIVE_BLUR_PX / SCALE, Shader.TileMode.CLAMP));
+                        LIVE_BLUR_PX * com.tttt.subtitler.MtGlass.blurScale() / SCALE, LIVE_BLUR_PX * com.tttt.subtitler.MtGlass.blurScale() / SCALE, Shader.TileMode.CLAMP));
             } else {
                 mBlurNode = null;
             }
