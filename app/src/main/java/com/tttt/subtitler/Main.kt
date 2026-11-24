@@ -1117,7 +1117,7 @@ class MainActivity : Activity() {
             if (t0 == "music") frame.post { showTabFn(1) }
             else if (t0 == "tasks") frame.post { showTabFn(5) }
             else if (t0 == "settings") frame.post { settingsShow?.invoke(null) }
-            else if (t0 == null && b == null && !fromTv && intent?.getStringExtra("reopen_tab") == null && (intent?.action == null || intent?.action == Intent.ACTION_MAIN) && NavCustom.startPage().isNotEmpty()) {   // (v1273) صفحة البداية المختارة
+            else if (t0 == null && b == null && !fromTv && intent?.getStringExtra("reopen_tab") == null && (intent?.action == null || intent?.action == Intent.ACTION_MAIN) && NavCustom.startPage().isNotEmpty() && !DeviceUi.isTv(this)) {   // (v1273) صفحة البداية المختارة
                 val sp = NavCustom.startPage()
                 frame.post { try { when (sp) {
                     "browser" -> { save(); startActivity(TabNav.front(Intent(this, BrowserActivity::class.java))) }
