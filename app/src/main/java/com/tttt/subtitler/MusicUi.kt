@@ -192,6 +192,8 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private val bg = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, if (Design.isNew()) intArrayOf(0xFF2A2352.toInt(), 0xFF120F24.toInt(), 0xFF07070D.toInt(), BLACK) else intArrayOf(0xFF3A3A3A.toInt(), 0xFF141414.toInt(), 0xFF080808.toInt(), BLACK))   // (v1226) الجديد: أورورا بنفسجي غامق
     private var bgColor = if (Design.isNew()) 0xFF2A2352.toInt() else 0xFF3A3A3A.toInt()
     private var bgAnim: ValueAnimator? = null
+    private val artBg: android.widget.ImageView by lazy { android.widget.ImageView(act).apply { scaleType = android.widget.ImageView.ScaleType.CENTER_CROP; alpha = 0.5f
+        if (android.os.Build.VERSION.SDK_INT >= 31) try { setRenderEffect(android.graphics.RenderEffect.createBlurEffect(60f, 60f, android.graphics.Shader.TileMode.CLAMP)) } catch (_: Throwable) {} } }
     private val orb = OrbView(act).apply { accent = if (Design.isNew()) 0xFF7CF3D0.toInt() else BLUE }   // (v1226) الجديد: نعناعي
     private val fTitle = ui.text("مفيش حاجة شغّالة", 16f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END }
     private val fArtist = ui.text("", 12f, C_DIM).apply { gravity = Gravity.CENTER; setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END }
@@ -265,7 +267,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun navCol(c: Int) = blend(c, BLACK, 0.80f)
     fun applyNavTint() { onNavTint(if (fullOn) navCol(bgColor) else null) }
     // شريط التقدم الطولي (v198): الوقت الحالي · السلايدر · مدة الأغنية
-    private val seekBar = SeekBar(act).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;
+    private val seekBar = (if (Design.isNew()) WaveSeek(act) else SeekBar(act)).apply { layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR;
         max = 1000; layoutDirection = View.LAYOUT_DIRECTION_LTR; splitTrack = false
         progressTintList = android.content.res.ColorStateList.valueOf(BLUE)
         progressBackgroundTintList = android.content.res.ColorStateList.valueOf(0x40FFFFFF)
@@ -969,6 +971,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     // ===== بناء المشغّل الكامل =====
     private fun buildFull() {
         full.background = bg
+        if (Design.isNew()) full.addView(artBg, 0, FrameLayout.LayoutParams(-1, -1))
         full.setPadding(0, ui.dp(6), 0, ui.dp(14))
         // شريط علوي: ⌄ · مقبض · ⋮
         val top = FrameLayout(act)
@@ -1112,6 +1115,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         tintDone = true; tintBmp = b
         val col = ArtColor.dominant(b) ?: 0xFF8B6B50.toInt()       // من غير غلاف: بنفسجي زي التصميم
         animateBg(col)
+        if (Design.isNew()) try { artBg.setImageBitmap(b); artBg.visibility = if (b != null && android.os.Build.VERSION.SDK_INT >= 31) View.VISIBLE else View.GONE } catch (_: Throwable) {}
         miniFill.setBackgroundColor((col and 0x00FFFFFF) or 0x4A000000)
     }
 
@@ -1828,4 +1832,27 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     fun destroy() { h.removeCallbacksAndMessages(null); MusicEngine.listeners.remove(onEngine) }
     /** بيوقف مؤقتًا لو فيه حاجة شغّالة (مثلًا لما فيديو يتفتح) */
     fun pause() { MusicEngine.pause() }
+}
+
+
+/** (v1234) شريط تقدم متموج (الشكل الجديد): الجزء اللي اتشغّل موجة نعناعية، والباقي خط رمادي، والإبهام دايرة بيضا. LTR دايمًا */
+class WaveSeek(ctx: Context) : SeekBar(ctx) {
+    private val d = ctx.resources.displayMetrics.density
+    private val pt = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    private val path = android.graphics.Path()
+    init { max = 1000; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+    override fun onDraw(c: android.graphics.Canvas) {
+        val l = paddingLeft.toFloat(); val r = (width - paddingRight).toFloat(); val cy = height / 2f
+        val x = l + (r - l) * progress / max.coerceAtLeast(1)
+        pt.style = android.graphics.Paint.Style.STROKE; pt.strokeCap = android.graphics.Paint.Cap.ROUND; pt.strokeWidth = 3 * d
+        pt.color = 0x40FFFFFF; c.drawLine(x, cy, r, cy, pt)
+        pt.color = 0xFF7CF3D0.toInt(); pt.strokeWidth = 3.2f * d
+        val amp = 3.2f * d; val wl = 22f * d
+        path.reset(); path.moveTo(l, cy)
+        var px = l
+        while (px < x) { px = minOf(x, px + 2f * d); val k = ((px - l) / wl * 2.0 * Math.PI); path.lineTo(px, cy + (Math.sin(k) * amp).toFloat()) }
+        c.drawPath(path, pt)
+        pt.style = android.graphics.Paint.Style.FILL; pt.color = Color.WHITE
+        c.drawCircle(x, cy, 7 * d, pt)
+    }
 }

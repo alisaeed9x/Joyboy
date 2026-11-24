@@ -334,7 +334,23 @@ class GlyphBtn(ctx: Context, var glyph: String, private val iconDp: Int) : View(
     private val d = resources.displayMetrics.density
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
 
-    fun set(g: String, color: Int = tint) { if (glyph == g && tint == color) return; glyph = g; tint = color; invalidate() }
+    private var morph = if (glyph == "pause") 1f else 0f
+    private var morphAnim: ValueAnimator? = null
+    fun set(g: String, color: Int = tint) {
+        if (glyph == g && tint == color) return
+        val pp = (g == "play" || g == "pause") && (glyph == "play" || glyph == "pause") && glyph != g
+        glyph = g; tint = color
+        if (Design.isNew() && (g == "play" || g == "pause")) {
+            val to = if (g == "pause") 1f else 0f
+            morphAnim?.cancel()
+            if (pp && isShown) { morphAnim = ValueAnimator.ofFloat(morph, to).apply { duration = 260L; interpolator = DecelerateInterpolator(1.4f); addUpdateListener { morph = it.animatedValue as Float; invalidate() }; start() } } else morph = to
+        }
+        invalidate()
+    }
+    private fun lerp(a: Float, b: Float) = a + (b - a) * morph
+    private fun morphPoly(c: Canvas, x: FloatArray, y: FloatArray) {
+        val path = Path(); path.moveTo(x[0], y[0]); for (i in 1 until x.size) path.lineTo(x[i], y[i]); path.close(); c.drawPath(path, p)
+    }
 
     private fun line(c: Canvas, vararg pts: Float) {
         val path = Path(); path.moveTo(pts[0], pts[1]); var i = 2
@@ -350,7 +366,11 @@ class GlyphBtn(ctx: Context, var glyph: String, private val iconDp: Int) : View(
         p.strokeCap = Paint.Cap.ROUND; p.strokeJoin = Paint.Join.ROUND
         fun fill() { p.style = Paint.Style.FILL }
         fun stroke(w: Float = 1.9f) { p.style = Paint.Style.STROKE; p.strokeWidth = w }
-        when (glyph) {
+        if (Design.isNew() && (glyph == "play" || glyph == "pause")) {
+            p.style = Paint.Style.FILL_AND_STROKE; p.strokeWidth = 1.6f
+            morphPoly(c, floatArrayOf(lerp(7.5f, 6.3f), lerp(13.5f, 9.5f), lerp(13.5f, 9.5f), lerp(7.5f, 6.3f)), floatArrayOf(4.8f, lerp(8.4f, 4.8f), lerp(15.6f, 19.2f), 19.2f))
+            morphPoly(c, floatArrayOf(lerp(13.5f, 14.5f), lerp(19.5f, 17.7f), lerp(19.5f, 17.7f), lerp(13.5f, 14.5f)), floatArrayOf(lerp(8.4f, 4.8f), lerp(12f, 4.8f), lerp(12f, 19.2f), lerp(15.6f, 19.2f)))
+        } else when (glyph) {
             "pause" -> { fill(); c.drawRoundRect(5.5f, 4f, 10.3f, 20f, 1.6f, 1.6f, p); c.drawRoundRect(13.7f, 4f, 18.5f, 20f, 1.6f, 1.6f, p) }
             "play" -> { p.style = Paint.Style.FILL_AND_STROKE; p.strokeWidth = 2f; val t = Path(); t.moveTo(7.5f, 4.8f); t.lineTo(19.5f, 12f); t.lineTo(7.5f, 19.2f); t.close(); c.drawPath(t, p) }
             "prev" -> { p.style = Paint.Style.FILL_AND_STROKE; p.strokeWidth = 1.6f
