@@ -333,3 +333,4 @@ com/tttt/subtitler/NavCustom.kt
 com/tttt/subtitler/FkData.kt
 com/tttt/subtitler/FkGen.kt
 com/tttt/subtitler/FkUi.kt
+com/tttt/subtitler/BrSet.kt

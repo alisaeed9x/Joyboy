@@ -593,8 +593,10 @@ class MainActivity : Activity() {
                         recreate() }),
                 ui.section("🗣 لغة الترجمة (مستقلة عن لغة التطبيق)", true,
                     LangPicker.settingRow(this, ui, "🗣 لغة الترجمة", { Cfg.str("tr_lang", "auto") }) { c -> I18n.setTranslationLang(c) })) }, false, "", "🌐"),
-            TabDef("fkset", "💞 إعدادات فتح كلام", { try { FkUi.settingsViews(this, ui, th) } catch (e: Throwable) { LogStore.err("Main:fkset", e); listOf<View>(ui.noHint()) } }, false, "الجرأة والرومانسية والعمق · حجم الخط · التوليد", "💞"),
+            tab("browser", { try { BrSet.views(this, ui, th) } catch (e: Throwable) { LogStore.err("Main:browser", e); listOf<View>(ui.noHint()) } }),
+            tab("youtube", ytSettingsViews),
             TabDef("navcust", "🧩 تخصيص البلاطات", { try { NavCustom.views(this, ui, th, navUi?.catalog(this) ?: emptyList()) } catch (e: Throwable) { LogStore.err("Main:navcust", e); listOf<View>(ui.noHint()) } }, false, "رتّب/أخفِ أزرار الشريط وبلاطات المزيد · أقسام الإعدادات كبلاطات · صفحة البداية", "🧩"),
+            TabDef("fkset", "💞 إعدادات فتح كلام", { try { FkUi.settingsViews(this, ui, th) } catch (e: Throwable) { LogStore.err("Main:fkset", e); listOf<View>(ui.noHint()) } }, false, "الجرأة والرومانسية والعمق · حجم الخط · التوليد", "💞"),
             // ===== 🚀 خط الترجمة: الخطة (تفريغ ← ترجمة ← لهجة) + اللهجة والأسلوب + البرومبتات =====
             tab("general", { listOf<View>(
                 ui.noHint(),
@@ -724,7 +726,6 @@ class MainActivity : Activity() {
                     ui.text("كل مرة بتفتح فيديو (أو بتترجمه من الأول وجديد) بيتحفظ لوج جديد كنسخة مستقلة، معاه الجمل المترجمة اللي طلعت وقتها — حتى لو خرجت ودخلت على نفس الفيديو أو فيديو تاني. لو ما طلعتش ترجمة بيتكتب «ما طلعش مع ترجمة».", 12f, th.muted),
                     ui.switchRow("سجّل اللوجات تلقائيًا", Cfg.bool("logarc_on", true)) { Cfg.put("logarc_on", if (it) "1" else "0") },
                     ui.button("🗂 افتح سجل اللوجات", true) { LogArchiveUi(this, ui, th).show() })) }),
-            tab("youtube", ytSettingsViews),
             // ===== 🎵 الموسيقى =====
             
             TabDef("music", SettingsTabs.label("music"), { listOf<View>(
