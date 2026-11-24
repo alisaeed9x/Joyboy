@@ -324,6 +324,12 @@ object Upd {
                     else btns.addView(ui.button("⬇ ابدأ التنزيل", true) { startJob(j) })
                     btns.addView(ui.button("🔄 تنزيل من الأول") { j.part().delete(); for (k in 0 until SEGS) File(j.dest.path + ".p" + k).delete(); j.done = 0L; startJob(j) })
                 }
+                if (mode != "done") btns.addView(ui.button("🌐 تنزيل خارجي (متصفح / مدير تحميل / نسخ الرابط)") {
+                    try {
+                        val si = android.content.Intent(android.content.Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(android.content.Intent.EXTRA_TEXT, j.url); putExtra(android.content.Intent.EXTRA_SUBJECT, "Joyboy") }
+                        a.startActivity(android.content.Intent.createChooser(si, "افتح / نزّل الرابط بـ…"))
+                    } catch (e: Throwable) { LogStore.err("Upd:share", e) }
+                })
             }
             val total = j.total; val done = j.done
             if (mode == "done") { try { dlg.dismiss() } catch (_: Throwable) {}; return }
