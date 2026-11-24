@@ -4914,6 +4914,7 @@ class PlayerActivity : Activity(), Host {
         }
         say("🔎 مفيش جملة فيها «" + t.take(20) + "»")
     }
+    private var rotLaunch = false
     override fun onCreate(b: Bundle?) {
         NetLedger.start(this); NetLog.start(this); NetGate.apply(this)
         try { if (Build.VERSION.SDK_INT >= 27 && intent.getBooleanExtra("ytpage", false) && intent.getStringExtra("ytid")?.length == 11 && !DeviceUi.isTv(this)) setTheme(R.style.AppPlayerYt) } catch (_: Throwable) {}   // (v1161) نافذة شفافة: الصفحة الخلفية (الفيد) بتبان وقت سحب التصغير زي يوتيوب
@@ -4931,13 +4932,13 @@ class PlayerActivity : Activity(), Host {
             if (wantLand != null) {
                 autoRotDone = true   // الاتجاه معروف: مفيش لفّة تانية بعد أول فريم
                 val isLand = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-                if (wantLand != isLand) requestedOrientation = if (wantLand) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                if (wantLand != isLand) { rotLaunch = true; requestedOrientation = if (wantLand) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT }
             }
         } catch (_: Throwable) {}
         if (incognito) try { window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) } catch (_: Throwable) {}   // (v1062) متخفي: المعاينة في الريسنت سودا
         smoothRotation()   // (v429)
         if (ytPage && (!intent.getBooleanExtra("handoff", false) || intent.getBooleanExtra("ytpage", false))) try { window.setWindowAnimations(if (intent.getBooleanExtra("ytswap", false)) R.style.YtSwapWindowAnim else R.style.YtPageWindowAnim) } catch (_: Throwable) {}   // (v1160) احتياطي لو الروم تجاهلت overridePendingTransition
-        try { if (intent.getBooleanExtra("handoff", false) && !ytPage) overridePendingTransition(0, 0) else if (ytPage && intent.getBooleanExtra("ytswap", false)) overridePendingTransition(R.anim.yt_swap_enter, R.anim.yt_swap_exit) else if (ytPage) overridePendingTransition(R.anim.yt_page_up_enter, R.anim.yt_page_up_exit) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_open_enter, R.anim.player_open_exit) } catch (_: Throwable) {}   // (v899) (v1143) صفحة يوتيوب: بتطلع من تحت (v1130) التسليم من المشغّل المصغّر: من غير حركة حركة فتح المشغّل من MeeTube
+        try { if ((intent.getBooleanExtra("handoff", false) && !ytPage) || (rotLaunch && !ytPage)) overridePendingTransition(0, 0) else if (ytPage && intent.getBooleanExtra("ytswap", false)) overridePendingTransition(R.anim.yt_swap_enter, R.anim.yt_swap_exit) else if (ytPage) overridePendingTransition(R.anim.yt_page_up_enter, R.anim.yt_page_up_exit) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_open_enter, R.anim.player_open_exit) } catch (_: Throwable) {}   // (v899) (v1143) صفحة يوتيوب: بتطلع من تحت (v1130) التسليم من المشغّل المصغّر: من غير حركة حركة فتح المشغّل من MeeTube
         synchronized(liveList) {
             liveList.removeAll { it.get() == null }
             liveList.toList().forEach { r -> r.get()?.let { o -> if (o !== this) try { o.runOnUiThread { o.killForNewVideo() } } catch (_: Throwable) {} } }

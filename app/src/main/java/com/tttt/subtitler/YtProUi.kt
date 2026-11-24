@@ -589,10 +589,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     // ───────── واجهة Main ─────────
     // (v621) كان refresh() بيعمل notifyDataSetChanged + يمسح كاش الـrecents (قراءة ملف على الـUI thread) في نفس لحظة بداية الأنيميشن ← تهنيج. دلوقتي بعد ما الانزلاق يخلص
     private val softRefresh = Runnable { recMemoAt = 0L; try { adapter.notifyDataSetChanged() } catch (_: Throwable) {} }
+    /** (v1246) فيه فيديوهات جديدة (العدّاد الأحمر) ← الاشتراكات · مفيش ← الرئيسية */
+    private fun landTab(): Int = try { if (YtNotify.badgeCount() > 0) 1 else 0 } catch (_: Throwable) { 0 }
     private var leftYt = false   // (v1107)
     fun refresh() {
-        if (cur == null) { recMemoAt = 0L; leftYt = false; openTab(0) }   // (v1107) بيفتح على الرئيسية دايمًا (كان الاشتراكات)
-        else if (leftYt && !watch.isOpen && !chan.isOpen && cur?.let { it.tab == 1 && it.vid == null && it.q == null && it.chUrl == null } == true) { leftYt = false; recMemoAt = 0L; openTab(0) }   // (v1107) خرجت من يوتيوب وإنت في الاشتراكات ورجعت ← الرئيسية
+        if (cur == null) { recMemoAt = 0L; leftYt = false; openTab(landTab()) }   // (v1107) بيفتح على الرئيسية دايمًا (كان الاشتراكات)
+        else if (leftYt && !watch.isOpen && !chan.isOpen && cur?.let { it.tab == 1 && it.vid == null && it.q == null && it.chUrl == null } == true) { leftYt = false; recMemoAt = 0L; openTab(landTab()) }   // (v1107) خرجت من يوتيوب وإنت في الاشتراكات ورجعت ← الرئيسية
         else { leftYt = false; h.removeCallbacks(softRefresh); h.postDelayed(softRefresh, 280L) }
         startPoll()
     }

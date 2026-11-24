@@ -358,10 +358,14 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     fun mode(inYoutube: Boolean) {
         val o = if (lite) LITE_ORDER else if (inYoutube) ytOrder() else normalOrder()
         if (o == order) return
-        order = o; snap = true; indicator.animate().cancel(); moving = false
+        order = o; snap = true; indicator.animate().cancel(); moving = false; indicator.alpha = 0f
         fillRow(); paint(); rowLL.requestLayout()
-        rowLL.post { if (place(false)) snap = false }
+        rowLL.post { if (place(false)) snap = false; showInd() }
+        indicator.postDelayed({ if (indicator.alpha < 1f) { indicator.alpha = 1f } }, 700L)
     }
+
+    /** (v1246) الكبسولة بتظهر بعد ما تتحط في مكانها (كانت بتبان نصها قبل ما الخلايا تتقاس) */
+    private fun showInd() { try { indicator.animate().cancel(); indicator.animate().setStartDelay(0L).alpha(1f).setDuration(140L).start() } catch (_: Throwable) {} }
 
     private fun place(animate: Boolean): Boolean {
         indicator.visibility = if (cellOf(active) in cells.indices) View.VISIBLE else View.INVISIBLE
@@ -403,7 +407,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         val before = cellOf(active)
         val changed = cellOf(i) != before
         active = i; paint()
-        if (snap) { rowLL.requestLayout(); rowLL.post { if (place(false)) snap = false } }
+        if (snap) { rowLL.requestLayout(); rowLL.post { if (place(false)) snap = false; showInd() } }
         else if (changed) {
             val from = cells.getOrNull(before); val to = cells.getOrNull(cellOf(i))
             var lensOn = false

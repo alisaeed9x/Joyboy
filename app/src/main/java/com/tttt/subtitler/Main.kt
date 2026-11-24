@@ -592,7 +592,7 @@ class MainActivity : Activity() {
                 ui.button("▶ شغّل الترجمة الحية") { startActivity(Intent(this, LiveRequestActivity::class.java)) }))
         // (v235) نفس ترتيب الأقسام في كل أشكال الإعدادات (SettingsTabs): المفاتيح والمحرك · الترجمة وشكلها · الصوت والصورة · عام · الموسيقى. المسرد اتشال.
         // (v836) محتوى الأقسام lazy: بيتبني أول مرة القسم يتفتح بس (مش في onCreate) — TabDef بياخد دالة مش قايمة
-        fun tab(id: String, content: () -> List<View>, preview: Boolean = false) = TabDef(id, SettingsTabs.label(id), content, preview, SettingsTabs.sub(id), SettingsTabs.group(id))
+        fun tab(id: String, content: () -> List<View>, preview: Boolean = false) = TabDef(id, SettingsTabs.label(id), { content() + AdvRows.forTab(ui, id) }, preview, SettingsTabs.sub(id), SettingsTabs.group(id))
         val settingsDlg = TabbedDialog(this, ui, if (Cfg.tvOv != null) "📺 إعدادات التلفزيون المشتركة (مش الموبايل)" else "⚙️ الإعدادات", listOf(
             // ===== 🚀 خط الترجمة: الخطة (تفريغ ← ترجمة ← لهجة) + اللهجة والأسلوب + البرومبتات =====
             tab("general", { listOf<View>(

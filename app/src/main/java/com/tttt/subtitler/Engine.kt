@@ -1185,25 +1185,26 @@ class Engine(
 
     private val gateLock = Object()
     @Volatile private var gateOn = false
-    /** (v1244) لما جيميناي يدّي 503 على المفاتيح ورا بعض: كل الطلبات بتقف، واحد بس بيستنى دقيقة ويبعت طلب خفيف؛ لو نجح الكل يكمّل من مكانه، وإلا دقيقة كمان */
+    @Volatile private var gateThread: Thread? = null
+    @Volatile private var gateAt = 0L
+    /** (v1246) لما جيميناي يدّي 503 على المفاتيح ورا بعض: كل الطلبات بتقف، واحد بس (القائد) بيستنى دقيقة وبعدها يعيد الباتش الفاشل نفسه كباتش حقيقي كامل. لو نجح الكل يكمّل (pressureClear)، وإلا دقيقة كمان. المستخدم بيشوف رسالة وقت الضغط ورسالة لما يخلص */
     private fun pressureGate(key: String) {
         var leader = false
-        synchronized(gateLock) { if (!gateOn) { gateOn = true; leader = true } }
-        if (!leader) { while (running && !isClosed && gateOn) nap(500); return }
-        try {
-            host.log("⏸ جيميناي عليه ضغط على المفاتيح — هستنى دقيقة وبعدها أجرّب طلب خفيف")
-            host.status("⏸ جيميناي عليه ضغط — استراحة دقيقة")
-            var n = 0
-            while (running && !isClosed) {
-                nap(60_000L)
-                if (!running || isClosed) break
-                n++
-                val ok = try { Api.generate(curModel(), key, "رد بكلمة واحدة بس: تمام", null, 16, 0.0, false, false); true }
-                    catch (e: ApiErr) { e.code < 500 } catch (_: Exception) { false }
-                if (ok) { host.log("✅ جيميناي رجع بعد الضغط — بكمّل الترجمة من مكان ما وقفت"); Overload.ok(); break }
-                host.log("⏸ لسه عليه ضغط (محاولة $n) — دقيقة كمان")
-            }
-        } finally { gateOn = false }
+        synchronized(gateLock) { if (!gateOn) { gateOn = true; leader = true; gateThread = Thread.currentThread() } else if (gateThread === Thread.currentThread()) leader = true }
+        if (!leader) { while (running && !isClosed && gateOn && System.currentTimeMillis() - gateAt < 150_000L) nap(500); return }
+        val again = gateAt > 0L && System.currentTimeMillis() - gateAt < 150_000L
+        gateAt = System.currentTimeMillis()
+        host.log(if (again) "⏸ لسه عليه ضغط — دقيقة كمان وبعدين أعيد الباتش الفاشل" else "⏸ جيميناي عليه ضغط على المفاتيح — هستنى دقيقة وبعدها أعيد الباتش الفاشل كباتش كامل")
+        host.status("⏸ جيميناي عليه ضغط دلوقتي — استراحة دقيقة")
+        host.notice("⏸ جيميناي عليه ضغط دلوقتي — الترجمة هتكمّل لوحدها")
+        nap(60_000L)
+        gateAt = System.currentTimeMillis()
+    }
+    /** (v1246) أول باتش حقيقي ينجح بعد الضغط: الضغط خلص، الباقي يكمّل عادي */
+    private fun pressureClear() {
+        var was = false
+        synchronized(gateLock) { if (gateOn) { gateOn = false; gateThread = null; gateAt = 0L; was = true } }
+        if (was) { host.log("✅ جيميناي رجع بعد الضغط — بكمّل باقي الباتشات"); host.status("✅ الضغط خلص — بكمّل الترجمة"); host.notice("✅ ضغط جيميناي خلص — الترجمة كملت") }
     }
 
     private fun nap(ms: Long) {
@@ -1573,7 +1574,7 @@ class Engine(
                 val took = System.currentTimeMillis() - t0
                 LogStore.add("⏱ [مشغّل-توقيت] باتش ${i + 1}: طلب الموديل " + took + "ms (" + mdl + (if (tx) ", تفريغ" else ", تفريغ+ترجمة") + (if (hedge) ", نسخة احتياطية" else "") + ", محاولة " + tries + ", من أول إرسال " + (startedAt[i]?.let { System.currentTimeMillis() - it } ?: -1L) + "ms)")   // (v1031 — م0)
                 if (isClosed) return
-                if (gemCalled) Overload.ok()
+                if (gemCalled) { Overload.ok(); pressureClear() }
                 if (gemCalled) { flushModeMsg(); noteWho("🔑 جيميناي شغّال", " — باتش ${i + 1} بمفتاح " + pool.tail(key) + " (" + conf.keys.size + " أساسي)") }   // (v278)   // الإنجن اتقفل أثناء الطلب (خرجت من الفيديو): ارمي الرد
                 if (r.finish == "MAX_TOKENS" && trunc >= 2) partial = true
                 if (r.finish == "MAX_TOKENS" && trunc < 2) { trunc++; host.log("⚠ الرد اتقطع — إعادة المحاولة"); nap(600); continue }
@@ -1684,7 +1685,7 @@ class Engine(
                     srv++
                     Overload.hit()
                     if (Models.FALLBACK && srv >= 2 && fbModel == null) { fbModel = Models.alt(curModel(), key).let { if (it == curModel()) null else it } ?: curModel(); host.log("⚠ جيميناي عليه ضغط (${e.code}) على كل المفاتيح — بجرّب موديل ${fbModel}") }
-                    if (srv >= 2 && Overload.active()) { pressureGate(key); srv = 0 }   // (v1244) ضغط جيميناي: استراحة دقيقة + طلب خفيف قبل ما نكمّل
+                    if ((srv >= 2 || (gateOn && gateThread === Thread.currentThread())) && Overload.active()) { pressureGate(key); srv = 0 }   // (v1244) ضغط جيميناي: استراحة دقيقة + طلب خفيف قبل ما نكمّل
                     else if (srv >= 3) nap(minOf(6000L, 1200L * srv) + (Math.random() * 600).toLong())
                     // (v1114) 503 — تصحيح: إعادة فورية من غير أي انتظار — الأولوية لمفتاح تاني فاضي، ولو مفيش مفتاح فاضي الإعادة فورًا على نفس المفتاح
                     val alt = try { switchKey(key) } catch (_: RehomeEx) { null }

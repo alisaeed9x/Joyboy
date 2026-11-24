@@ -464,3 +464,65 @@ object SettingsFuzzy {
 
     fun hit(alts: List<String>, words: List<String>): Boolean = alts.any { one(it, words) }
 }
+
+
+/**
+ * (v1246) مراجعة الإعدادات: إعدادات كانت بتتقرأ في الكود ومالهاش زرار في أي شاشة (بتشتغل بالقيمة الافتراضية بس).
+ * هنا كل واحدة ليها صف في القسم المناسب من الإعدادات الموجودة (نفس القيم الافتراضية بالظبط، فمفيش حاجة بتتغيّر لحد ما تغيّرها).
+ */
+object AdvRows {
+    private class R(val tab: String, val key: String, val label: String, val kind: String, val d: Int = 1, val lo: Int = 0, val hi: Int = 0, val unit: String = "", val scale: Int = 1)
+    private val rows = listOf(
+        R("audio", "dub_orig_vol", "🎙 صوت الفيديو الأصلي أثناء الدبلجة", "int", 12, 0, 100, "%"),
+        R("audio", "dub_live", "🎙 دبلجة لحظية (بتشتغل وانت بتتفرج)", "i01", 1),
+        R("audio", "dub_multi", "🎙 دبلجة بأكتر من صوت (حسب المتكلم)", "i01", 1),
+        R("audio", "dub_tashkeel", "🎙 تشكيل النص قبل نطق الدبلجة", "i01", 1),
+        R("audio", "stt_vad", "🎧 تخطّي الصمت أثناء التفريغ على الجهاز (VAD)", "b", 1),
+        R("audio", "song_auto_id", "🎵 التعرف التلقائي على اسم الأغنية", "s01", 1),
+        R("perf", "auto_requal", "🔁 إعادة الباتش تلقائيًا لو جودته ضعيفة", "b", 1),
+        R("perf", "ctx_batches", "🧠 عدد الباتشات السابقة اللي بتتبعت كسياق", "int", 3, 1, 8, ""),
+        R("perf", "ramp_all", "⚡ تسريع بداية الترجمة (باتشات صغيرة الأول)", "b", 1),
+        R("perf", "onekey_rest_ms", "⏱ راحة المفتاح الواحد بين الطلبات (ثانية)", "int", 8, 0, 60, "ث", 1000),
+        R("perf", "side_in_google", "🌐 استخدام محرك جوجل الجانبي كبديل", "b", 0),
+        R("perf", "ext_strict", "🛡 وضع صارم للمحرك الخارجي", "ext", 0),
+        R("general", "auto_hard", "🤖 اقتراح الترجمة الصعبة تلقائيًا لو مفيش ترجمة", "s01", 1),
+        R("general", "auto_sub", "💬 فتح ملف ترجمة جنب الفيديو تلقائيًا", "s01", 1),
+        R("general", "vis_auto", "👁 الوضع البصري التلقائي", "s01", 1),
+        R("general", "subnet_autosync", "⏱ ضبط توقيت ملف الترجمة من النت تلقائيًا", "b", 1),
+        R("player", "player_rot_anim", "🔄 أنيميشن تدوير الشاشة في مشغّل يوتيوب", "s01", 1),
+        R("player", "yt_fs_inplace", "⛶ التكبير جوه نفس المشغّل (يوتيوب)", "s01", 1),
+        R("player", "yt_page_in_player", "▶ صفحة الفيديو جوه المشغّل (يوتيوب)", "s01", 1),
+        R("player", "yt_next_delay", "⏭ ثواني عد «الفيديو الجاي» في يوتيوب", "int", 20, 3, 120, "ث"),
+        R("player", "yt_portrait_clean", "📱 شاشة نضيفة في الوضع الطولي (يوتيوب)", "b", 1),
+        R("youtube", "yt_prewarm", "🔥 تسخين يوتيوب في الخلفية", "b", 1),
+        R("youtube", "prewarm_tabs", "🔥 تسخين التبويبات عند فتح التطبيق", "b", 1),
+        R("capture", "lw_toast_off", "🔕 إخفاء إشعارات الترجمة الحية", "b", 0),
+        R("capture", "lw_hist_off", "🗑 عدم حفظ سجل الروابط المنسوخة", "b", 0),
+        R("capture", "pub_hist_on", "📜 حفظ سجل الصفحات المعروضة", "s01", 1),
+        R("capture", "subhunt_close", "🧲 قفل صفحة صيد الترجمة بعد ما تتحمّل", "b", 1),
+        R("appearance", "app_wall_scrim", "🖼 تعتيم خلفية الشاشة الرئيسية", "int", 55, 0, 95, "%"),
+        R("appearance", "glass_lens", "🔍 عدسة الشريط السفلي (زجاج)", "b", 0),
+        R("appearance", "glass_jiggle", "〰 اهتزاز عدسة الشريط", "b", 0),
+        R("tvset", "tv_autoscale", "📺 تكبير الواجهة تلقائيًا على شاشة التلفزيون", "s01", 1))
+
+    private fun isOn(r: R): Boolean = when (r.kind) {
+        "s01" -> Cfg.str(r.key, if (r.d == 1) "1" else "0") != "0"
+        "i01" -> Cfg.int(r.key, r.d) != 0
+        "b" -> Cfg.bool(r.key, r.d == 1)
+        else -> Cfg.str(r.key, "off") == "on"
+    }
+    private fun setOn(r: R, on: Boolean) {
+        if (r.kind == "ext") Cfg.put(r.key, if (on) "on" else "off") else Cfg.put(r.key, if (on) "1" else "0")
+    }
+    fun forTab(ui: Ui, tab: String): List<View> {
+        val rs = rows.filter { it.tab == tab }
+        if (rs.isEmpty()) return emptyList()
+        val out = ArrayList<View>()
+        out.add(ui.text("🧩 إعدادات إضافية", 13f, ui.th.muted, true))
+        for (r in rs) {
+            if (r.kind == "int") out.add(ui.slider(r.label, (Cfg.int(r.key, r.d * r.scale) / r.scale), r.lo, r.hi, r.unit) { v -> Cfg.put(r.key, (v * r.scale).toString()) })
+            else out.add(ui.switchRow(r.label, isOn(r)) { on -> setOn(r, on) })
+        }
+        return out
+    }
+}
