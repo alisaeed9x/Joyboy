@@ -198,6 +198,8 @@ object Cfg {
             if (all.isNotEmpty()) e.putString("keys", all.joinToString("\n")).putString("extra", "").putString("backup", "").putString("keymodes", "[]")
             e.apply()
         }
+        // (v1243) مرة واحدة: مدة باتش الصوت 45 ثانية بطلب صاحب التطبيق (القيمة القديمة 60 بتتبدّل؛ الاختيار اليدوي بعد كده بيفضل)
+        if (!p.getBoolean("chunk45_v1243", false)) { p.edit().putBoolean("chunk45_v1243", true).putInt("chunk", 45).apply() }
         // (v141) مرة واحدة: الاسم المتحرك gemini-flash-lite-latest بقى موديل ثابت (3.1)
         if (!p.getBoolean("model_pin_v141", false)) {
             val e = p.edit().putBoolean("model_pin_v141", true)
@@ -280,7 +282,7 @@ object Cfg {
         return Conf(
             main, bk, str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT },
             str("lang", "فصحى"), str("style", "تلقائي"),
-            int("chunk", 60).coerceIn(10, 600), int("ahead", 3).coerceIn(0, 50), int("atrack", 1).coerceAtLeast(1),
+            int("chunk", 45).coerceIn(10, 600), int("ahead", 3).coerceIn(0, 50), int("atrack", 1).coerceAtLeast(1),
             emptyList() /* جدول الشخصيات اليدوي اتشال — الشخصيات بتتحلل تلقائيًا */, str("gloss"),
             true, true, true,   // (v229) تحليل الشخصيات · تصحيح الضمائر · ترجمة القالب: أوتوماتيك دايمًا (اتشال مفتاحهم من الإعدادات)
             1 /* (v141) طلب واحد لكل مفتاح */, bool("hitiming", false), true /* (v229) سد الفجوات أوتوماتيك دايمًا */,

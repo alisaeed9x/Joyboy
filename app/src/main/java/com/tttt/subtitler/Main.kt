@@ -270,9 +270,9 @@ class MainActivity : Activity() {
                 }
             }.start()
         }
-        var chunkSec = Cfg.int("chunk", 60).coerceIn(10, 600)
+        var chunkSec = Cfg.int("chunk", 45).coerceIn(10, 600)
         // (v184) طول المقطع بقى أزرار ثابتة (30 / 60 / 90 / 120) بدل السلايدر — قيمة قديمة مش في الأزرار بتظهر على أقرب زرار ومابتتغيّرش إلا لو دوست
-        val chunkOpts = listOf(30, 60, 90, 120)
+        val chunkOpts = listOf(30, 45, 60, 90, 120)
         fun chunkLbl(v: Int) = "$v ثانية"
         val chunk = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
