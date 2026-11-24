@@ -176,15 +176,20 @@ class StreamerUi(private val act: Activity, private val ui: Ui, private val th: 
     private var query = ""
     private var results: List<SShow> = emptyList()
     private var busy = ""
+    private var ext: List<StreamSource> = emptyList()
 
     fun show() {
-        srcs = StreamerSources.all(act)
+        srcs = StreamerSources.all(act) + ext
         val d = ui.sheet(act, "🎞 ستريمر", listOf<View>(root), solid = true)
         (d as? GDialog)?.onBack = { if (stack.size > 1) { stack.removeAt(stack.size - 1); val top: () -> Unit = stack[stack.size - 1]; top(); true } else false }
         dlg = d
         go { home() }
         d.show()
         runSearch()
+        bg {
+            val ex = try { PluginBridge.aniyomiSources(act) } catch (_: Throwable) { emptyList() }
+            if (ex.isNotEmpty()) onUi { ext = ex; srcs = StreamerSources.all(act) + ext; if (stack.size == 1) home() }
+        }
     }
 
     private fun go(f: () -> Unit) { stack.add(f); f() }
@@ -211,8 +216,9 @@ class StreamerUi(private val act: Activity, private val ui: Ui, private val th: 
         root.addView(inp)
         root.addView(ui.button("🔎 بحث") { query = inp.text.toString().trim(); runSearch() })
         root.addView(ui.button("➕ إضافة سورس (JSON)") { addDialog() })
+        if (ext.isEmpty()) root.addView(ui.button("🧩 بلاجن (لتشغيل إضافات Aniyomi)") { PluginsUi(act, ui, th).show() })
         if (src() is RecipeSource) root.addView(ui.button("🗑 احذف السورس ده") {
-            StreamerSources.remove(act, src().name); srcs = StreamerSources.all(act); cur = 0; results = emptyList(); runSearch()
+            StreamerSources.remove(act, src().name); srcs = StreamerSources.all(act) + ext; cur = 0; results = emptyList(); runSearch()
         })
         if (busy.isNotEmpty()) root.addView(ui.text(busy, 13f, th.muted).apply { setPadding(0, ui.dp(8), 0, ui.dp(8)) })
         for (s in results) root.addView(row(s.title, s.thumb, "") { open(s) })
@@ -304,7 +310,7 @@ class StreamerUi(private val act: Activity, private val ui: Ui, private val th: 
             bg {
                 val err = StreamerSources.add(act, t)
                 onUi {
-                    if (err == null) { d2?.dismiss(); srcs = StreamerSources.all(act); cur = srcs.size - 1; results = emptyList(); runSearch() }
+                    if (err == null) { d2?.dismiss(); srcs = StreamerSources.all(act) + ext; cur = srcs.size - 1; results = emptyList(); runSearch() }
                     else msg.text = "⚠ " + err
                 }
             }

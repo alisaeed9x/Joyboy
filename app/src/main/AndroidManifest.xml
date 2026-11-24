@@ -51,6 +51,7 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
     <!-- (v476) صفحة «تطبيقاتك» في اللانشر: اكتشاف تطبيقات التلفزيون من غير QUERY_ALL_PACKAGES -->
     <queries>
+        <package android:name="com.tttt.joyboy.plugin.aniyomi"/>   <!-- (v1256) بلاجن Aniyomi: عشان Joyboy يشوفه ويكلّم الجسر بتاعه على أندرويد 11+ -->
         <intent><action android:name="android.speech.RecognitionService"/></intent>   <!-- (v500) من غيرها isRecognitionAvailable بترجّع false على أندرويد 11+ -->
         <intent><action android:name="android.speech.action.RECOGNIZE_SPEECH"/></intent>
         <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/></intent>

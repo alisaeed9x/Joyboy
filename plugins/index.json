@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "id": "aniyomi",
+      "name": "مشغّل إضافات Aniyomi",
+      "desc": "بيشغّل إضافات Aniyomi اللي انت تثبّتها بنفسك وبيوصّلها لستريمر. من غير أي سورسات جواه.",
+      "pkg": "com.tttt.joyboy.plugin.aniyomi",
+      "versionCode": 0,
+      "versionName": "",
+      "url": "",
+      "sha256": ""
+    }
+  ]
+}
