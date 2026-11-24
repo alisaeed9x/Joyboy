@@ -24,19 +24,18 @@ object Upd {
     class AppInfo(val name: String, val tag: String, val url: String, val size: Long, val notes: String, val page: String)
 
     @Volatile var app: AppInfo? = null
-    @Volatile var plugin: PluginEntry? = null
     @Volatile var onChange: (() -> Unit)? = null
     @Volatile private var lastCheck = 0L
     @Volatile private var checking = false
     @Volatile private var promptedTag = ""
 
-    val count: Int get() = (if (app != null) 1 else 0) + (if (plugin != null) 1 else 0)
+    val count: Int get() = (if (app != null) 1 else 0)
     fun autoOn(): Boolean = Cfg.bool("upd_auto", false)
 
     private fun main() = Handler(Looper.getMainLooper())
     private fun changed() { main().post { try { onChange?.invoke() } catch (_: Throwable) {} } }
 
-    private fun instCode(c: Context): Long = Plugins.installedCode(c, c.packageName) ?: 0L
+    private fun instCode(c: Context): Long = try { val pi = c.packageManager.getPackageInfo(c.packageName, 0); if (Build.VERSION.SDK_INT >= 28) pi.longVersionCode else pi.versionCode.toLong() } catch (_: Throwable) { 0L }
 
     @Suppress("DEPRECATION")
     private fun archCode(c: Context, f: File): Long? = try {
@@ -86,9 +85,6 @@ object Upd {
                 app = AppInfo(name, tag, apk, size, notes, j.optString("html_url", "https://github.com/alisaeed9x/Joyboy/releases/latest"))
             } else app = null
         } catch (e: Throwable) { LogStore.err("Upd:app", e) }
-        try {
-            plugin = Plugins.fetchIndex().firstOrNull { e -> val have = Plugins.installedCode(a, e.pkg); have != null && e.url.isNotEmpty() && have < e.vcode }
-        } catch (e: Throwable) { LogStore.err("Upd:plugin", e) }
     }
 
     /** بيتنادى من Main.onResume: فحص عند كل فتح (مع فاصل 5 دقايق) وبعدها يقرر يسأل/ينزّل */
@@ -148,12 +144,6 @@ object Upd {
     }
 
     /** زرار تحديث/تثبيت بلاجن: نفس تجربة التنزيل. لو الملف منزّل بنفس النسخة بيثبّته مباشرة */
-    fun startPlugin(a: Activity, e: PluginEntry) {
-        val f = Plugins.cacheFile(a, e)
-        if (Plugins.ready(a, e, f)) { TvUpdate.install(a, f); return }
-        val cur = Plugins.installedName(a, e.pkg)
-        downloadUi(a, "plg-" + e.id + "-" + e.vcode, e.url, f, 0L, "⬇ " + e.name, if (cur.isEmpty()) "—" else "v" + cur, "v" + e.vname, { Plugins.verify(a, e, it) }) { file -> TvUpdate.install(a, file) }
-    }
 
     // ───────── التنزيل القابل للاستكمال ─────────
     class Job(val url: String, val dest: File, val verify: (File) -> String?) {
@@ -290,22 +280,14 @@ object Upd {
         col.addView(box)
         fun render() {
             box.removeAllViews()
-            val ap = app; val pl = plugin
-            if (ap == null && pl == null) box.addView(ui.text(if (checking) "⏳ بيفحص…" else "✅ مفيش تحديثات جديدة", 13f, th.muted).apply { setPadding(0, ui.dp(4), 0, ui.dp(4)) })
+            val ap = app
+            if (ap == null) box.addView(ui.text(if (checking) "⏳ بيفحص…" else "✅ مفيش تحديثات جديدة", 13f, th.muted).apply { setPadding(0, ui.dp(4), 0, ui.dp(4)) })
             if (ap != null) {
                 val ready = appReady(a, appFile(a, ap))
                 box.addView(ui.button((if (ready) "✅ تثبيت التحديث (منزّل): " else "⬆ تحديث Joyboy: ") + ap.name + (if (!ready && ap.size > 0) "  (" + mb(ap.size) + ")" else ""), true) { startApp(a) })
             }
-            if (pl != null) box.addView(ui.button("🧩 تحديث " + pl.name + ": v" + Plugins.installedName(a, pl.pkg) + " ← v" + pl.vname, true) { startPlugin(a, pl) })
         }
         render()
-        val check = ui.button("🔎 افحص دلوقتي") {
-            box.removeAllViews(); box.addView(ui.text("⏳ بيفحص…", 13f, th.muted))
-            val prev = onChange
-            onChange = { render(); onChange = prev; prev?.invoke() }
-            onOpen(a, true)
-        }
-        col.addView(check)
         return col
     }
 }

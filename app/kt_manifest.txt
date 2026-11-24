@@ -322,8 +322,6 @@ com/tttt/subtitler/YtBackend.kt
 com/tttt/subtitler/SongHint.kt
 com/tttt/subtitler/GhAudio.kt
 com/tttt/subtitler/UpdateSheet.kt
-com/tttt/subtitler/Streamer.kt
-com/tttt/subtitler/Plugins.kt
 com/tttt/subtitler/Tour.kt
 com/tttt/subtitler/Upd.kt
 com/tttt/subtitler/Notes.kt

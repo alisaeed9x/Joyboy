@@ -156,7 +156,7 @@ object I18n {
 
     private fun firstRun(a: Activity) {
         try { Cfg.ensure(a); if (Cfg.str("lang_chosen", "") == "1") return } catch (_: Throwable) { return }
-        if (a !is Main) return
+        if (a !is MainActivity) return
         val names = arrayOf("🌐 Auto").plus(LANGS.map { it.second })
         try {
             AlertDialog.Builder(a).setTitle("🌐 " + languageWord()).setCancelable(false).setItems(names) { _, i ->
