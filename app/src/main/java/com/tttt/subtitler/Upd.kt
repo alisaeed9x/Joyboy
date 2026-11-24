@@ -121,7 +121,7 @@ object Upd {
         col.addView(TvUpdate.flowView(a, "v" + verName(a), ap.name))
         if (ap.size > 0) col.addView(ui.text("حجم التحديث: " + mb(ap.size), 13f, th.muted))
         col.addView(ui.text("إيه اللي اتغيّر:", 15f, th.text, true), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })
-        col.addView(ui.text(ap.notes, 14f, th.text), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
+        col.addView(Notes.render(a, ui, th, ap.notes), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
         GAlert(a).setTitle("🔔 فيه تحديث جديد").setView(col)
             .setNegativeButton("مش دلوقتي") { _, _ -> Cfg.put("upd_skip", ap.tag) }
             .setPositiveButton("تحديث") { _, _ -> startApp(a) }.show()

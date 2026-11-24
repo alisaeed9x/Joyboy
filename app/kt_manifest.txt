@@ -326,3 +326,4 @@ com/tttt/subtitler/Streamer.kt
 com/tttt/subtitler/Plugins.kt
 com/tttt/subtitler/Tour.kt
 com/tttt/subtitler/Upd.kt
+com/tttt/subtitler/Notes.kt

@@ -28,8 +28,10 @@ object UpdateSheet {
         }
         val title = ui.text("⬆ آخر نسخة", 17f, th.text, true)
         val notes = ui.text("بنجيب التغييرات...", 13f, th.text)
+        val notesBox = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        notesBox.addView(notes)
         col.addView(title)
-        col.addView(notes, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
+        col.addView(notesBox, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
         col.addView(Upd.centerViews(a, ui, th), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })   // (v1259)
         val sv: View = col   // (v1247) GAlert بيلف المحتوى في سكرول بحد أقصى ٦٠٪ من الشاشة، والأزرار ثابتة تحته
         var apkUrl = ""
@@ -70,7 +72,8 @@ object UpdateSheet {
                         try { (d as? android.app.AlertDialog)?.getButton(android.content.DialogInterface.BUTTON_POSITIVE)?.text = "تمام" } catch (_: Throwable) {}
                         upToDateFlag = true
                     } else if (tName.isNotBlank()) title.text = "⬆ $tName   (النسخة اللي عندك: v$ver)"
-                    notes.text = cleanTxt.ifBlank { "مفيش ملاحظات للنسخة دي." }
+                    notesBox.removeAllViews()
+                    notesBox.addView(Notes.render(a, ui, th, cleanTxt.ifBlank { "مفيش ملاحظات للنسخة دي." }))
                 } catch (_: Throwable) {}
             }
         }.start()
@@ -222,7 +225,7 @@ object UpdateSheet {
                             setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4))
                         }
                         col.addView(ui.text("✨ إيه الجديد في $name", 17f, th.text, true))
-                        col.addView(ui.text(txt, 13f, th.text), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
+                        col.addView(Notes.render(a, ui, th, txt), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
                         val sv: View = col   // (v1247) GAlert بيلف المحتوى في سكرول بحد أقصى ٦٠٪ من الشاشة، والأزرار ثابتة تحته
                         GAlert(a).setView(sv).setPositiveButton("تمام", null).show()
                     } catch (e: Throwable) { LogStore.err("UpdateSheet:wn-ui", e) }
