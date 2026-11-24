@@ -25,6 +25,7 @@ class WinSpinnerDrawable : Drawable() {
     }
     /** (v899) لودر MeeTube (AVD) بدل النقط لما MtLook.loaderOn() — الـCallback لازم مرجع قوي (الـDrawable بيمسكه weak) */
     private var avd: Drawable? = null
+    private var tint: ColorFilter? = null   // (v1277) الفلتر لازم يوصل للودر MeeTube كمان (كان بيتجاهله فبيظهر أبيض على خلفية فاتحة)
     private val avdCb = object : Drawable.Callback {
         override fun invalidateDrawable(who: Drawable) { invalidateSelf() }
         override fun scheduleDrawable(who: Drawable, what: Runnable, `when`: Long) { scheduleSelf(what, `when`) }
@@ -33,7 +34,7 @@ class WinSpinnerDrawable : Drawable() {
     fun start() {
         if (MtLook.loaderOn()) {
             if (avd == null) avd = try { MtYt.app?.let { MtLook.newLoader(it) } } catch (_: Throwable) { null }
-            avd?.let { it.callback = avdCb; (it as? android.graphics.drawable.Animatable)?.start(); invalidateSelf(); return }
+            avd?.let { it.callback = avdCb; try { if (tint != null) it.colorFilter = tint } catch (_: Throwable) {}; (it as? android.graphics.drawable.Animatable)?.start(); invalidateSelf(); return }
         }
         if (!anim.isStarted) anim.start()
     }
@@ -55,7 +56,7 @@ class WinSpinnerDrawable : Drawable() {
         }
     }
     override fun setAlpha(a: Int) { paint.alpha = a }
-    override fun setColorFilter(f: ColorFilter?) { paint.colorFilter = f }
+    override fun setColorFilter(f: ColorFilter?) { paint.colorFilter = f; tint = f; try { avd?.colorFilter = f } catch (_: Throwable) {}; invalidateSelf() }
     @Suppress("OVERRIDE_DEPRECATION")
     override fun getOpacity() = PixelFormat.TRANSLUCENT
 }

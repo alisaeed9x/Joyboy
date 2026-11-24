@@ -69,9 +69,14 @@ object FkGen {
             val t = Thread {
                 val p = prompt(per, cat, FkData.b(), FkData.r(), FkData.d(), mod, avoid)
                 var last = ""
-                for (s in 0 until keys.size) {
-                    val key = keys[(start + s) % keys.size]
-                    try { results[ci] = parse(call(key, p), cat); return@Thread } catch (e: Throwable) { last = e.message ?: e.javaClass.simpleName }
+                for (round in 0 until 3) {   // (v1277) 503/500 = ضغط على موديل جيميناي (مش مشكلة مفتاح): لفّة على كل المفاتيح وبعدين استنى وجرّب تاني
+                    var server = false
+                    for (s in 0 until keys.size) {
+                        val key = keys[(start + s + round) % keys.size]
+                        try { results[ci] = parse(call(key, p), cat); return@Thread } catch (e: Throwable) { last = e.message ?: e.javaClass.simpleName; if (e is ApiErr && e.code >= 500) server = true }
+                    }
+                    if (!server) break
+                    try { Thread.sleep(2500L * (round + 1)) } catch (_: Throwable) {}
                 }
                 errs[ci] = last
             }

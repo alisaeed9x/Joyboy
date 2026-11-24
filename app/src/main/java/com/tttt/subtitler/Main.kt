@@ -427,17 +427,7 @@ class MainActivity : Activity() {
                 ui.button("🔔 رجّع إشعارات كل القنوات") { Cfg.put("ytp_notif_off", ""); Notice.show(this, "🔔 رجعت إشعارات كل القنوات", 2200L) },
                 ui.switchRow("🕘 حفظ سجل المشاهدة", YtStore.histOn()) { on -> Cfg.put("ytp_hist_on", if (on) "1" else "0") },
                 ui.button("🕘 سجل يوتيوب") { settingsDlg0?.dialog?.dismiss(); showYtHistory() }),
-            ui.section("✨ أنيميشن اليوتيوب", true,
-                ui.text("⭕ اللودر (بيظهر في كل لودينج)", 13f, th.text, true),
-                ui.switchRow("استخدم لودر المشغّل (قفله = النقط القديمة)", Cfg.bool("mt_loader_on", true)) { Cfg.put("mt_loader_on", if (it) "1" else "0") },
-                MtLook.loaderPicker(this, th),
-                ui.switchRow("🎞 حركة فتح/قفل المشغّل (تكبير ناعم + تلاشي)", Cfg.bool("mt_player_anim", true)) { Cfg.put("mt_player_anim", if (it) "1" else "0") },
-                ui.switchRow("✨ توهّج رأس شريط التقدّم", MtLook.glowOn()) { Cfg.put("progress_glow", if (it) "1" else "0") },
-                ui.switchRow("🫧 زجاج سائل (Liquid Glass)", try { com.tttt.subtitler.mtui.Glass.isLiquid(this) } catch (_: Throwable) { false }) { try { com.tttt.subtitler.mtui.Glass.setLiquid(this, it) } catch (_: Throwable) {} },
-                ui.switchRow("🔍 عدسة وحركة شريط التبويبات", try { com.tttt.subtitler.mtui.NavLens.enabled(this) } catch (_: Throwable) { false }) { try { com.tttt.subtitler.mtui.NavLens.setEnabled(this, it) } catch (_: Throwable) {} },
-                ui.switchRow("🎞 انتقالات انسيابية بين التبويبات", Cfg.bool("anim_tabs", true)) { Cfg.put("anim_tabs", if (it) "1" else "0") },
-                ui.switchRow("📳 اهتزاز لمسي خفيف", Cfg.bool("haptics", true)) { Cfg.put("haptics", if (it) "1" else "0") },
-                ui.text("بعض التغييرات بتظهر بعد قفل وفتح الصفحة أو التطبيق.", 12f, th.muted)),
+            MtLook.animSection(this, ui, th),
             ui.section("🗑 مسح البيانات", false,
                 ui.button("🗑 مسح السجل") { YtStore.write(YtStore.HIST, emptyList()); PlayTarget.clearTvHistory(this, "yt"); Notice.show(this, "🗑 السجل اتمسح", 1800L) },
                 ui.button("🗑 مسح سجل التحميلات") { YtStore.write(YtStore.DL, emptyList()); Notice.show(this, "🗑 سجل التحميلات اتمسح", 1800L) })) }
@@ -679,6 +669,7 @@ class MainActivity : Activity() {
                 ui.section("🖼 التصميم (كلاسيك · فانيلا · ماتيريال)", true,
                     ui.button("🎨 تصميم التطبيق: " + Design.label(Design.cur()) + " (اختار التصميم · الوضع · اللون)") { Design.pick(this) },
                     ui.noHint()),
+                MtLook.animSection(this, ui, th),   // (v1277) نفس إعدادات أنيميشن اليوتيوب هنا في العام
                 ui.section("🎨 المظهر (من MeeTube)", true,   // (v907) مصدر واحد: إعداد الثيم بتاع MeeTube نفسه (ThemeMode) — Joyboy وMeeTube بيتبعوه مع بعض
     ui.chips(listOf("⚙ النظام", "☀️ فاتح", "🌙 داكن"), { when (com.tttt.subtitler.mtui.ThemeMode.peek(this)) { com.tttt.subtitler.mtui.ThemeMode.LIGHT -> "☀️ فاتح"; com.tttt.subtitler.mtui.ThemeMode.DARK -> "🌙 داكن"; else -> "⚙ النظام" } }) { n ->
         com.tttt.subtitler.mtui.ThemeMode.set(this, when (n) { "☀️ فاتح" -> com.tttt.subtitler.mtui.ThemeMode.LIGHT; "🌙 داكن" -> com.tttt.subtitler.mtui.ThemeMode.DARK; else -> com.tttt.subtitler.mtui.ThemeMode.SYSTEM })
