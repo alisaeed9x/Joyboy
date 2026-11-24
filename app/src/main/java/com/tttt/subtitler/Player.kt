@@ -5023,12 +5023,13 @@ class PlayerActivity : Activity(), Host {
         // زرار التشغيل الأوسط (بيظهر وقت الإيقاف) + شارة النسبة (شاشة كاملة) + فلاش السيك/الصوت/السطوع
         centerPlay = FadePop(this).apply {
             text = "▶"; textSize = 28f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); visibility = View.GONE
-            background = glassCircleBg(resources.displayMetrics.density)
+            background = if (Design.isNew()) GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x4D7CF3D0); setStroke(maxOf(1, (resources.displayMetrics.density * 1.5f).toInt()), 0x997CF3D0.toInt()) } else glassCircleBg(resources.displayMetrics.density)
+            if (Design.isNew()) textSize = 34f
             setOnClickListener { togglePlay() }
             Glass.pressable(this)   // (v445)
             isFocusable = false; isFocusableInTouchMode = false; defaultFocusHighlightEnabled = false   // (v576) تلفزيون: ماياخدش حلقة التركيز (المربع الأزرق) — الريموت بيتحكم في المشغّل من غيره
         }
-        videoBox.addView(centerPlay, FrameLayout.LayoutParams(ui.dp(74), ui.dp(74), Gravity.CENTER))
+        videoBox.addView(centerPlay, FrameLayout.LayoutParams(ui.dp(if (Design.isNew()) 88 else 74), ui.dp(if (Design.isNew()) 88 else 74), Gravity.CENTER))
         // (v249) كبسولات العدّادات: صغيرة، التلاتة جنب بعض شمال فوق الفيديو (صوتي · بصري · نت) والشفافية من الإعدادات (badge_alpha)
         fsBadge = TransBadge(this, th, true).apply { visibility = View.GONE; setOnClickListener { badgeHot(); toggleMiniLog(); h.postDelayed({ applyBadgeAlpha() }, 4100) }; setOnLongClickListener { badgeHot(); closeMiniLog(); versionsPopup(this); h.postDelayed({ applyBadgeAlpha() }, 4100); true } }   // (v125) دوسة = اللوج الصغير (أنهي باتش بيترجم) · ضغطة طويلة = قايمة الترجمات المحفوظة
         visBadge = TransBadge(this, th, true).apply { visibility = View.GONE; setOnClickListener { badgeHot(); visualDialog(); h.postDelayed({ applyBadgeAlpha() }, 4100) } }
@@ -5409,7 +5410,7 @@ class PlayerActivity : Activity(), Host {
         exAdd(textB)
 
         fsPlayB = IconTextView(this).apply {
-            text = "▶"; textSize = 30f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); includeFontPadding = false
+            text = "▶"; textSize = if (Design.isNew()) 36f else 30f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); includeFontPadding = false
             setOnClickListener { togglePlay(); showChrome() }
         }
         fsEl = ui.text("0:00", 12f, Color.WHITE); fsDu = ui.text("0:00", 12f, Color.WHITE)
@@ -5418,7 +5419,7 @@ class PlayerActivity : Activity(), Host {
         val fsBar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
             setPadding(ui.dp(14), ui.dp(34), ui.dp(14), 0)
-            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x00000000, 0x66000000, 0xCC000000.toInt()))   // (v445) تدرّج أنعم
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, if (Design.isNew()) intArrayOf(0x00000000, 0x7A120F2B, 0xE60A0918.toInt()) else intArrayOf(0x00000000, 0x66000000, 0xCC000000.toInt()))   // (v445) تدرّج أنعم
         }
         val timeRow = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
         timeRow.addView(fsEl, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(8) })
