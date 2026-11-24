@@ -80,13 +80,13 @@ jobs:
           OUT="Joyboy-v${NAME}-build${{ github.run_number }}.apk"
           cp "$APK" "$OUT"
           # (v1190) ملاحظات الريليز = كل الـChangelogs الأحدث من آخر ريليز (الأحدث فوق)
-          PREVREL=$(gh release list --limit 1 --json name --jq '.[0].name' 2>/dev/null | sed -nE 's/^Joyboy v([0-9]+)\.([0-9]+).*/\1\2/p')
+          PREVREL=$(gh release list --limit 30 --json name,tagName --jq '[.[] | select(.tagName | startswith("build-"))][0].name' 2>/dev/null | sed -nE 's/^Joyboy v([0-9]+)\.([0-9]+).*/\1\2/p')
           : > NOTES.md
           for v in $(ls CHANGES_v*.md | sed -E 's/CHANGES_v([0-9]+)\.md/\1/' | sort -rn); do
             if [ -z "$PREVREL" ] || [ "$v" -gt "$PREVREL" ]; then cat "CHANGES_v$v.md" >> NOTES.md; printf '\n\n---\n\n' >> NOTES.md; fi
           done
           [ -s NOTES.md ] || cp "CHANGES_v${VER}.md" NOTES.md
-          head -c 120000 NOTES.md > NOTES_cut.md
+          head -c 100000 NOTES.md | iconv -c -f UTF-8 -t UTF-8 > NOTES_cut.md
           FLAGS="--latest"
           if [ "${{ github.ref_name }}" != "main" ]; then FLAGS="--prerelease"; fi
           gh release create "build-${{ github.run_number }}" "$OUT" \
