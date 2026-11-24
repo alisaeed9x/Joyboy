@@ -262,7 +262,41 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             icons.add(icon); labels.add(lab); cells.add(cell)
         }
         fillRow()
-        val wrap = FrameLayout(act)
+        val slop = android.view.ViewConfiguration.get(act).scaledTouchSlop
+        val wrap = object : FrameLayout(act) {
+            private var dx0 = 0f; private var dy0 = 0f; private var drag = false
+            private fun nearest(x: Float): Int { var bi = -1; var bd = Float.MAX_VALUE; cells.forEachIndexed { i, c -> if (c.width > 0 && c.visibility == View.VISIBLE) { val d = Math.abs(c.left + c.width / 2f - x); if (d < bd) { bd = d; bi = i } } }; return bi }
+            private fun follow(x: Float) {
+                val iw = indicator.width.toFloat().coerceAtLeast(1f)
+                val first = cells.filter { it.width > 0 && it.visibility == View.VISIBLE }; if (first.isEmpty()) return
+                val lo = first.minOf { it.left + it.width / 2f } - iw / 2f; val hi = first.maxOf { it.left + it.width / 2f } - iw / 2f
+                Motion.cancelSprings(indicator); indicator.animate().cancel()
+                indicator.translationX = (x - iw / 2f).coerceIn(lo, hi)
+            }
+            override fun onInterceptTouchEvent(e: android.view.MotionEvent): Boolean {
+                if (!glassNav || rail) return false
+                when (e.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> { dx0 = e.x; dy0 = e.y; drag = false }
+                    android.view.MotionEvent.ACTION_MOVE -> if (!drag && Math.abs(e.x - dx0) > slop * 1.5f && Math.abs(e.x - dx0) > Math.abs(e.y - dy0) * 1.3f) {
+                        drag = true; moving = true; indicator.alpha = 1f; indicator.animate().scaleX(1.12f).scaleY(1.1f).setDuration(120L).start(); follow(e.x); return true
+                    }
+                }
+                return false
+            }
+            override fun onTouchEvent(e: android.view.MotionEvent): Boolean {
+                if (!drag) return super.onTouchEvent(e)
+                when (e.actionMasked) {
+                    android.view.MotionEvent.ACTION_MOVE -> follow(e.x)
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                        drag = false; indicator.animate().scaleX(1f).scaleY(1f).setDuration(160L).start()
+                        val i = if (e.actionMasked == android.view.MotionEvent.ACTION_UP) nearest(e.x) else -1
+                        if (i >= 0) { try { cells[i].performClick() } catch (t: Throwable) { LogStore.err("Nav:drag", t) } }
+                        postDelayed({ moving = false; place(true) }, 60L)
+                    }
+                }
+                return true
+            }
+        }
         wrap.addView(row, if (rail) FrameLayout.LayoutParams(-2, -1) else FrameLayout.LayoutParams(-1, -2))
         wrap.addView(indicator, if (rail) FrameLayout.LayoutParams(ui.dp(2), ui.dp(22), Gravity.START or Gravity.CENTER_VERTICAL) else if (glassNav) FrameLayout.LayoutParams(ui.dp(56), ui.dp(46), Gravity.TOP or Gravity.LEFT) else FrameLayout.LayoutParams(ui.dp(22), ui.dp(2), Gravity.TOP or Gravity.LEFT))
         row.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (!moving && snap) { if (place(false)) snap = false } }
@@ -447,6 +481,12 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             labels[i].setTextColor(if (on) onC else off)
         }
         (indicator.background as? GradientDrawable)?.setColor(if (glassNav) (if (tinted) 0x33FFFFFF else MtGlass.selected(th)) else if (tinted) 0xFFFFFFFF.toInt() else th.primary)
-        if (glassNav && !tinted && !th.isLight && Design.isNew()) (indicator.background as? GradientDrawable)?.colors = intArrayOf(Design.mint(0x55), Design.violet(0x55))
+        if (glassNav && !tinted && Design.isNew()) {   // (v1250) كبسولة زجاج شفاف فوق زجاج الشريط (طبقتين): لمعة بيضا من فوق وحد مضيء، من غير لون صلب
+            (indicator.background as? GradientDrawable)?.apply {
+                if (th.isLight) { colors = intArrayOf(0x99FFFFFF.toInt(), 0x33FFFFFF); setStroke(ui.dp(1), 0xCCFFFFFF.toInt()) }
+                else { colors = intArrayOf(0x40FFFFFF, 0x14FFFFFF); setStroke(ui.dp(1), 0x66FFFFFF) }
+                orientation = GradientDrawable.Orientation.TOP_BOTTOM
+            }
+        }
     }
 }
