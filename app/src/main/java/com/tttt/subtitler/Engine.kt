@@ -872,7 +872,23 @@ class Engine(
     fun promptText(): String = try { buildPrompt(currentDur(), 0.0) } catch (e: Throwable) { "" }
 
     /** يمسح ترجمة الباتشات من..إلى (شاملة، to < 0 = لحد النهاية) عشان تتترجم من جديد. بيحفظ نسخة قبلها (🗂 ترجمات الفيديو) */
+    /** (v1237) نسخة من الجمل قبل ما إعادة الترجمة تمسحها — لو اتلغت قبل ما تخلص بنرجّع القديم في الأماكن اللي لسه ما اتترجمتش */
+    @Volatile private var redoBackup: List<Sub>? = null
+    fun restoreBackup(): Int {
+        val old = redoBackup ?: return 0
+        var n = 0
+        synchronized(lock) {
+            val cur = subs
+            val back = old.filter { o -> cur.none { c -> c.start < o.end && c.end > o.start } }
+            n = back.size
+            if (n > 0) subs = Subs.merge(Subs.dedup(cur + back)).sortedBy { it.start }
+        }
+        redoBackup = null
+        if (n > 0) { host.changed(); persist(); host.log("↩ رجّعت $n جملة من الترجمة القديمة (الإعادة اتلغت قبل ما تخلص)") }
+        return n
+    }
     fun redo(from: Int, to: Int, keep: Boolean = true) {
+        if (subs.isNotEmpty()) redoBackup = subs
         val d = currentDur()
         val hi = if (to < 0) Int.MAX_VALUE else to
         val a = cStart(from); val b = if (to < 0) Double.MAX_VALUE else cEnd(to, d)
@@ -1254,7 +1270,7 @@ class Engine(
      * بنبعت نسخة منه على مفتاح تاني — أول نسخة تخلص هي اللي بتتطبّق والتانية بتتجاهل. نسخة واحدة بس في نفس الوقت.
      */
     private fun hedgeTick() {
-        if (quotaCooling()) return   // (v1094) 429: ماتبعتش نسخ تانية من الباتشات
+        if (quotaCooling() || Overload.active()) return   // (v1094) 429 / (v1237) ضغط جيميناي: ماتبعتش نسخ تانية من الباتشات
         if (!TrSlider.on("hedge") || inflight.isEmpty() || hedgeBusy.get() >= 1 || pool.usableCount() < 2 || Offline.on()) return   // (v1100) T2b: السلايدر · (v253) الأوفلاين: نسخة احتياطية بتستنى نفس المعالج
         val now = System.currentTimeMillis()
         val ms = recentMs.toList().sorted()
@@ -1481,10 +1497,11 @@ class Engine(
         // (v1114) الرد الفاسد (BadReply) بيعيد الطلب من غير stream — الـ stream هو اللي بيرجّع JSON مكسور
         var badStream = false
         var langRetry = 0; var langSwitchRetry = 0
+        var fbModel: String? = null   // (v1237) موديل احتياطي بعد خطأين ضغط ورا بعض
         var srv = 0   // (v459) مفيش موديل بديل: أخطاء السيرفر بتتعاد على نفس الموديل الواحد (كان في v227 بيبدّل لموديل تاني)
         val fastStep = fastLatched && !hedge && !backupFirst && i == rampChunk && rampStep < 2
         val spd = if (fastStep && FAST_SPEED > 1.0 && w.durSec >= 4.0 && !easternSrc() && !SongHint.on()) FAST_SPEED else 1.0   // (v1171) أغنية: من غير تسريع صوت   // (v1147) من غير تسريع صوت للغات الشرقية   // (v1067) تسريع الصوت
-        val canSplit = fastStep && rampStep == 0 && w.durSec >= 16.0 && !Offline.on() && pool.usableCount() >= 2 && TrSlider.on("race")   // (v1067) طلبين بالتوازي   // (v1097) T2: TrSlider
+        val canSplit = fastStep && !Overload.active() && rampStep == 0 && w.durSec >= 16.0 && !Offline.on() && pool.usableCount() >= 2 && TrSlider.on("race")   // (v1067) طلبين بالتوازي   // (v1097) T2: TrSlider
         val sendBytes = if (spd > 1.0) { try { AudioTools.speedUp(w.bytes, spd) } catch (_: Throwable) { w.bytes } } else w.bytes
         val spdEff = if (sendBytes === w.bytes) 1.0 else spd
         val tx = activeMode >= KeyMode.SPLIT_A && i !in fullChunks && !fastLatched && !(rampOn && i == rampChunk)   // (v1141) خطوات التصاعد: تفريغ+ترجمة في طلب واحد // (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
@@ -1494,7 +1511,7 @@ class Engine(
             val prompt = buildPrompt(w.durSec / spdEff, w.startSec, langBad > 0 || (tx && empties > 0), i, tx = tx)
             try {
                 val t0 = System.currentTimeMillis()
-                val mdl = curModel()   // (v459) موديل واحد بس دايمًا
+                val mdl = fbModel ?: curModel()   // (v459) موديل واحد بس دايمًا (v1237: إلا وقت ضغط جيميناي)
                 var resScale = 1.0   // (v1067) معامل إرجاع الأوقات للأصل (الصوت المتسرّع)
                 var gemCalled = false   // (v413) هل جيميناي اتنده فعلًا للباتش ده؟ (false = Whisper لوحده)
                 val r = run {
@@ -1516,7 +1533,7 @@ class Engine(
                                 else {
                                     resScale = spdEff
                                     // (v1114) الكوتة واقعة (429): مفيش سباق مفتاحين — الباتش بيتبعت على مفتاح واحد بس لحد ما الكوتة ترجع
-                                    val k2 = if (i == rampChunk && rampStep < 2 && !Offline.on() && pool.usableCount() >= 2 && !quotaCooling() && TrSlider.on("race")) pool.pickFree(key, rr.getAndIncrement()) else null   // (v1097) T2: TrSlider
+                                    val k2 = if (i == rampChunk && rampStep < 2 && !Overload.active() && !Offline.on() && pool.usableCount() >= 2 && !quotaCooling() && TrSlider.on("race")) pool.pickFree(key, rr.getAndIncrement()) else null   // (v1097) T2: TrSlider
                                     if (k2 != null && k2 != key) fastRace(i, p, mdl, key, k2, prompt, sendBytes, w.durSec, tmp, spdEff)   // (v1066) أول خطوتين: نفس الطلب على مفتاحين والأسرع يكسب
                                     else {
                                         val sc = StreamSubs()
@@ -1533,6 +1550,7 @@ class Engine(
                 val took = System.currentTimeMillis() - t0
                 LogStore.add("⏱ [مشغّل-توقيت] باتش ${i + 1}: طلب الموديل " + took + "ms (" + mdl + (if (tx) ", تفريغ" else ", تفريغ+ترجمة") + (if (hedge) ", نسخة احتياطية" else "") + ", محاولة " + tries + ", من أول إرسال " + (startedAt[i]?.let { System.currentTimeMillis() - it } ?: -1L) + "ms)")   // (v1031 — م0)
                 if (isClosed) return
+                if (gemCalled) Overload.ok()
                 if (gemCalled) { flushModeMsg(); noteWho("🔑 جيميناي شغّال", " — باتش ${i + 1} بمفتاح " + pool.tail(key) + " (" + conf.keys.size + " أساسي)") }   // (v278)   // الإنجن اتقفل أثناء الطلب (خرجت من الفيديو): ارمي الرد
                 if (r.finish == "MAX_TOKENS" && trunc >= 2) partial = true
                 if (r.finish == "MAX_TOKENS" && trunc < 2) { trunc++; host.log("⚠ الرد اتقطع — إعادة المحاولة"); nap(600); continue }
@@ -1634,6 +1652,9 @@ class Engine(
                 }
                 if (e.code >= 500) {
                     srv++
+                    Overload.hit()
+                    if (srv >= 2 && fbModel == null) { fbModel = Models.alt(curModel()); host.log("⚠ جيميناي عليه ضغط (${e.code}) على كل المفاتيح — بجرّب موديل ${fbModel}") }
+                    if (srv >= 3) nap(minOf(6000L, 1200L * srv) + (Math.random() * 600).toLong())
                     // (v1114) 503 — تصحيح: إعادة فورية من غير أي انتظار — الأولوية لمفتاح تاني فاضي، ولو مفيش مفتاح فاضي الإعادة فورًا على نفس المفتاح
                     val alt = try { switchKey(key) } catch (_: RehomeEx) { null }
                     if (alt != null) {
@@ -3787,10 +3808,11 @@ class Engine(
         var key = key0; var tries = 0
         val near = nearSpeech(a, b)
         val off = offFill()
+        var gapFb: String? = null
         while (running && tries++ < 3) {
             try {
                 var base: List<Sub> = if (off) txFillOffline(w, near) else txFillSubs(w, near, key) ?: run {   // (v239) ترانسكريبشن ثم ترجمة منفصلة (أسلوب الوضع 4)، والقديم احتياطي
-                    val r = Api.generate(curModel(), key, buildPrompt(w.durSec, w.startSec, hole = true, holeNear = near), w.bytes)
+                    val r = Api.generate(gapFb ?: curModel(), key, buildPrompt(w.durSec, w.startSec, hole = true, holeNear = near), w.bytes)
                     val j = if (r.text.isBlank()) null else Parse.json(r.text)
                     if (j == null) emptyList() else Subs.splitAll(Parse.subs(j, w.startSec, w.durSec)).filter { !it.isSound && (near || (!it.faint && !it.lowConf)) }.map { Subs.capPace(it) }
                 }
@@ -3804,7 +3826,7 @@ class Engine(
                 host.log("✅ فجوة ${a.toInt()}ث: اتسدّ ${marked.size} جملة")
                 return
             } catch (e: ApiErr) {
-                if (e.code == 429) { noteQuota(); pool.block(key, 60_000) } else if (e.code == 403) pool.block(key, 3_600_000) else throw e
+                if (e.code == 429) { noteQuota(); pool.block(key, 60_000) } else if (e.code == 403) pool.block(key, 3_600_000) else if (e.code >= 500 && gapFb == null) { gapFb = Models.alt(curModel()); host.log("⚠ جيميناي عليه ضغط — سدّ الفجوة بموديل " + gapFb) } else throw e
                 key = pool.gapKey(gapKeys - key, rr.getAndIncrement()) ?: return
             }
         }

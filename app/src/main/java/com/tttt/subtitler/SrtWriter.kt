@@ -36,6 +36,7 @@ object SrtWriter {
                 val written = try { reg.readLines().toHashSet() } catch (_: Exception) { hashSetOf<String>() }
                 var out = File(dir, "$base.srt")
                 if (out.exists() && out.path !in written) out = File(dir, "$base.ar.srt")
+                if (out.exists() && out.path !in written) out = File(dir, "$base.joyboy.srt")
                 if (out.exists() && out.path !in written) return null
                 val tmp = File(dir, out.name + ".tmp")
                 tmp.writeText(PlayerLogic.toSrt(subs, offsetMs), Charsets.UTF_8)

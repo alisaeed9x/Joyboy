@@ -422,6 +422,7 @@ class DubPlay(private val p: androidx.media3.exoplayer.ExoPlayer) {
                 var c: Chunk? = null
                 for (x in chunks) if (posS >= x.t0 && posS < x.t1 && (c == null || x.t0 >= c.t0)) c = x
                 if (c !== curChunk) {
+                    DubLog.add(if (c != null) "▶ قطعة دبلجة " + c.t0.toInt() + "–" + c.t1.toInt() + "ث اشتغلت (الأصلي اتكتم)" else "⏸ مفيش قطعة عند " + posS.toInt() + "ث — الأصلي")
                     try { mp?.release() } catch (_: Throwable) {}
                     mp = null; curChunk = c
                     if (c != null) { val m = MediaPlayer(); m.setDataSource(c.file.absolutePath); m.prepare(); mp = m }
@@ -447,11 +448,12 @@ class DubPlay(private val p: androidx.media3.exoplayer.ExoPlayer) {
         stop()
         chunks.clear(); curChunk = null
         live = true; offsetMs = vidOffsetMs
+        DubLog.add("🎙 بدأ التشغيل المباشر")
         savedVol = p.volume; if (!Design.isNew()) p.volume = Dub.origVol()
         h.post(liveTick)
     }
 
-    fun addChunk(c: Chunk) { chunks.add(c) }
+    fun addChunk(c: Chunk) { chunks.add(c); DubLog.add("➕ قطعة جاهزة " + c.t0.toInt() + "–" + c.t1.toInt() + "ث (" + chunks.size + " قطعة)") }
 
     private val tick = object : Runnable {
         override fun run() {
@@ -552,4 +554,15 @@ object Tashkeel {
         }
         return out
     }
+}
+
+/** (v1237) لوج الدبلجة لوحده: آخر ٣٠٠ سطر بتتعرض من زرار 🎙 جنب اللوج، ومتسجّلة كمان في اللوج العادي */
+object DubLog {
+    private val lines = java.util.ArrayDeque<String>()
+    private val fmt = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+    fun add(s: String) {
+        synchronized(lines) { lines.addLast(fmt.format(java.util.Date()) + "  " + s); while (lines.size > 300) lines.removeFirst() }
+        try { LogStore.add("🎙D " + s) } catch (_: Throwable) {}
+    }
+    fun text(): String = synchronized(lines) { if (lines.isEmpty()) "لسه مفيش أحداث دبلجة — دوس دبلج وهتظهر هنا" else lines.toList().asReversed().joinToString("\n") }
 }

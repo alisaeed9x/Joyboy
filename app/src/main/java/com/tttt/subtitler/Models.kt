@@ -17,3 +17,12 @@ object Models {
     fun quotaOf(id: String) = quota[id] ?: QUOTA_DEFAULT
 }
 
+
+/** (v1237) تتبّع ضغط جيميناي (503/500): بعد خطأين ورا بعض الضغط بيعتبر «شغّال» ٤٥ ثانية — مفيش نسخ احتياطية ولا سباق مفتاحين، ومهلة الطلب ٣٠ ثانية */
+object Overload {
+    @Volatile private var lastAt = 0L
+    @Volatile private var streak = 0
+    fun hit() { streak++; lastAt = System.currentTimeMillis() }
+    fun ok() { streak = 0 }
+    fun active(): Boolean = streak >= 2 && System.currentTimeMillis() - lastAt < 45_000L
+}

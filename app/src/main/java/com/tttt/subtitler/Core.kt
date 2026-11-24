@@ -843,7 +843,7 @@ object Api {
         val total = hb.size + b64Len + mb.size
         val c = URL("$base/models/$model:streamGenerateContent?alt=sse").openConnection() as HttpURLConnection
         try {
-            c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 20000; c.readTimeout = (readTimeoutOverride.get() ?: 90000)
+            c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 20000; c.readTimeout = (readTimeoutOverride.get() ?: (if (Overload.active()) 30000 else 90000))
             c.setRequestProperty("Content-Type", "application/json"); c.setRequestProperty("x-goog-api-key", key)
             c.setFixedLengthStreamingMode(total)
             c.outputStream.use { os ->
@@ -923,7 +923,7 @@ object Api {
 
         val c = URL("$base/models/$model:generateContent").openConnection() as HttpURLConnection
         try {
-            c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 20000; c.readTimeout = (readTimeoutOverride.get() ?: 90000)
+            c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 20000; c.readTimeout = (readTimeoutOverride.get() ?: (if (Overload.active()) 30000 else 90000))
             c.setRequestProperty("Content-Type", "application/json"); c.setRequestProperty("x-goog-api-key", key)
             c.setFixedLengthStreamingMode(total)
             c.outputStream.use { os ->
