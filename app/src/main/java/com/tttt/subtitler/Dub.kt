@@ -237,7 +237,27 @@ object Dub {
     private fun clean(s: String): String =
         s.replace(Regex("\\s+"), " ").replace("\u0640", "").replace("\u266A", "").replace(Regex("^[\\-\\u2013\\u2014]+\\s*"), "").trim()
 
-    fun segsOf(subs: List<Sub>): List<Seg> {
+    fun live(): Boolean = Cfg.int("dub_live", 1) != 0
+
+    /** (v1232) صوت ثابت لكل شخصية في الفيديو: أول ما الشخصية تظهر بتاخد صوت من طابور جنسها والاختيار بيتخزّن ومابيتغيّرش أبدًا (بين الباتشات ولا بين الجلسات) */
+    @Synchronized
+    private fun fixedVoice(vk: String, k: String, g: String): Pair<String, Int> {
+        val cfgKey = "dubvm:" + vk
+        val m = try { JSONObject(Cfg.str(cfgKey, "{}")) } catch (_: Throwable) { JSONObject() }
+        val nk = k.trim().lowercase()
+        m.optJSONObject(nk)?.let { o -> return Pair(o.optString("v"), o.optInt("p")) }
+        val pool = if (g == "female") FEM else MAL
+        var used = 0
+        val it = m.keys()
+        while (it.hasNext()) { val o = m.optJSONObject(it.next()); if (o != null && o.optString("g") == g) used++ }
+        val voice = pool[used % pool.size]
+        val wrap = used / pool.size
+        val pitch = if (wrap > 0) (if (wrap % 2 == 1) -6 else 6) * ((wrap + 1) / 2) else 0
+        try { m.put(nk, JSONObject().put("v", voice).put("p", pitch).put("g", g)); Cfg.put(cfgKey, m.toString()) } catch (_: Throwable) {}
+        return Pair(voice, pitch)
+    }
+
+    fun segsOf(subs: List<Sub>, vk: String = ""): List<Seg> {
         val list = subs.filter { !it.isSound && it.translated.isNotBlank() }.sortedBy { it.start }
         if (!multi()) return list.map { Seg(it.start, maxOf(it.end, it.start + 0.4), it.translated.replace(Regex("\\s+"), " ").trim()) }
         fun key(s: Sub) = s.speakerName.trim().ifBlank { s.voice.trim() }
@@ -254,7 +274,9 @@ object Dub {
             val txt = clean(s.translated); if (txt.isBlank()) continue
             val g = s.gender.lowercase(); val k = key(s)
             var voice = ""; var pitchBase = 0
-            if (g == "female" || g == "male") {
+            if ((g == "female" || g == "male") && vk.isNotEmpty() && k.isNotEmpty()) {
+                val fv = fixedVoice(vk, k, g); voice = fv.first; pitchBase = fv.second
+            } else if (g == "female" || g == "male") {
                 val pool = if (g == "female") FEM else MAL
                 val idx = if (k.isEmpty()) 0 else (rank[g + "|" + k] ?: 0)
                 voice = pool[idx % pool.size]
@@ -321,6 +343,51 @@ object Dub {
         return out
     }
 
+    /** (v1232) دبلجة مجموعة جمل متتالية (باتش) في ملف WAV صغير لوحده بتوقيت نسبي لأول جملة. بيرجّع القطعة أو null لو فشل/اتلغى. الملف بيتعاد استخدامه لو نفس الجمل */
+    fun buildChunk(ctx: Context, key: String, segs: List<Seg>, cancelled: () -> Boolean): DubPlay.Chunk? {
+        if (segs.isEmpty()) return null
+        val voice = voice()
+        val dir = File(File(ctx.filesDir, "dub"), "live_" + key).also { it.mkdirs() }
+        val h = hashOf(segs, voice) + (if (Tashkeel.enabled()) "|tsk1" else "")
+        val f = File(dir, MessageDigest.getInstance("MD5").digest(h.toByteArray()).joinToString("") { String.format(Locale.US, "%02x", it) } + ".wav")
+        val t0 = segs.first().start
+        if (f.exists() && f.length() > 1000) return DubPlay.Chunk(t0, t0 + (f.length() - 44) / 2.0 / RATE, f)
+        val tmp = File(ctx.cacheDir, "dub_tts").also { it.mkdirs() }
+        val say = if (Tashkeel.enabled()) { try { Tashkeel.apply(ctx, segs.map { it.text }, cancelled) } catch (_: Throwable) { segs.map { it.text } } } else segs.map { it.text }
+        val mix = ShortArray(((segs.last().end - t0 + 6.0) * RATE).toInt() + RATE)
+        var fails = 0; var ok = 0; var endIdx = 0
+        for ((i, s) in segs.withIndex()) {
+            if (cancelled()) return null
+            val nextStart = if (i + 1 < segs.size) segs[i + 1].start else s.end + TOL
+            val slot = minOf(s.end - s.start + TOL, nextStart - s.start).coerceAtLeast(0.7)
+            val sv = s.voice.ifBlank { voice }
+            val base = s.rate
+            val said = say.getOrNull(i) ?: s.text
+            var clip = clipFor(tmp, said, sv, base, s.pitch, s.vol)
+            if (clip == null) { fails++; if (fails >= 4 && ok == 0) return null; continue }
+            ok++
+            var dur = clip.data.size.toDouble() / clip.rate
+            if (dur > slot * 1.03) {
+                val pct = Math.ceil(((1.0 + base / 100.0) * (dur / slot) - 1.0) * 100.0).toInt().coerceIn(maxOf(5, base), MAX_FAST + maxOf(base, 0))
+                val c2 = clipFor(tmp, said, sv, pct, s.pitch, s.vol)
+                if (c2 != null) { clip = c2; dur = clip.data.size.toDouble() / clip.rate }
+            }
+            val pcm = Pcm.resample(clip, RATE)
+            val at = ((s.start - t0) * RATE).toInt().coerceAtLeast(0)
+            val limit = if (i + 1 < segs.size) ((nextStart - t0) * RATE).toInt() else mix.size
+            val n = minOf(pcm.size, (limit - at).coerceAtLeast(0), mix.size - at)
+            for (k in 0 until n) {
+                var v = mix[at + k] + pcm[k]
+                if (k >= n - 480 && n < pcm.size) v = mix[at + k] + (pcm[k] * ((n - k) / 480.0)).toInt()
+                mix[at + k] = v.coerceIn(-32768, 32767).toShort()
+            }
+            if (at + n > endIdx) endIdx = at + n
+        }
+        if (ok == 0 || endIdx <= 0) return null
+        Pcm.writeWav(f, mix.copyOf(endIdx), RATE)
+        return DubPlay.Chunk(t0, t0 + endIdx.toDouble() / RATE, f)
+    }
+
     private fun clipFor(dir: File, text: String, voice: String, pct: Int, pitch: Int = 0, vol: Int = 0): Pcm.Clip? {
         val name = MessageDigest.getInstance("MD5").digest("$voice|$pct|$pitch|$vol|$text".toByteArray()).joinToString("") { String.format(Locale.US, "%02x", it) } + ".mp3"
         val f = File(dir, name)
@@ -339,7 +406,51 @@ class DubPlay(private val p: androidx.media3.exoplayer.ExoPlayer) {
     private var savedVol = 1f
     private var ready = false
     private var offsetMs = 0L
-    val active: Boolean get() = mp != null
+    class Chunk(val t0: Double, val t1: Double, val file: File)
+    private val chunks = java.util.concurrent.CopyOnWriteArrayList<Chunk>()
+    @Volatile var live = false
+    private var curChunk: Chunk? = null
+    val active: Boolean get() = mp != null || live
+
+    /** (v1232) تشغيل مباشر: قطع دبلجة صغيرة (كل باتش لوحده) بتتضاف أول ما تجهز، والتشغيل بيختار القطعة اللي عند مكان الفيديو */
+    private val liveTick = object : Runnable {
+        override fun run() {
+            if (!live) return
+            try {
+                val posMs = p.currentPosition + offsetMs
+                val posS = posMs / 1000.0
+                var c: Chunk? = null
+                for (x in chunks) if (posS >= x.t0 && posS < x.t1 && (c == null || x.t0 >= c.t0)) c = x
+                if (c !== curChunk) {
+                    try { mp?.release() } catch (_: Throwable) {}
+                    mp = null; curChunk = c
+                    if (c != null) { val m = MediaPlayer(); m.setDataSource(c.file.absolutePath); m.prepare(); mp = m }
+                }
+                val m = mp; val cc = curChunk
+                if (m != null && cc != null) {
+                    val want = (posMs - (cc.t0 * 1000).toLong()).toInt().coerceAtLeast(0)
+                    if (p.isPlaying) {
+                        if (want < m.duration) {
+                            val sp = p.playbackParameters.speed
+                            if (!m.isPlaying) { m.seekTo(want); try { m.playbackParams = PlaybackParams().setSpeed(sp) } catch (_: Throwable) {}; m.start() }
+                            else if (Math.abs(m.currentPosition - want) > 350) m.seekTo(want)
+                        }
+                    } else if (m.isPlaying) m.pause()
+                }
+            } catch (_: Throwable) {}
+            h.postDelayed(this, 300)
+        }
+    }
+
+    fun startLive(vidOffsetMs: Long = 0L) {
+        stop()
+        chunks.clear(); curChunk = null
+        live = true; offsetMs = vidOffsetMs
+        savedVol = p.volume; p.volume = Dub.origVol()
+        h.post(liveTick)
+    }
+
+    fun addChunk(c: Chunk) { chunks.add(c) }
 
     private val tick = object : Runnable {
         override fun run() {
@@ -367,10 +478,10 @@ class DubPlay(private val p: androidx.media3.exoplayer.ExoPlayer) {
     }
 
     fun stop() {
-        h.removeCallbacks(tick)
+        h.removeCallbacks(tick); h.removeCallbacks(liveTick)
         try { mp?.release() } catch (_: Throwable) {}
-        if (mp != null) try { p.volume = savedVol } catch (_: Throwable) {}
-        mp = null; ready = false
+        if (mp != null || live) try { p.volume = savedVol } catch (_: Throwable) {}
+        mp = null; ready = false; live = false; curChunk = null; chunks.clear()
     }
 }
 

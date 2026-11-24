@@ -7884,11 +7884,81 @@ class PlayerActivity : Activity(), Host {
         h.removeCallbacks(dubPoll); h.postDelayed(dubPoll, 4000L)
     }
 
+    // (v1232) دبلجة باتش باتش: كل باتش ترجمة ينزل بيتدبلج لوحده ويشتغل، وصوت كل شخصية ثابت. dub_live=0 يرجّع الدبلجة الكاملة بعد 100%
+    @Volatile private var dubLiveOn = false
+    @Volatile private var dubLiveBusy = false
+    private val dubLiveDone = HashSet<String>()
+    private var dubLiveFails = 0
+    private var dubLiveIdle = 0
+    private fun dubSegKey(sg: Dub.Seg): String = "" + (sg.start * 100).toLong() + "|" + sg.text.hashCode() + "|" + sg.voice + "|" + sg.pitch
+    private val dubLiveTick = object : Runnable {
+        override fun run() {
+            if (!dubLiveOn || isDestroyed || isFinishing) { dubLiveOn = false; return }
+            val dp = dubPlay
+            if (dp == null || !dp.live) { dubLiveOn = false; return }
+            try {
+                if (!dubLiveBusy) {
+                    val keyS = Store.keyFor(vid)
+                    val all = Dub.segsOf(engine.subs, keyS)
+                    val pend = all.filter { sg -> dubSegKey(sg) !in dubLiveDone }
+                    if (pend.isNotEmpty()) {
+                        dubLiveIdle = 0
+                        val groups = ArrayList<ArrayList<Dub.Seg>>()
+                        for (sg in pend) {
+                            val last = groups.lastOrNull()
+                            if (last == null || last.size >= 30 || sg.start - last.last().end > 8.0) groups.add(arrayListOf(sg)) else last.add(sg)
+                        }
+                        val posS = try { player.currentPosition / 1000.0 } catch (_: Throwable) { 0.0 }
+                        val grp: List<Dub.Seg> = (groups.firstOrNull { g -> g.last().end >= posS - 1.0 } ?: groups.first())
+                        dubLiveBusy = true
+                        val app = applicationContext
+                        Thread {
+                            val c = try { Dub.buildChunk(app, keyS, grp) { !dubLiveOn || isDestroyed } } catch (e: Throwable) { LogStore.err("Player:dubLive", e); null }
+                            runOnUiThread {
+                                dubLiveBusy = false
+                                if (c != null) {
+                                    dubPlay?.takeIf { it.live }?.addChunk(c)
+                                    for (sg in grp) dubLiveDone.add(dubSegKey(sg))
+                                    dubLiveFails = 0
+                                } else if (dubLiveOn && ++dubLiveFails >= 3) {
+                                    dubLiveOn = false; dubPlay?.stop()
+                                    say("❌ الدبلجة وقفت — اتأكد إن النت شغّال وجرّب تاني")
+                                }
+                            }
+                        }.apply { isDaemon = true }.start()
+                    } else if (trComplete()) {
+                        dubLiveOn = false
+                        say(if (dubLiveDone.isEmpty()) "مفيش كلام مترجم يتدبلج في الفيديو ده" else "✅ الدبلجة خلصت للفيديو كله")
+                        if (dubLiveDone.isEmpty()) dubPlay?.stop()
+                        return
+                    } else if (!engineStarted && ++dubLiveIdle > 30) {
+                        dubLiveOn = false; dubPlay?.stop()
+                        say("⚠ الترجمة ماشتغلتش — الدبلجة اتقفلت")
+                        return
+                    }
+                }
+            } catch (e: Throwable) { LogStore.err("Player:dubLiveTick", e) }
+            h.postDelayed(this, 3000L)
+        }
+    }
+    private fun dubLiveStart() {
+        val xo = player.exo()
+        if (xo == null) { say("📺 الدبلجة مش متاحة وإنت متحكم في التلفزيون"); return }
+        dubLiveDone.clear(); dubLiveFails = 0; dubLiveIdle = 0; dubLiveBusy = false
+        val dp = dubPlay ?: DubPlay(xo).also { dubPlay = it }
+        dp.startLive()
+        dubLiveOn = true
+        if (!trComplete() && !engineStarted) { say("🎙 هترجم وأدبلج باتش باتش — أول باتش يجهز الدبلجة تبدأ"); dubBypass = true; trMainClick(window.decorView) }
+        else say("🎙 الدبلجة شغّالة باتش باتش — صوت الفيديو الأصلي اتوطّى")
+        h.removeCallbacks(dubLiveTick); h.postDelayed(dubLiveTick, 1500L)
+    }
+
     private fun dubToggle() {
         val dp = dubPlay
-        if (dp != null && dp.active) { dp.stop(); say("🎙 الدبلجة اتقفلت — صوت الفيديو الأصلي رجع"); return }
+        if (dp != null && dp.active) { dubLiveOn = false; h.removeCallbacks(dubLiveTick); dp.stop(); say("🎙 الدبلجة اتقفلت — صوت الفيديو الأصلي رجع"); return }
         if (dubBusy) { dubCancel = true; say("⏹ بلغي الدبلجة…"); return }
-        val segs = Dub.segsOf(engine.subs)
+        if (Dub.live() && !remote) { dubLiveStart(); return }
+        val segs = Dub.segsOf(engine.subs, Store.keyFor(vid))
         val force = dubForce; dubForce = false
         if (!force && (segs.isEmpty() || (TrProfile.uiMode() == TrProfile.DUB && !trComplete()))) { dubAutoTr(); return }   // (v1229)
         if (segs.isEmpty()) { say("مفيش كلام مترجم يتدبلج في الفيديو ده"); return }
