@@ -107,6 +107,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         sys.add(MoreItem("📊", "النت والداتا", false) { try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } })
         if (!tvDev) sys.add(MoreItem("🔄", "مركز التحديث", false) { try { GhCiUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:gh", e) } })   // (v861) تحديث البرنامج + تحديث التلفزيون + لوج الفشل
         if (!tvDev) sys.add(MoreItem("📤", "إرسال التحديث للتلفزيون", false) { try { RemoteClient.forcePushFlow(act) } catch (e: Throwable) { LogStore.err("Nav:pushUpd", e) } })   // (v1048) من صفحة «المزيد» مباشرة
+        sys.add(MoreItem("🎨", if (Design.isNew()) "الشكل: جديد (اضغط للقديم)" else "الشكل: قديم (اضغط للجديد)", false) { try { Design.set(!Design.isNew()); act.recreate() } catch (e: Throwable) { LogStore.err("Nav:design", e) } })   // (v1219) تبديل الشكل جديد/قديم
         sys.add(MoreItem(DEFS[7].first, "الإعدادات", 7 == active) { onPick(7) })
         return listOf("الأقسام" to secs, "الترجمة" to trl, "تحكم وريموت" to ctl, "النظام والتحديث" to sys)
     }
@@ -437,6 +438,6 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             labels[i].setTextColor(if (on) onC else off)
         }
         (indicator.background as? GradientDrawable)?.setColor(if (glassNav) (if (tinted) 0x33FFFFFF else MtGlass.selected(th)) else if (tinted) 0xFFFFFFFF.toInt() else th.primary)
-        if (glassNav && !tinted && !th.isLight) (indicator.background as? GradientDrawable)?.colors = intArrayOf(0x557CF3D0, 0x558B7CFF)
+        if (glassNav && !tinted && !th.isLight && Design.isNew()) (indicator.background as? GradientDrawable)?.colors = intArrayOf(0x557CF3D0, 0x558B7CFF)
     }
 }

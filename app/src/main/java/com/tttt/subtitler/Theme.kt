@@ -14,7 +14,7 @@ class Theme(val id: String, val name: String, val bg: Int, val surface: Int, val
             val primary: Int, val accent: Int, val text: Int, val muted: Int, val danger: Int, val success: Int) {
     val isLight: Boolean get() = lum(bg) > 0.5
     /** (v1208) فيروزي هادي لحالات التقدّم/المشاهدة (لمسة بس، مش لون مسيطر) */
-    val progress: Int get() = if (isLight) 0xFF3E8E88.toInt() else 0xFF7CF3D0.toInt()
+    val progress: Int get() = if (isLight) 0xFF3E8E88.toInt() else if (Design.isNew()) 0xFF7CF3D0.toInt() else 0xFF6CC4BC.toInt()
     /** (v913) لون النص/الأيقونة فوق primary — accent MeeTube أبيض في الداكن وأسود في الفاتح فالنص لازم يتعكس */
     val onPrimary: Int get() = if (lum(primary) > 0.5) 0xFF0F0F0F.toInt() else 0xFFFFFFFF.toInt()
     companion object {
@@ -72,9 +72,16 @@ object MeeRes {
     }
 }
 
+/** (v1219) مفتاح الشكل: جديد أو القديم (الافتراضي: القديم) — القديم بيرجّع ألوان v1217 بالظبط ومفيش أي كود جديد بيشتغل فيه */
+object Design {
+    fun isNew(): Boolean = try { Cfg.bool("ui_new", false) } catch (_: Throwable) { false }
+    fun set(on: Boolean) { Cfg.put("ui_new", if (on) "1" else "0") }
+}
+
 object Themes {
     @Volatile private var cached: Theme? = null
     @Volatile private var cachedNight = -1
+    @Volatile private var cachedNew = false
 
     /** تركيب لون شفاف فوق خلفية → لون معتم (كارت/حد MeeTube شفافين، وJoyboy محتاج لون صلب) */
     private fun over(c: Int, bg: Int): Int {
@@ -88,15 +95,17 @@ object Themes {
     fun current(): Theme {
         val night = MeeRes.night()
         val n = if (night) 1 else 0
-        cached?.let { if (cachedNight == n) return it }
+        val isNew = Design.isNew()
+        cached?.let { if (cachedNight == n && cachedNew == isNew) return it }
         // (v1205) هوية «Vanilla Studio»: فاتح = Vanilla/Latte/Mocha/Espresso · داكن = AMOLED أسود حقيقي بسطوح رمادية محايدة (v1216، بدل البني) + لمسة Latte.
         // الجانب (فاتح/داكن) لسه من إعداد MeeTube؛ الألوان بس هي اللي بقت دافية.
         val c = { h: Long -> (0xFF000000L or h).toInt() }
         val t = if (night) Theme("vanilla_dark", "Vanilla داكن",
-            c(0x000000), c(0x0E0E0E), c(0x161616), c(0x2A2A2A), c(0x7CF3D0), c(0x8B7CFF), c(0xFFFFFF), c(0xA8A8A8), c(0xD9806E), c(0x6FB27C))
+            c(0x000000), c(0x0E0E0E), c(0x161616), c(0x2A2A2A),
+            if (isNew) c(0x7CF3D0) else c(0xE6D8C5), if (isNew) c(0x8B7CFF) else c(0xBDBDBD), if (isNew) c(0xFFFFFF) else c(0xF5F0E7), c(0xA8A8A8), c(0xD9806E), c(0x6FB27C))
         else Theme("vanilla_light", "Vanilla فاتح",
             c(0xF5F0E7), c(0xFBF8F2), c(0xFFFDF9), c(0xE6D8C5), c(0x8B6B50), c(0x6F6052), c(0x29241F), c(0x6F6052), c(0xB3503F), c(0x3E8E55))
-        cached = t; cachedNight = n
+        cached = t; cachedNight = n; cachedNew = isNew
         return t
     }
 
