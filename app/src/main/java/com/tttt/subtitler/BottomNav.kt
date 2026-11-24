@@ -341,6 +341,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         if (glassNav) { indicator.alpha = 0f; indicator.postDelayed({ if (indicator.alpha < 1f && !moving) { place(false); indicator.alpha = 1f } }, 900L) }   // (v1253)
         paint()
         badge(4, 0)
+        try { badge(MORE, Upd.count) } catch (_: Throwable) {}   // (v1264) الشريط لما يتبني من جديد البادج يرجع
         // (v941) وضع الكبسولة أول مرة تحت الخلية النشطة: الشريط اللي بيتبني في شاشة تانية (متصفح/ملفات/يوتيوب) كان بيسيب الكبسولة على الحافة
         rowLL.post { place(false) }
         startLiveNet(act)

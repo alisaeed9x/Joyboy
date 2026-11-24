@@ -38,11 +38,7 @@ object UpdateSheet {
         var upToDateFlag = false
         var page = "https://github.com/alisaeed9x/Joyboy/releases/latest"
         val g = GAlert(a).setView(sv)
-        g.setNegativeButton("لاحقًا", null)
-        g.setPositiveButton("تحميل") { _, _ ->
-            if (!upToDateFlag) try { if (Upd.app != null) Upd.startApp(a) else a.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(if (apkUrl.isNotBlank()) apkUrl else page)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            catch (e: Throwable) { LogStore.err("UpdateSheet:open", e) }
-        }
+        g.setNegativeButton("إغلاق", null)   // (v1264) زرار التحميل ما بيظهر غير بعد ما الفحص يلاقي تحديث
         val d: Dialog = g.show()
         try { d.window?.setGravity(Gravity.BOTTOM) } catch (_: Throwable) {}
         Thread {
@@ -69,9 +65,14 @@ object UpdateSheet {
                 try {
                     if (upToDate) {
                         title.text = "✅ أنت على آخر تحديث"
-                        try { (d as? android.app.AlertDialog)?.getButton(android.content.DialogInterface.BUTTON_POSITIVE)?.text = "تمام" } catch (_: Throwable) {}
                         upToDateFlag = true
-                    } else if (tName.isNotBlank()) title.text = "⬆ $tName   (النسخة اللي عندك: v$ver)"
+                    } else if (tName.isNotBlank()) {
+                        title.text = "⬆ $tName   (النسخة اللي عندك: v$ver)"
+                        if (Upd.app == null) col.addView(ui.button("⬇ تحميل التحديث", true) {
+                            try { a.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(if (apkUrl.isNotBlank()) apkUrl else page)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                            catch (e: Throwable) { LogStore.err("UpdateSheet:open", e) }
+                        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
+                    }
                     notesBox.removeAllViews()
                     notesBox.addView(Notes.render(a, ui, th, cleanTxt.ifBlank { "مفيش ملاحظات للنسخة دي." }))
                 } catch (_: Throwable) {}
