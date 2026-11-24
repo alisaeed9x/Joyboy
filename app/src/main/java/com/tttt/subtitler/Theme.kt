@@ -14,7 +14,7 @@ class Theme(val id: String, val name: String, val bg: Int, val surface: Int, val
             val primary: Int, val accent: Int, val text: Int, val muted: Int, val danger: Int, val success: Int) {
     val isLight: Boolean get() = lum(bg) > 0.5
     /** (v1208) فيروزي هادي لحالات التقدّم/المشاهدة (لمسة بس، مش لون مسيطر) */
-    val progress: Int get() = if (isLight) 0xFF3E8E88.toInt() else if (Design.isNew()) 0xFF7CF3D0.toInt() else 0xFF6CC4BC.toInt()
+    val progress: Int get() = if (isLight) 0xFF3E8E88.toInt() else if (Design.isMaterial()) primary else if (Design.isNew()) 0xFF7CF3D0.toInt() else 0xFF6CC4BC.toInt()
     /** (v913) لون النص/الأيقونة فوق primary — accent MeeTube أبيض في الداكن وأسود في الفاتح فالنص لازم يتعكس */
     val onPrimary: Int get() = if (lum(primary) > 0.5) 0xFF0F0F0F.toInt() else 0xFFFFFFFF.toInt()
     companion object {
@@ -74,14 +74,32 @@ object MeeRes {
 
 /** (v1219) مفتاح الشكل: جديد أو القديم (الافتراضي: القديم) — القديم بيرجّع ألوان v1217 بالظبط ومفيش أي كود جديد بيشتغل فيه */
 object Design {
-    fun isNew(): Boolean = try { Cfg.bool("ui_new", false) } catch (_: Throwable) { false }
-    fun set(on: Boolean) { Cfg.put("ui_new", if (on) "1" else "0") }
+    const val CLASSIC = "classic"; const val VANILLA = "vanilla"; const val MATERIAL = "material"
+    val order = listOf(CLASSIC, VANILLA, MATERIAL)
+    fun label(d: String): String = when (d) { CLASSIC -> "كلاسيك"; VANILLA -> "فانيلا"; else -> "ماتيريال" }
+    /** (v1248) التصميم الحالي: كلاسيك (القديم · الافتراضي) · فانيلا (الجديد) · ماتيريال (Material You). ui_new القديم بيتحوّل لفانيلا */
+    fun cur(): String = try { val s = Cfg.str("ui_design", ""); if (s == CLASSIC || s == VANILLA || s == MATERIAL) s else if (Cfg.bool("ui_new", false)) VANILLA else CLASSIC } catch (_: Throwable) { CLASSIC }
+    /** هيكل الواجهة الجديدة (كارت كمّل المشاهدة، شاشة التحديث…) شغّال في فانيلا وماتيريال؛ كلاسيك متلمسش */
+    fun isNew(): Boolean = cur() != CLASSIC
+    fun isMaterial(): Boolean = cur() == MATERIAL
+    /** كل تصميم له وضع فاتح/داكن/نظام خاص بيه: وقت التبديل بنحفظ وضع القديم ونرجّع وضع الجديد (لو اتحفظ قبل كده) */
+    fun set(ctx: android.content.Context, d: String) {
+        val old = cur(); if (old == d) return
+        try { Cfg.put("mode_" + old, com.tttt.subtitler.mtui.ThemeMode.peek(ctx).toString()) } catch (_: Throwable) {}
+        Cfg.put("ui_design", d); Cfg.put("ui_new", if (d == CLASSIC) "0" else "1")
+        try { Cfg.str("mode_" + d, "").toIntOrNull()?.let { com.tttt.subtitler.mtui.ThemeMode.set(ctx, it) } } catch (_: Throwable) {}
+    }
+    fun next(): String = order[(order.indexOf(cur()) + 1) % order.size]
+    private fun al(c: Int, a: Int): Int = (a shl 24) or (c and 0x00FFFFFF)
+    /** اللون المميّز الأول (فانيلا: نعناعي · ماتيريال: primary بتاع الثيم) بشفافية a (0..255) */
+    fun mint(a: Int): Int = if (isMaterial()) al(Themes.current().primary, a) else al(0x7CF3D0, a)
+    fun violet(a: Int): Int = if (isMaterial()) al(Themes.current().accent, a) else al(0x8B7CFF, a)
 }
 
 object Themes {
     @Volatile private var cached: Theme? = null
     @Volatile private var cachedNight = -1
-    @Volatile private var cachedNew = false
+    @Volatile private var cachedNew = ""
 
     /** تركيب لون شفاف فوق خلفية → لون معتم (كارت/حد MeeTube شفافين، وJoyboy محتاج لون صلب) */
     private fun over(c: Int, bg: Int): Int {
@@ -91,21 +109,46 @@ object Themes {
             m(android.graphics.Color.green(c), android.graphics.Color.green(bg)), m(android.graphics.Color.blue(c), android.graphics.Color.blue(bg)))
     }
 
+    /** (v1248) ماتيريال: ألوان Material You (M3). أندرويد 12+ بياخد الـaccent/السطوح من خلفية الجهاز (ألوان النظام)، وغير كده الألوان الأساسية الثابتة لـM3 (بنفسجي) */
+    private fun materialTheme(night: Boolean): Theme {
+        val c = { h: Long -> (0xFF000000L or h).toInt() }
+        var pri = if (night) c(0xD0BCFF) else c(0x6750A4); var acc = if (night) c(0xCCC2DC) else c(0x625B71)
+        var bg = if (night) c(0x141218) else c(0xFEF7FF); var sur = if (night) c(0x1D1B20) else c(0xF7F2FA); var card = if (night) c(0x211F26) else c(0xECE6F0)
+        var bor = if (night) c(0x49454F) else c(0xCAC4D0); var txt = if (night) c(0xE6E0E9) else c(0x1D1B20); var mut = if (night) c(0xCAC4D0) else c(0x49454F)
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                val x = MtYt.app?.applicationContext
+                if (x != null) {
+                    pri = x.getColor(if (night) android.R.color.system_accent1_200 else android.R.color.system_accent1_600)
+                    acc = x.getColor(if (night) android.R.color.system_accent2_200 else android.R.color.system_accent2_600)
+                    bg = x.getColor(if (night) android.R.color.system_neutral1_900 else android.R.color.system_neutral1_10)
+                    sur = x.getColor(if (night) android.R.color.system_neutral1_800 else android.R.color.system_neutral1_50)
+                    card = x.getColor(if (night) android.R.color.system_neutral2_800 else android.R.color.system_neutral2_100)
+                    bor = x.getColor(if (night) android.R.color.system_neutral2_700 else android.R.color.system_neutral2_200)
+                    txt = x.getColor(if (night) android.R.color.system_neutral1_100 else android.R.color.system_neutral1_900)
+                    mut = x.getColor(if (night) android.R.color.system_neutral2_200 else android.R.color.system_neutral2_700)
+                }
+            }
+        } catch (_: Throwable) {}
+        return Theme(if (night) "material_dark" else "material_light", if (night) "ماتيريال داكن" else "ماتيريال فاتح",
+            bg, sur, card, bor, pri, acc, txt, mut, if (night) c(0xF2B8B5) else c(0xB3261E), if (night) c(0xA8DAB5) else c(0x386A20))
+    }
+
     /** الثيم الحالي = ألوان MeeTube للجانب المختار في إعداداته */
     fun current(): Theme {
         val night = MeeRes.night()
         val n = if (night) 1 else 0
-        val isNew = Design.isNew()
-        cached?.let { if (cachedNight == n && cachedNew == isNew) return it }
+        val dsg = Design.cur(); val isNew = dsg != Design.CLASSIC
+        cached?.let { if (cachedNight == n && cachedNew == dsg) return it }
         // (v1205) هوية «Vanilla Studio»: فاتح = Vanilla/Latte/Mocha/Espresso · داكن = AMOLED أسود حقيقي بسطوح رمادية محايدة (v1216، بدل البني) + لمسة Latte.
         // الجانب (فاتح/داكن) لسه من إعداد MeeTube؛ الألوان بس هي اللي بقت دافية.
         val c = { h: Long -> (0xFF000000L or h).toInt() }
-        val t = if (night) Theme("vanilla_dark", "Vanilla داكن",
+        val t = if (dsg == Design.MATERIAL) materialTheme(night) else if (night) Theme("vanilla_dark", "Vanilla داكن",
             c(0x000000), c(0x0E0E0E), c(0x161616), c(0x2A2A2A),
             if (isNew) c(0x7CF3D0) else c(0xE6D8C5), if (isNew) c(0x8B7CFF) else c(0xBDBDBD), if (isNew) c(0xFFFFFF) else c(0xF5F0E7), c(0xA8A8A8), c(0xD9806E), c(0x6FB27C))
         else Theme("vanilla_light", "Vanilla فاتح",
             c(0xF5F0E7), c(0xFBF8F2), c(0xFFFDF9), c(0xE6D8C5), c(0x8B6B50), c(0x6F6052), c(0x29241F), c(0x6F6052), c(0xB3503F), c(0x3E8E55))
-        cached = t; cachedNight = n; cachedNew = isNew
+        cached = t; cachedNight = n; cachedNew = dsg
         return t
     }
 

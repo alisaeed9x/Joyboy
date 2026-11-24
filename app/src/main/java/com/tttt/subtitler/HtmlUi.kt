@@ -235,7 +235,7 @@ class DualProgress(ctx: Context, val th: Theme) : View(ctx) {
         val px = w * shown.coerceIn(0f, 1f)
         if (px > 0f && MtLook.glowOn()) haloFill(c, px, cy, th6, 0xFF3E9E96.toInt(), grow)   // (v1170)
         if (px > 0f && px < w && MtGlass.on()) glow.draw(c, px, cy, (6f + 4f * grow) * d, 0xFF3E9E96.toInt())
-        if (px > 0f) gradFill(c, px, cy - th6, cy + th6, th6, if (Design.isNew()) 0xFF7CF3D0.toInt() else 0xFF6CC4BC.toInt(), if (Design.isNew()) 0xFF8B7CFF.toInt() else 0xFF3E9E96.toInt())
+        if (px > 0f) gradFill(c, px, cy - th6, cy + th6, th6, if (Design.isMaterial()) Design.mint(0xFF) else if (Design.isNew()) 0xFF7CF3D0.toInt() else 0xFF6CC4BC.toInt(), if (Design.isMaterial()) Design.violet(0xFF) else if (Design.isNew()) 0xFF8B7CFF.toInt() else 0xFF3E9E96.toInt())
         strip(c, w, cy + th6 + 4f * d, 3f * d, cov, 0xFF22C55E.toInt(), 0x2EFFFFFF)
         if (sent.isNotEmpty()) strip(c, w, cy + th6 + 4f * d, 3f * d, sent, SENT_BLUE, null, 5f * d)
         if (vis.isNotEmpty()) strip(c, w, cy + th6 + 8.5f * d, 3f * d, vis, 0xFF3E9E96.toInt(), null)

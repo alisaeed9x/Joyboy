@@ -5085,7 +5085,7 @@ class PlayerActivity : Activity(), Host {
         // زرار التشغيل الأوسط (بيظهر وقت الإيقاف) + شارة النسبة (شاشة كاملة) + فلاش السيك/الصوت/السطوع
         centerPlay = FadePop(this).apply {
             text = "▶"; textSize = 28f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); visibility = View.GONE
-            background = if (Design.isNew()) GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x4D7CF3D0); setStroke(maxOf(1, (resources.displayMetrics.density * 1.5f).toInt()), 0x997CF3D0.toInt()) } else glassCircleBg(resources.displayMetrics.density)
+            background = if (Design.isNew()) GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Design.mint(0x4D)); setStroke(maxOf(1, (resources.displayMetrics.density * 1.5f).toInt()), Design.mint(0x99)) } else glassCircleBg(resources.displayMetrics.density)
             if (Design.isNew()) textSize = 34f
             setOnClickListener { togglePlay() }
             Glass.pressable(this)   // (v445)
@@ -7955,8 +7955,8 @@ class PlayerActivity : Activity(), Host {
     }
     private fun fsPlayDp(): Int = if (Design.isNew()) 64 else 56
     private fun auroraPill(rDp: Int): GradientDrawable {
-        if (ui.th.isLight) return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xCCEF5350.toInt(), 0xCCC62828.toInt())).apply { cornerRadius = ui.dp(rDp).toFloat(); setStroke(maxOf(1, ui.dp(1)), 0x66FFFFFF) }   // (v1247) الفاتح: زجاجي بالأحمر القديم بدل النعناعي
-        return GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xFF7CF3D0.toInt(), 0xFF8B7CFF.toInt())).apply { cornerRadius = ui.dp(rDp).toFloat() }
+        if (ui.th.isLight && !Design.isMaterial()) return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xCCEF5350.toInt(), 0xCCC62828.toInt())).apply { cornerRadius = ui.dp(rDp).toFloat(); setStroke(maxOf(1, ui.dp(1)), 0x66FFFFFF) }   // (v1247) الفاتح: زجاجي بالأحمر القديم بدل النعناعي
+        return GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Design.mint(0xFF), Design.violet(0xFF))).apply { cornerRadius = ui.dp(rDp).toFloat() }
     }
     private fun trComplete(): Boolean = try { trPct >= 100 || (::realEngine.isInitialized && realEngine.fullyDone()) } catch (_: Throwable) { false }
     private val dubPoll = object : Runnable {

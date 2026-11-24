@@ -763,7 +763,7 @@ class LibraryUi(
             orientation = if (exp) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8))   // (v1247) هامش متساوي ٨dp من الأربع جهات حوالين الصورة
-            val cols = if (th.isLight) intArrayOf(th.card, th.surface) else intArrayOf(0x337CF3D0, 0x338B7CFF)
+            val cols = if (th.isLight) intArrayOf(th.card, th.surface) else intArrayOf(Design.mint(0x33), Design.violet(0x33))
             background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, cols).apply { cornerRadius = ui.dp(20).toFloat(); setStroke(ui.dp(1), th.border) }
             isClickable = true
             setOnClickListener { markPlayed(hv); onPlay(hv) }
