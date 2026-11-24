@@ -5520,7 +5520,7 @@ class PlayerActivity : Activity(), Host {
         val spdB = tip(ui.fsCircle(PlayerLogic.speedLabel(speed)) { cycleSpeed(); showChrome() }.apply { textSize = 11f }, "السرعة"); spdVisB = spdB
         val rtB = tip(mini("🔄") { batchDialog() }, "إعادة ترجمة")
         val bgTrB = tip(mini("🌙") { translateInBackground() }, "ترجمة بالخلفية")
-        val toolBtns = listOf<TextView>(syncB, tip(logB, "اللوج"), tip(sentB, "الجمل"), tip(mini("📝") { sfTranslationsDialog(window.decorView) }, "ترجمات الفيديو"), tip(loopB, "تكرار الفيديو"), tip(dualB, "وضع الترجمة"), tip(charsB, "الشخصيات"), tip(voiceB, "فصل صوت الكلام عن الموسيقى"), qualB, nextListB)
+        val toolBtns = listOf<TextView>(syncB, tip(logB, "اللوج"), tip(sentB, "الجمل"), tip(mini("📝") { sfTranslationsDialog(window.decorView) }, "ترجمات الفيديو"), tip(loopB, "تكرار الفيديو"), tip(dualB, "وضع الترجمة"), tip(charsB, "الشخصيات"), tip(voiceB, "فصل صوت الكلام عن الموسيقى"), qualB, nextListB, tip(mini("🔄") { toggleFsLocal() }, "تدوير الشاشة (طولي/عرضي)"))
         toolBtns.drop(1).filter { it !== voiceB && it !== qualB && it !== nextListB }.forEach { b ->   // (v226) 🔑 اتشال من الشريط العلوي
             toolR.addView(b, LinearLayout.LayoutParams(if (b.text.startsWith("🔑")) ui.dp(42) else ui.dp(30), ui.dp(30)).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
         }
@@ -5583,7 +5583,7 @@ class PlayerActivity : Activity(), Host {
             rightB.addView(fsBarFs, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginStart = ui.dp(4) })   // (v1019) نفس ترتيب MeeTube: ⤢ ثم ⛶
             rightB.addView(rotBarB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginStart = ui.dp(4) })
             // من الشمال لليمين (LTR): 🔁 📋 📝 🔤 ⏱ 💬 CC ☰  ← يعني ☰ على اليمين جنب عداد الجمل
-            tbRow.addView(toolBtns[4], lp(4)); tbRow.addView(spdB, lp(1)); tbRow.addView(toolBtns[2], lp(2)); if (Design.isNew()) { tbRow.addView(toolBtns[1], lp(1)); (dubLogB.parent as? ViewGroup)?.removeView(dubLogB); tbRow.addView(dubLogB, lp(1)) } else tbRow.addView(rtB, lp(6))   // (v1025)
+            tbRow.addView(toolBtns[4], lp(4)); tbRow.addView(toolBtns[10], lp(4)); tbRow.addView(spdB, lp(1)); tbRow.addView(toolBtns[2], lp(2)); if (Design.isNew()) { tbRow.addView(toolBtns[1], lp(1)); (dubLogB.parent as? ViewGroup)?.removeView(dubLogB); tbRow.addView(dubLogB, lp(1)) } else tbRow.addView(rtB, lp(6))   // (v1025)
             tbRow.addView(textB, LinearLayout.LayoutParams(-2, ui.dp(38)).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
             tbRow.addView(toolBtns[0], lp(0)); tbRow.addView(toolBtns[5], lp(5)); // (v1141) 📝 ترجمات الفيديو اتشال من الشريط (الشكل القديم) — القايمة لسه من ☰ → 🗂 ترجمات الفيديو
             // (v378) 🎙 فصل الصوت و HD و 📃 اتشالوا من الشريط العلوي (الجودة رجعت جنب زرار الترجمة، والتالي بقى لوحة تحت الأزرار)
@@ -7110,7 +7110,7 @@ class PlayerActivity : Activity(), Host {
         try { sub.show(null) } catch (e: Exception) { LogStore.err("Main:2172", e) }
         visOv.showBoxes(emptyList())
         resumePending = false; applyCard()
-        engineStarted = false; autoRotDone = false
+        engineStarted = false; autoRotDone = false; userRot = false
         buildPlayer(); initEngine()
         notifTitleOv = Recents.titleOf(vid)
         updateTr()
