@@ -5343,6 +5343,7 @@ class PlayerActivity : Activity(), Host {
         gSub.addView(pk("⏱ شريط التزامن السريع") { toggleSyncStrip() })   // (v469) B14
         // (v103) قايمة ☰ = قايمة منسدلة صغيرة فيها بس الأزرار اللي مش موجودة في المشغّل نفسه
         gTool.addView(pd("📤 تصدير SRT") { doExport() })
+        if (Design.isNew()) gTool.addView(pd("🎧 ابعت الصوت كله (ملف واحد)") { shareFullAudio() })
         gTool.addView(pd("☁ ارفع الصوت للريبو (ترجمة بره)") { ghUpload() })   // (v1202)
         gTool.addView(pd("📋 نسخ برومبت الريبو") { GhAudio.copyLast(this) })
         gTool.addView(pd("🗑 امسح الصوت من الريبو") { GhAudio.clear(this) })
@@ -8096,6 +8097,28 @@ class PlayerActivity : Activity(), Host {
         val snap: List<Sub> = try { ArrayList(engine.subs) } catch (_: Throwable) { ArrayList() }
         val runLog = try { arcRun?.let { r -> synchronized(r.log) { r.log.toString() } } ?: "" } catch (_: Throwable) { "" }
         LogZip.run(this, t, snap, offsetMs, (engine as? LocalEngine)?.e, runLog)
+    }
+
+    /** (v1238) صوت الفيديو كله ملف واحد ← نافذة المشاركة */
+    private var fullAudioBusy = false
+    fun shareFullAudio() {
+        if (fullAudioBusy) { say("⏳ لسه بطلّع الصوت…"); return }
+        val u = uri; val su = aurl ?: url
+        if (u == null && su == null) { say("افتح الفيديو الأول"); return }
+        val t = try { Recents.titleOf(vid).substringBeforeLast('.', Recents.titleOf(vid)) } catch (_: Throwable) { "video" }
+        val hd = HashMap(hdr)
+        fullAudioBusy = true; say("🎧 بطلّع صوت الفيديو كله في ملف واحد…")
+        Thread {
+            try {
+                var lastP = -10
+                val f = FullAudio.extract(applicationContext, u, su, hd, t) { p -> if (p >= lastP + 20) { lastP = p; runOnUiThread { say("🎧 تجهيز الصوت " + p + "%") } } }
+                LogStore.add("🎧 صوت كامل: " + f.name + " · " + (f.length() / 1024) + "KB")
+                runOnUiThread { fullAudioBusy = false; if (!isDestroyed) { say("✅ الصوت جاهز (" + (f.length() / 1048576L) + "MB) — اختار واتساب"); try { FullAudio.share(this, f) } catch (e: Throwable) { say("تعذّر فتح المشاركة") } } }
+            } catch (e: Throwable) {
+                LogStore.add("🎧 صوت كامل فشل: " + (e.message ?: e.javaClass.simpleName))
+                runOnUiThread { fullAudioBusy = false; say("❌ " + (e.message ?: "فشل استخراج الصوت").take(120)) }
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     fun exportOriginalSrt() {

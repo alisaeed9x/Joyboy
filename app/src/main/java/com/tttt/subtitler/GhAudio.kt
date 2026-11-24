@@ -233,3 +233,52 @@ object GhAudio {
         }.also { it.isDaemon = true }.start()
     }
 }
+
+/** (v1238) صوت الفيديو كله كملف واحد (m4a من غير إعادة ضغط، بنفس التوقيت) + نافذة المشاركة (واتساب وغيره) */
+object FullAudio {
+    fun extract(ctx: android.content.Context, uri: android.net.Uri?, url: String?, hdr: Map<String, String>, title: String, onPct: (Int) -> Unit = {}): java.io.File {
+        val ex = android.media.MediaExtractor()
+        try {
+            if (uri != null && !uri.toString().startsWith("http")) ex.setDataSource(ctx, uri, null)
+            else ex.setDataSource(url ?: uri.toString(), hdr)
+            var ti = -1; var fmt: android.media.MediaFormat? = null
+            for (i in 0 until ex.trackCount) {
+                val f = ex.getTrackFormat(i)
+                if ((f.getString(android.media.MediaFormat.KEY_MIME) ?: "").startsWith("audio/")) { ti = i; fmt = f; break }
+            }
+            if (ti < 0 || fmt == null) throw java.io.IOException("مفيش مسار صوت في الفيديو ده")
+            val mime = fmt.getString(android.media.MediaFormat.KEY_MIME) ?: ""
+            val webm = mime.contains("opus") || mime.contains("vorbis")
+            val dir = java.io.File(ctx.cacheDir, "share_audio").also { it.mkdirs() }
+            dir.listFiles()?.forEach { try { it.delete() } catch (_: Throwable) {} }
+            val safe = title.replace(Regex("[^A-Za-z0-9._-]+"), "_").trim('_').take(30).ifBlank { "audio" }
+            val out = java.io.File(dir, "$safe-audio." + (if (webm) "webm" else "m4a"))
+            ex.selectTrack(ti)
+            val durUs = if (fmt.containsKey(android.media.MediaFormat.KEY_DURATION)) fmt.getLong(android.media.MediaFormat.KEY_DURATION) else 0L
+            val muxer = android.media.MediaMuxer(out.absolutePath, if (webm) android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM else android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            try {
+                val mt = muxer.addTrack(fmt); muxer.start()
+                val buf = java.nio.ByteBuffer.allocate(1024 * 1024); val info = android.media.MediaCodec.BufferInfo()
+                var lastP = -1
+                while (true) {
+                    buf.clear(); val n = ex.readSampleData(buf, 0); if (n < 0) break
+                    info.set(0, n, ex.sampleTime, android.media.MediaCodec.BUFFER_FLAG_KEY_FRAME)
+                    muxer.writeSampleData(mt, buf, info)
+                    if (durUs > 0) { val p = (ex.sampleTime * 100 / durUs).toInt().coerceIn(0, 100); if (p != lastP) { lastP = p; onPct(p) } }
+                    ex.advance()
+                }
+                muxer.stop()
+            } catch (e: Throwable) { try { out.delete() } catch (_: Throwable) {}; throw java.io.IOException("الصيغة دي ($mime) ما قدرتش أطلّعها لملف واحد: " + (e.message ?: "").take(60)) }
+            finally { try { muxer.release() } catch (_: Throwable) {} }
+            if (out.length() < 1024L) throw java.io.IOException("الصوت طلع فاضي")
+            return out
+        } finally { try { ex.release() } catch (_: Throwable) {} }
+    }
+
+    fun share(a: android.app.Activity, f: java.io.File) {
+        val uri = androidx.core.content.FileProvider.getUriForFile(a, a.packageName + ".fmprov", f)
+        val i = android.content.Intent(android.content.Intent.ACTION_SEND).setType(if (f.name.endsWith(".webm")) "audio/webm" else "audio/mp4")
+            .putExtra(android.content.Intent.EXTRA_STREAM, uri).addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        a.startActivity(android.content.Intent.createChooser(i, "ابعت الصوت"))
+    }
+}
