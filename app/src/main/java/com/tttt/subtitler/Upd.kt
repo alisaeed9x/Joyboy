@@ -143,7 +143,6 @@ object Upd {
         downloadUi(a, "app-" + ap.tag, ap.url, f, ap.size, "⬇ تحديث Joyboy", "v" + verName(a), shortVer(ap.name), { appVerify(a, it) }) { file -> installPrompt(a, ap, file) }
     }
 
-    /** زرار تحديث/تثبيت بلاجن: نفس تجربة التنزيل. لو الملف منزّل بنفس النسخة بيثبّته مباشرة */
 
     // ───────── التنزيل القابل للاستكمال ─────────
     class Job(val url: String, val dest: File, val verify: (File) -> String?) {
@@ -361,7 +360,7 @@ object Upd {
         paint(); hh.postDelayed(tick, 400L)
     }
 
-    /** كتلة مركز التحديث (بتتحط في الشكلين): مفتاح «تحديث تلقائي» + حالة التحديث + زراير تحديث البرنامج/البلاجن */
+    /** كتلة مركز التحديث (بتتحط في الشكلين): مفتاح «تحديث تلقائي» + حالة التحديث + زرار تحديث البرنامج */
     fun centerViews(a: Activity, ui: Ui, th: Theme): View {
         val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         if (DeviceUi.isTv(a)) return col

@@ -118,7 +118,27 @@ object GhCiUi {
             }
             paintTv()
         }
-        appInd = block("📱 تحديث البرنامج", true) { val k = appArt; if (k != null) askInstall(k) else checkApp(true) }
+        // (v1271) فحص التحديث: زرار صغير فوق في الشاشة + سطر حالة جنبه (بدل الزرار الكبير تحت)
+        val topRow = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        appInd = ui.text("", 12f, th.muted).apply { setPadding(0, ui.dp(2), ui.dp(8), ui.dp(2)) }
+        val chk = ui.text("🔍 فحص", 12f, if (th.isLight) android.graphics.Color.WHITE else android.graphics.Color.BLACK, true).apply {
+            background = ui.box(th.primary, th.primary, 14); setPadding(ui.dp(12), ui.dp(5), ui.dp(12), ui.dp(5))
+            setOnClickListener { val k = appArt; if (k != null) askInstall(k) else checkApp(true) }
+        }
+        topRow.addView(chk, LinearLayout.LayoutParams(-2, -2))
+        topRow.addView(appInd, LinearLayout.LayoutParams(0, -2, 1f))
+        col.addView(topRow, 0, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(6) })
+        // (v1271) سجل التغييرات بنفس عارض الكبسولات الجديد
+        val notesBox = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        col.addView(notesBox, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(12) })
+        Thread {
+            try {
+                val ver = try { a.packageManager.getPackageInfo(a.packageName, 0).versionName ?: "" } catch (_: Throwable) { "" }
+                var txt = Upd.app?.notes.orEmpty()
+                if (txt.isBlank()) txt = UpdateSheet.cumulative("0", true)
+                if (txt.isNotBlank()) onUi { notesBox.removeAllViews(); notesBox.addView(ui.text("📝 آخر تغييرات", 13f, th.text, true), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(4) }); notesBox.addView(Notes.render(a, ui, th, txt)) }
+            } catch (e: Throwable) { LogStore.err("GhCiUi:notes", e) }
+        }.apply { isDaemon = true; start() }
         setInd = block("⚙ الإعدادات", false) { settings(a) { onUi { setInd?.text = summary() } } }
         setInd?.text = summary()
 
