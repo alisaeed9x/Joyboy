@@ -31,6 +31,7 @@ class JoyApp : Application() {
         try { MtSmooth.install(this) } catch (_: Throwable) {}   // (v988) فتح الفريمات لأعلى معدل تحديث
         try { MobileDataGuard.install(this) } catch (_: Throwable) {}   // (v1010) تحذير داتا الموبايل في كل الشاشات
         try { PermAsk.install(this) } catch (_: Throwable) {}   // (v1010) صلاحيات بتتطلب وقت الحاجة بس
+        try { I18n.install(this) } catch (_: Throwable) {}   // (v1261) لغة التطبيق
         followMeeTubeTheme()
     }
 

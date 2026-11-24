@@ -594,6 +594,15 @@ class MainActivity : Activity() {
         // (v836) محتوى الأقسام lazy: بيتبني أول مرة القسم يتفتح بس (مش في onCreate) — TabDef بياخد دالة مش قايمة
         fun tab(id: String, content: () -> List<View>, preview: Boolean = false) = TabDef(id, SettingsTabs.label(id), { content() + AdvRows.forTab(ui, id) }, preview, SettingsTabs.sub(id), SettingsTabs.group(id))
         val settingsDlg = TabbedDialog(this, ui, if (Cfg.tvOv != null) "📺 إعدادات التلفزيون المشتركة (مش الموبايل)" else "⚙️ الإعدادات", listOf(
+            TabDef("applang", I18n.languageWord(), { listOf<View>(
+                ui.noHint(),
+                ui.section("🌐 " + I18n.languageWord(), true,
+                    ui.chips(listOf("Auto") + I18n.LANGS.map { it.second }, { if (I18n.setting() == "auto") "Auto" else I18n.nameOf(I18n.setting()) }) { n ->
+                        if (n == "Auto") { Cfg.put("app_lang", "auto"); Cfg.put("lang_chosen", "1") } else I18n.setAppLang(I18n.LANGS.first { it.second == n }.first)
+                        recreate() }),
+                ui.section("🗣 لغة الترجمة (مستقلة عن لغة التطبيق)", true,
+                    ui.chips(listOf("Auto") + I18n.LANGS.map { it.second }, { if (Cfg.str("tr_lang", "auto") == "auto") "Auto" else I18n.nameOf(Cfg.str("tr_lang", "auto")) }) { n ->
+                        I18n.setTranslationLang(if (n == "Auto") "auto" else I18n.LANGS.first { it.second == n }.first) })) }, false, "", "🌐"),
             // ===== 🚀 خط الترجمة: الخطة (تفريغ ← ترجمة ← لهجة) + اللهجة والأسلوب + البرومبتات =====
             tab("general", { listOf<View>(
                 ui.noHint(),

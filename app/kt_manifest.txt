@@ -327,3 +327,4 @@ com/tttt/subtitler/Plugins.kt
 com/tttt/subtitler/Tour.kt
 com/tttt/subtitler/Upd.kt
 com/tttt/subtitler/Notes.kt
+com/tttt/subtitler/I18n.kt

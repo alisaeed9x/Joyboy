@@ -404,7 +404,7 @@ open class IconTextView(ctx: Context) : TextView(ctx) {
     }
     override fun setText(text: CharSequence?, type: BufferType?) {
         icT = null
-        super.setText(Icons.convert(text), type)
+        super.setText(Icons.convert(I18n.hook(this, text)), type)
         val one = Icons.singleIcon(text)
         if (one != null) { val l = A11y.label(one.first); if (l != null && (contentDescription == null || contentDescription == autoCd)) { contentDescription = l; autoCd = l } }
         else if (autoCd != null && contentDescription == autoCd) { contentDescription = null; autoCd = null }

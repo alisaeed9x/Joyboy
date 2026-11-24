@@ -42,7 +42,7 @@ object Notes {
                 val top = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
                 top.addView(ui.text("$n.", 14f, th.muted, true).apply { setPadding(0, 0, ui.dp(8), 0) })
                 if (lab.isNotEmpty()) top.addView(TextView(a).apply {
-                    text = lab; textSize = 11.5f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD); includeFontPadding = false
+                    this.text = lab; textSize = 11.5f; setTextColor(Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD); includeFontPadding = false
                     setPadding(ui.dp(10), ui.dp(3), ui.dp(10), ui.dp(4))
                     background = GradientDrawable().apply { setColor(chips[lab] ?: 0xFF888888.toInt()); cornerRadius = ui.dp(12).toFloat() }
                 })
