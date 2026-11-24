@@ -1183,6 +1183,29 @@ class Engine(
         return if (a > 0) a else host.playerDuration()
     }
 
+    private val gateLock = Object()
+    @Volatile private var gateOn = false
+    /** (v1244) لما جيميناي يدّي 503 على المفاتيح ورا بعض: كل الطلبات بتقف، واحد بس بيستنى دقيقة ويبعت طلب خفيف؛ لو نجح الكل يكمّل من مكانه، وإلا دقيقة كمان */
+    private fun pressureGate(key: String) {
+        var leader = false
+        synchronized(gateLock) { if (!gateOn) { gateOn = true; leader = true } }
+        if (!leader) { while (running && !isClosed && gateOn) nap(500); return }
+        try {
+            host.log("⏸ جيميناي عليه ضغط على المفاتيح — هستنى دقيقة وبعدها أجرّب طلب خفيف")
+            host.status("⏸ جيميناي عليه ضغط — استراحة دقيقة")
+            var n = 0
+            while (running && !isClosed) {
+                nap(60_000L)
+                if (!running || isClosed) break
+                n++
+                val ok = try { Api.generate(curModel(), key, "رد بكلمة واحدة بس: تمام", null, 16, 0.0, false, false); true }
+                    catch (e: ApiErr) { e.code < 500 } catch (_: Exception) { false }
+                if (ok) { host.log("✅ جيميناي رجع بعد الضغط — بكمّل الترجمة من مكان ما وقفت"); Overload.ok(); break }
+                host.log("⏸ لسه عليه ضغط (محاولة $n) — دقيقة كمان")
+            }
+        } finally { gateOn = false }
+    }
+
     private fun nap(ms: Long) {
         var t = 0L
         while (running && t < ms) { try { Thread.sleep(minOf(200L, ms - t)) } catch (_: InterruptedException) { return }; t += 200 }
@@ -1661,7 +1684,8 @@ class Engine(
                     srv++
                     Overload.hit()
                     if (Models.FALLBACK && srv >= 2 && fbModel == null) { fbModel = Models.alt(curModel(), key).let { if (it == curModel()) null else it } ?: curModel(); host.log("⚠ جيميناي عليه ضغط (${e.code}) على كل المفاتيح — بجرّب موديل ${fbModel}") }
-                    if (srv >= 3) nap(minOf(6000L, 1200L * srv) + (Math.random() * 600).toLong())
+                    if (srv >= 2 && Overload.active()) { pressureGate(key); srv = 0 }   // (v1244) ضغط جيميناي: استراحة دقيقة + طلب خفيف قبل ما نكمّل
+                    else if (srv >= 3) nap(minOf(6000L, 1200L * srv) + (Math.random() * 600).toLong())
                     // (v1114) 503 — تصحيح: إعادة فورية من غير أي انتظار — الأولوية لمفتاح تاني فاضي، ولو مفيش مفتاح فاضي الإعادة فورًا على نفس المفتاح
                     val alt = try { switchKey(key) } catch (_: RehomeEx) { null }
                     if (alt != null) {
