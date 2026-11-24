@@ -41,6 +41,8 @@ object MtLook {
         LoaderDef("morphing_blob", "فقاعة متحوّلة", R.drawable.avd_morphing_blob),
         LoaderDef("glass_orbit", "مدار زجاجي", R.drawable.avd_glass_orbit)) }
 
+    /** (v1278) بيزيد لما الشكل يتغيّر عشان كل السبينرات تبدّل لودرها فورًا */
+    @Volatile var loaderVer = 0
     fun loaderId(): String = try { Cfg.str("mt_loader", "neon") } catch (_: Throwable) { "neon" }
     /** اللودر شغّال بس في وضع الجلاس (موبايل/تابلت)؛ غير كده السبينر القديم */
     fun loaderOn(): Boolean = try { MtGlass.on() && Cfg.bool("mt_loader_on", true) } catch (_: Throwable) { false }
@@ -131,7 +133,7 @@ object MtLook {
             val tile = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding((6 * d).toInt(), (8 * d).toInt(), (6 * d).toInt(), (6 * d).toInt())
                 addView(iv, LinearLayout.LayoutParams((52 * d).toInt(), (52 * d).toInt())); addView(name, LinearLayout.LayoutParams(-2, -2))
-                setOnClickListener { Cfg.put("mt_loader", l.id); paint() }
+                setOnClickListener { Cfg.put("mt_loader", l.id); loaderVer++; paint() }
             }
             iv.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
                 override fun onViewAttachedToWindow(v: View) { (iv.drawable as? Animatable)?.start() }
@@ -164,7 +166,7 @@ object MtLook {
     /** (v1277) قسم «✨ الأنيميشن والمظهر»: موجود في إعدادات يوتيوب وفي الإعدادات العامة (نفس الإعدادات، بتتطبق على التطبيق كله) */
     fun animSection(ctx: Context, ui: Ui, th: Theme): View = ui.section("✨ الأنيميشن والمظهر", true,
         ui.text("⭕ اللودر (بيظهر في كل لودينج)", 13f, th.text, true),
-        ui.switchRow("استخدم لودر المشغّل (قفله = النقط القديمة)", Cfg.bool("mt_loader_on", true)) { Cfg.put("mt_loader_on", if (it) "1" else "0") },
+        ui.switchRow("استخدم لودر المشغّل (قفله = النقط القديمة)", Cfg.bool("mt_loader_on", true)) { Cfg.put("mt_loader_on", if (it) "1" else "0"); loaderVer++ },
         loaderPicker(ctx, th),
         ui.switchRow("🎞 حركة فتح/قفل المشغّل (تكبير ناعم + تلاشي)", Cfg.bool("mt_player_anim", true)) { Cfg.put("mt_player_anim", if (it) "1" else "0") },
         ui.switchRow("✨ توهّج رأس شريط التقدّم", glowOn()) { Cfg.put("progress_glow", if (it) "1" else "0") },

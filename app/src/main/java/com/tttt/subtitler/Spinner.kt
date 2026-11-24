@@ -31,18 +31,28 @@ class WinSpinnerDrawable : Drawable() {
         override fun scheduleDrawable(who: Drawable, what: Runnable, `when`: Long) { scheduleSelf(what, `when`) }
         override fun unscheduleDrawable(who: Drawable, what: Runnable) { unscheduleSelf(what) }
     }
-    fun start() {
-        if (MtLook.loaderOn()) {
-            if (avd == null) avd = try { MtYt.app?.let { MtLook.newLoader(it) } } catch (_: Throwable) { null }
-            avd?.let { it.callback = avdCb; try { if (tint != null) it.colorFilter = tint } catch (_: Throwable) {}; (it as? android.graphics.drawable.Animatable)?.start(); invalidateSelf(); return }
+    private var avdVer = -1
+    /** (v1278) اللودر بيتبدّل فورًا لما تختار شكل تاني (كان بيتخزّن بس، والسبينرات الشغّالة فاضلة بالقديم لحد إعادة الفتح) */
+    private fun ensureAvd(): Boolean {
+        if (!MtLook.loaderOn()) return false
+        if (avd == null || avdVer != MtLook.loaderVer) {
+            try { (avd as? android.graphics.drawable.Animatable)?.stop() } catch (_: Throwable) {}
+            avd = try { MtYt.app?.let { MtLook.newLoader(it) } } catch (_: Throwable) { null }
+            avdVer = MtLook.loaderVer
+            avd?.let { it.callback = avdCb; try { if (tint != null) it.colorFilter = tint } catch (_: Throwable) {}; (it as? android.graphics.drawable.Animatable)?.start() }
         }
+        return avd != null
+    }
+    fun start() {
+        if (ensureAvd()) { invalidateSelf(); return }
         if (!anim.isStarted) anim.start()
     }
     fun stop() { anim.cancel(); try { (avd as? android.graphics.drawable.Animatable)?.stop() } catch (_: Throwable) {} }
 
     override fun draw(c: Canvas) {
         val b = bounds
-        avd?.let { if (MtLook.loaderOn()) { it.setBounds(b.left, b.top, b.right, b.bottom); it.draw(c); return } }
+        if (ensureAvd()) { avd?.let { it.setBounds(b.left, b.top, b.right, b.bottom); it.draw(c); return } }
+        if (!anim.isStarted) anim.start()   // (v1278) اللودر اتقفل وهو شغّال: النقط ترجع تتحرك
         val cx = b.exactCenterX(); val cy = b.exactCenterY()
         val side = minOf(b.width(), b.height()).toFloat()
         val r = side * 0.30f; val dot = side * 0.055f
