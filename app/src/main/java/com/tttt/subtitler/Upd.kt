@@ -114,7 +114,7 @@ object Upd {
     private fun offerPrompt(a: Activity, ap: AppInfo) {
         val th = Themes.current(); val ui = Ui(a, th)
         val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)) }
-        col.addView(TvUpdate.flowView(a, "v" + verName(a), ap.name))
+        col.addView(TvUpdate.flowView(a, "v" + verName(a), shortVer(ap.name)))
         if (ap.size > 0) col.addView(ui.text("حجم التحديث: " + mb(ap.size), 13f, th.muted))
         col.addView(ui.text("إيه اللي اتغيّر:", 15f, th.text, true), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })
         col.addView(Notes.render(a, ui, th, ap.notes), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
@@ -127,7 +127,7 @@ object Upd {
         try {
             val th = Themes.current(); val ui = Ui(a, th)
             val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)) }
-            col.addView(TvUpdate.flowView(a, "v" + verName(a), ap.name))
+            col.addView(TvUpdate.flowView(a, "v" + verName(a), shortVer(ap.name)))
             col.addView(ui.text("التحديث منزّل وجاهز، مش هيتنزّل تاني.", 13f, th.muted))
             GAlert(a).setTitle("⬆ فيه تحديث، تثبيت؟").setView(col)
                 .setNegativeButton("لاحقًا", null)
@@ -140,7 +140,7 @@ object Upd {
         val ap = app ?: return
         val f = appFile(a, ap)
         if (appReady(a, f)) { TvUpdate.install(a, f); return }
-        downloadUi(a, "app-" + ap.tag, ap.url, f, ap.size, "⬇ تحديث Joyboy", "v" + verName(a), ap.name, { appVerify(a, it) }) { file -> installPrompt(a, ap, file) }
+        downloadUi(a, "app-" + ap.tag, ap.url, f, ap.size, "⬇ تحديث Joyboy", "v" + verName(a), shortVer(ap.name), { appVerify(a, it) }) { file -> installPrompt(a, ap, file) }
     }
 
     /** زرار تحديث/تثبيت بلاجن: نفس تجربة التنزيل. لو الملف منزّل بنفس النسخة بيثبّته مباشرة */
@@ -210,6 +210,7 @@ object Upd {
         }.apply { isDaemon = true; start() }
     }
 
+    fun shortVer(n: String): String = Regex("\\d+(?:\\.\\d+)+").find(n)?.value?.let { "v" + it } ?: n
     fun mb(n: Long): String = if (n >= 1048576L) String.format(java.util.Locale.US, "%.1f MB", n / 1048576.0) else (n / 1024L).toString() + " KB"
     private fun clock(s: Long): String = String.format(java.util.Locale.US, "%d:%02d", s / 60, s % 60)
 
@@ -255,12 +256,17 @@ object Upd {
                 val el = (System.currentTimeMillis() - j.startMs).coerceAtLeast(1L)
                 val sp = (done - j.startBytes) * 1000L / el
                 val left = if (sp > 0L && total > done) (total - done) / sp else -1L
-                info.text = mb(done) + (if (total > 0L) " من " + mb(total) else "") + (if (left >= 0L) "  ·  باقي " + clock(left) else "") + (if (sp > 0L) "  ·  " + mb(sp) + "/ث" else "")
+                fun seg(l: String, v: String) = "\u200F" + l + ": \u2066" + v + "\u2069"
+                val parts = ArrayList<String>()
+                parts.add(seg("الحجم", if (total > 0L) mb(done) + " / " + mb(total) else mb(done)))
+                if (sp > 0L) parts.add(seg("السرعة", mb(sp) + "/ث"))
+                if (left >= 0L) parts.add(seg("المتبقي", clock(left)))
+                info.text = parts.joinToString("  \u200F-  ")
             } else {
                 val have = if (j.part().isFile) j.part().length() else 0L
                 st.text = j.err ?: "جاهز للتنزيل"
                 bar.isIndeterminate = false; bar.progress = if (total > 0L) (have * 1000 / total).toInt() else 0
-                info.text = if (have > 0L) "منزّل " + mb(have) + (if (total > 0L) " من " + mb(total) else "") + "، هيكمّل من نفس النقطة" else "مفيش جزء منزّل، هيبدأ من الأول"
+                info.text = if (have > 0L) "منزّل: \u2066" + mb(have) + (if (total > 0L) " / " + mb(total) else "") + "\u2069 - هيكمّل من نفس النقطة" else "مفيش جزء منزّل، هيبدأ من الأول"
             }
         }
         val tick = object : Runnable { override fun run() { if (!shown) return; try { paint() } catch (_: Throwable) {}; hh.postDelayed(this, 400L) } }
