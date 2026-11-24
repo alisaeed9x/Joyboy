@@ -318,7 +318,7 @@ class PlayerActivity : Activity(), Host {
         if (pl != rmPlaying) {
             rmPlaying = pl
             val tx = if (pl) "⏸" else "▶"
-            if (!buffering) { ctl.play.text = tx; fsPlayB.text = tx; if (::centerPlay.isInitialized) centerPlay.text = tx }
+            if (!buffering) { ctl.play.text = tx; morphText(fsPlayB, tx); if (::centerPlay.isInitialized) morphText(centerPlay, tx) }
         }
     }
 
@@ -5599,7 +5599,7 @@ class PlayerActivity : Activity(), Host {
         topTitle = TextView(this).apply {
             textSize = 12f; setTextColor(Color.WHITE); maxLines = 3; ellipsize = android.text.TextUtils.TruncateAt.END
             typeface = android.graphics.Typeface.DEFAULT_BOLD; setShadowLayer(5f, 0f, 1f, Color.BLACK)
-            setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(4)); background = ui.box(0x73000000, 0x1FFFFFFF, 12); visibility = View.GONE
+            setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(4)); background = if (Design.isNew()) GradientDrawable().apply { setColor(0x80141224.toInt()); cornerRadius = ui.dp(16).toFloat(); setStroke(ui.dp(1), 0x33FFFFFF) } else ui.box(0x73000000, 0x1FFFFFFF, 12); if (Design.isNew()) setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6)); visibility = View.GONE
         }
         chromeFrame.addView(View(this).apply { background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x99000000.toInt(), 0x00000000)); isClickable = false; isFocusable = false },
             FrameLayout.LayoutParams(-1, ui.dp(120), Gravity.TOP))   // (v445) ظل علوي ناعم يطلّع الأزرار والعنوان
@@ -6402,7 +6402,7 @@ class PlayerActivity : Activity(), Host {
                 }
             }
             override fun onIsPlayingChanged(p: Boolean) {
-                val t = if (p) "⏸" else "▶"; if (!buffering) { ctl.play.text = t; fsPlayB.text = t; if (::centerPlay.isInitialized) centerPlay.text = t }; centerPlay.visibility = if (pipNow() || busyShown() || (fullMode && chromeShown)) View.GONE else if (buffering) View.VISIBLE else if (p) (if (ytPage && !fullMode && pageCpShow) View.VISIBLE else View.GONE) else View.VISIBLE
+                val t = if (p) "⏸" else "▶"; if (!buffering) { ctl.play.text = t; morphText(fsPlayB, t); if (::centerPlay.isInitialized) morphText(centerPlay, t) }; centerPlay.visibility = if (pipNow() || busyShown() || (fullMode && chromeShown)) View.GONE else if (buffering) View.VISIBLE else if (p) (if (ytPage && !fullMode && pageCpShow) View.VISIBLE else View.GONE) else View.VISIBLE
                 // تشخيص الشاشة السودا: صوت شغّال ومفيش ولا فريم فيديو اتعرض بعد ٥ ثواني
                 if (p && !firstFrame) h.postDelayed({ if (!firstFrame && !isFinishing) log("⚠️ مفيش فريم فيديو اتعرض بعد ٥ ثواني — غالبًا كودك/بروفايل الفيديو مش مدعوم على الجهاز (مثلًا HEVC 10-bit)") }, 5000)
             }
@@ -7870,6 +7870,15 @@ class PlayerActivity : Activity(), Host {
     @Volatile private var dubForce = false
     @Volatile private var dubBypass = false
     private var dubWait = 0
+    private fun morphText(v: TextView, t: String) {
+        if (v.text.toString() == t) return
+        if (!Design.isNew() || !v.isShown) { v.text = t; return }
+        v.animate().cancel()
+        v.animate().scaleX(0.55f).scaleY(0.55f).rotation(-25f).setDuration(90L).withEndAction {
+            v.text = t; v.rotation = 25f
+            v.animate().scaleX(1f).scaleY(1f).rotation(0f).setDuration(190L).setInterpolator(android.view.animation.OvershootInterpolator(1.6f)).start()
+        }.start()
+    }
     private fun fsPlayDp(): Int = if (Design.isNew()) 64 else 56
     private fun auroraPill(rDp: Int): GradientDrawable = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xFF7CF3D0.toInt(), 0xFF8B7CFF.toInt())).apply { cornerRadius = ui.dp(rDp).toFloat() }
     private fun trComplete(): Boolean = try { trPct >= 100 || (::realEngine.isInitialized && realEngine.fullyDone()) } catch (_: Throwable) { false }
