@@ -2750,7 +2750,7 @@ class PlayerActivity : Activity(), Host {
                 return
             }
             Notice.show(this, "✓ الفيديو ده مترجم 100% — اختار تعيد من فين", 3600L)
-            if (!auto && !asked && !remote) h.post { try { redoDialog(window.decorView) } catch (_: Throwable) {} }
+            if (!auto && !asked && !remote && !Design.isNew()) h.post { try { redoDialog(window.decorView) } catch (_: Throwable) {} }
             return
         }
         // (v685) فيه ترجمة محفوظة ناقصة: اسأل (كمّل الباقي / من مكان التشغيل / من الأول وجديد) بدل ما يكمّل لوحده
@@ -3476,6 +3476,10 @@ class PlayerActivity : Activity(), Host {
     /** قبل البداية: بيبدأ على طول بالنوع والمحرك المحفوظين (⚙). بعد البداية (أو سوفت صب شغّال): قايمة الأدوات زي الأول */
     private fun trMainClick(anchor: View, direct: Boolean = false) {
         if (Design.isNew() && !direct && !dubBypass) { trOptionsDialog(anchor); return }
+        if (Design.isNew() && (engineStarted || sfBusy.isNotEmpty() || sfLive.isNotEmpty())) {   // (v1239) من غير أي صفحة قديمة
+            if (TrProfile.uiMode() == TrProfile.DUB && !dubBypass) dubToggle() else say("⏳ الترجمة شغّالة بالفعل — التقدم في الشريط")
+            return
+        }
         if (engineStarted || sfBusy.isNotEmpty() || sfLive.isNotEmpty()) { translateMenu(anchor); return }
         if (TrProfile.uiMode() == TrProfile.DUB && !dubBypass) { dubToggle(); return }   // (v1229) وضع الدبلجة: الزرار بيدبلج (ولو مفيش ترجمة بيترجم الأول)
         dubBypass = false
@@ -3500,11 +3504,20 @@ class PlayerActivity : Activity(), Host {
             val paused = ::engine.isInitialized && engine.userPaused
             col.addView(shHead(if (dub) "🎙 دبلجة / ترجمة" else "🌐 الترجمة", if (started) (trPct.toString() + "% · " + subCountNow() + " جملة") else "اختار وهيبدأ على طول"))
             col.addView(shRow(if (dub) "🎙 دبلج / استئناف" else "▶ ترجم") { close(); h.post { trMainClick(anchor, true) } })
-            col.addView(shRow("⏯ كمّل") { close(); h.post { if (started && paused) beginTranslate() else if (started) say("الترجمة شغّالة بالفعل") else trMainClick(anchor, true) } })
+            col.addView(shRow("⏯ كمّل") { close(); h.post {
+                if (trComplete()) say("✅ الترجمة كاملة 100%")
+                else if (started && paused) beginTranslate()
+                else if (started) say("⏳ الترجمة شغّالة بالفعل")
+                else trMainClick(anchor, true) } })
             col.addView(shRow("🔁 من الأول") { close(); h.post {
-                if (::engine.isInitialized && started) { val k = redoKeep; player.seekTo(0); redoGo("🔄 بترجم من الأول…") { syncTxFlag("إعادة من الأول"); engine.redoAll(k) } }
-                else say("ابدأ الترجمة الأول (▶ ترجم) وبعدها تقدر تعيدها من الأول") } })
-            col.addView(shRow("🔄 إعادة الترجمة", "", true) { close(); h.post { if (::engine.isInitialized && started) redoDialog(anchor) else batchDialog() } })
+                if (::engine.isInitialized) { val k = redoKeep; player.seekTo(0); redoGo("🔄 بترجم من الأول…") { syncTxFlag("إعادة من الأول"); engine.redoAll(k) } }
+                else say("المحرك لسه بيحمّل — جرّب كمان لحظة") } })
+            col.addView(shRow("🔄 إعادة الترجمة", "من الباتش الحالي وبعده") { close(); h.post {
+                if (::engine.isInitialized) {
+                    val k = redoKeep
+                    val curC = try { engine.chunkOfSec(player.currentPosition / 1000.0) } catch (_: Exception) { 0 }
+                    redoGo("🔄 بترجم من باتش ${curC + 1} وبعده…") { syncTxFlag("إعادة من باتش"); engine.redoFrom(curC, k) }
+                } else say("المحرك لسه بيحمّل — جرّب كمان لحظة") } })
             if (started) col.addView(shDuo(
                 shBtn(if (paused) "▶ كمّل" else "⏸ إيقاف مؤقت", if (paused) SH_BLUE else SH_GRAY) { close(); if (paused) beginTranslate() else pauseTranslate() },
                 shBtn("⏹ إلغاء", SH_RED) { close(); h.post { cancelDialog() } }))
@@ -5537,7 +5550,7 @@ class PlayerActivity : Activity(), Host {
         mid.addView(prevB, LinearLayout.LayoutParams(ui.dp(60), ui.dp(44)).apply { marginEnd = ui.dp(8) })
         mid.addView(fsPlayB, LinearLayout.LayoutParams(ui.dp(fsPlayDp()), ui.dp(fsPlayDp())))
         mid.addView(nextB, LinearLayout.LayoutParams(ui.dp(60), ui.dp(44)).apply { marginStart = ui.dp(8) })
-        if (!Design.isNew()) btnRow.addView(mid, LinearLayout.LayoutParams(-2, -2))
+        btnRow.addView(mid, LinearLayout.LayoutParams(-2, -2))
         val rightB = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.END or Gravity.CENTER_VERTICAL }
         fsBarFs = ui.fsCircle("⤢") { cycleFitNow(); showChrome() }.apply { textSize = 18f }   // (v1019) ⤢ التمديد — نفس أيقونة ووظيفة زرار MeeTube (احتواء ← ملء ← تمديد ← 100%)
         val rotBarB = ui.fsCircle("⛶") { toggleFs(); showChrome() }.apply { textSize = 18f }   // (v1019) ⛶ الشاشة الكاملة/التدوير — نفس أيقونة زرار MeeTube بالظبط
@@ -5548,7 +5561,7 @@ class PlayerActivity : Activity(), Host {
         rightB.addView(fsBarFs, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginStart = ui.dp(4) })   // (v1019) نفس ترتيب MeeTube: ⤢ ثم ⛶
         rightB.addView(rotBarB, LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { marginStart = ui.dp(4) })
         btnRow.addView(rightB, LinearLayout.LayoutParams(0, -2, 1f))
-        fsBar.addView(btnRow, LinearLayout.LayoutParams(-1, ui.dp(if (Design.isNew()) 48 else 72)))
+        fsBar.addView(btnRow, LinearLayout.LayoutParams(-1, ui.dp(72)))
         // (v91) في العرض الواسع (لاندسكيب): ⏱ 📋 📝 CC 💬 بتتنقل للصف السفلي جنب 🔄؛ في الضيق (بورتريت) بتفضل في صفها
         var toolsWide = false
         fun placeTools(wide: Boolean) {
@@ -5617,7 +5630,7 @@ class PlayerActivity : Activity(), Host {
             (prevB.layoutParams as LinearLayout.LayoutParams).apply { width = (ui.dp(60) * mf).toInt(); height = (ui.dp(44) * mf).toInt(); marginEnd = (ui.dp(8) * mf).toInt() }.also { prevB.layoutParams = it }
             (nextB.layoutParams as LinearLayout.LayoutParams).apply { width = (ui.dp(60) * mf).toInt(); height = (ui.dp(44) * mf).toInt(); marginStart = (ui.dp(8) * mf).toInt() }.also { nextB.layoutParams = it }
             (fsPlayB.layoutParams as LinearLayout.LayoutParams).apply { width = (ui.dp(fsPlayDp()) * mf).toInt(); height = (ui.dp(fsPlayDp()) * mf).toInt() }.also { fsPlayB.layoutParams = it }
-            val midW = if (Design.isNew()) 0f else (ui.dp(60) * 2 + ui.dp(8) * 2 + ui.dp(56)) * mf + ui.dp(12)
+            val midW = (ui.dp(60) * 2 + ui.dp(8) * 2 + ui.dp(56)) * mf + ui.dp(12)
             val avail = ((w - ui.dp(28) - midW) / 2f - ui.dp(2)).toInt().coerceAtLeast(ui.dp(60))
             scaleSide(leftB, avail); scaleSide(rightB, avail)
         }
@@ -5647,7 +5660,6 @@ class PlayerActivity : Activity(), Host {
         }
         if (::badgeRowV.isInitialized) badgeRowV.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, orr, ob -> if (r - l != orr - ol || b - t != ob - ot) fixTopRowFn() }   // (v265) في ملء الشاشة الهامش بيكبر عشان الشريط مايغطّيش الكبسولات   // (v90) يمين، جنب عداد الجمل
         if (Design.isNew()) {
-            chromeFrame.addView(mid, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))   // (v1237) ⏮ ▶ ⏭ في نص الشاشة زي المرجع
             chromeFrame.addView(auxRow, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(ui.dp(12), 0, ui.dp(12), ui.dp(170)) })
             fsBar.addOnLayoutChangeListener { _, _, t, _, b, _, _, _, _ ->
                 val alp = auxRow.layoutParams as FrameLayout.LayoutParams
@@ -5739,7 +5751,7 @@ class PlayerActivity : Activity(), Host {
             if (on) { try { val tt = titleWithSummary(); if (topTitle.text.toString() != tt.toString()) topTitle.text = tt; topTitle.visibility = if (tt.isBlank()) View.GONE else View.VISIBLE; fixTopRowFn() } catch (_: Throwable) {} }   // (v330) (v360) + ملخص الإعداد
             if (on && !wasOn) { chromeFrame.animate().cancel(); chromeFrame.alpha = 0f; chromeFrame.translationY = ui.dp(22).toFloat(); chromeFrame.animate().setStartDelay(0L).alpha(1f).translationY(0f).setDuration(Skins.dur(280L)).setInterpolator(android.view.animation.DecelerateInterpolator(1.8f)).start() }
             else if (!on && !wasOn) { chromeFrame.animate().cancel(); chromeFrame.alpha = 1f; chromeFrame.translationY = 0f }
-            centerPlay.visibility = if (on || pipNow() || uiLocked || busyShown()) View.GONE else if (buffering) View.VISIBLE else if (::player.isInitialized && player.isPlaying) View.GONE else View.VISIBLE   // الشريط ظاهر = فيه زرار تشغيل تحت، فمنشيلش الأوسط فوق الترجمة
+            centerPlay.visibility = if ((on && !Design.isNew()) || pipNow() || uiLocked || busyShown()) View.GONE else if (on) View.VISIBLE else if (buffering) View.VISIBLE else if (::player.isInitialized && player.isPlaying) View.GONE else View.VISIBLE   // الشريط ظاهر = فيه زرار تشغيل تحت، فمنشيلش الأوسط فوق الترجمة
             val cv = (!fullMode || chromeShown) && !pipNow()
             val tvHide = DeviceUi.isTv(this) || (DeviceUi.isRemote(this) && tvGateClosed())   // (v662) تلفزيون: 👁 و🔄 و⛶ العايمين مش بيظهروا خالص (الوظايف على شريط التحكم و«⋯») — (v636) تلفزيون: 👁 و⛶ مخفيين لحد ما شريط التحكم يظهر
             floatBar.visibility = if (cv && !tvHide && caps().visual) View.VISIBLE else View.GONE   // (v444) البصري في وضع صوت←جيميناي بس · (v427) 👁 مابقاش ظاهر طول الوقت: بيظهر مع الشريط (أو في الوضع العادي)
@@ -6441,7 +6453,7 @@ class PlayerActivity : Activity(), Host {
                 }
             }
             override fun onIsPlayingChanged(p: Boolean) {
-                val t = if (p) "⏸" else "▶"; if (!buffering) { ctl.play.text = t; morphText(fsPlayB, t); if (::centerPlay.isInitialized) morphText(centerPlay, t) }; centerPlay.visibility = if (pipNow() || busyShown() || (fullMode && chromeShown)) View.GONE else if (buffering) View.VISIBLE else if (p) (if (ytPage && !fullMode && pageCpShow) View.VISIBLE else View.GONE) else View.VISIBLE
+                val t = if (p) "⏸" else "▶"; if (!buffering) { ctl.play.text = t; morphText(fsPlayB, t); if (::centerPlay.isInitialized) morphText(centerPlay, t) }; centerPlay.visibility = if (pipNow() || busyShown() || (fullMode && chromeShown && !Design.isNew())) View.GONE else if (buffering || (Design.isNew() && fullMode && chromeShown)) View.VISIBLE else if (p) (if (ytPage && !fullMode && pageCpShow) View.VISIBLE else View.GONE) else View.VISIBLE
                 // تشخيص الشاشة السودا: صوت شغّال ومفيش ولا فريم فيديو اتعرض بعد ٥ ثواني
                 if (p && !firstFrame) h.postDelayed({ if (!firstFrame && !isFinishing) log("⚠️ مفيش فريم فيديو اتعرض بعد ٥ ثواني — غالبًا كودك/بروفايل الفيديو مش مدعوم على الجهاز (مثلًا HEVC 10-bit)") }, 5000)
             }
@@ -6959,13 +6971,26 @@ class PlayerActivity : Activity(), Host {
     /** زرار 📋 في المشغّل = نفس صفحة اللوجز بتاعة القايمة (اللوج العايم اتلغى) */
     fun toggleLog() { if (logDlg.isShowing) logDlg.dismiss() else logDlg.show() }
     private var dubLogDlg: android.app.Dialog? = null
+    private var dubLastState = ""
+    /** (v1239) حالة الدبلجة دلوقتي بالعربي — بتظهر فوق لوج الدبلجة وبتتسجّل لما تتغيّر */
+    private fun dubState(): String {
+        val dp = dubPlay
+        val on = dubLiveOn || (dp != null && dp.active)
+        if (!on) return "⏸ الدبلجة مقفولة — دوس «دبلج» عشان تبدأ"
+        if (!::engine.isInitialized || subCountNow() == 0) return "⏳ في انتظار الترجمة — لسه مفيش جمل مترجمة" + (if (engineStarted) " (الترجمة شغّالة " + trPct + "%)" else " (الترجمة لسه ما بدأتش)")
+        if (dubLiveBusy) return "🎙 بيبني صوت قطعة دبلجة دلوقتي…"
+        if (trComplete()) return "✅ الترجمة كاملة — الدبلجة بتكمّل لحد آخر الفيديو"
+        return "⏳ في انتظار باتش الترجمة الجاي (الترجمة " + trPct + "% · " + subCountNow() + " جملة)"
+    }
     fun toggleDubLog() {
         if (dubLogDlg?.isShowing == true) { dubLogDlg?.dismiss(); return }
         val tv = ui.text(DubLog.text(), 11.5f, th.text).apply { setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(4)); setTextIsSelectable(true); layoutDirection = View.LAYOUT_DIRECTION_RTL }
         val d = ui.sheet(this, "🎙 لوج الدبلجة", listOf<View>(tv), false, onClose = { dubLogDlg = null })
         dubLogDlg = d
-        val tick = object : Runnable { override fun run() { if (d.isShowing) { tv.text = DubLog.text(); h.postDelayed(this, 1500L) } } }
-        h.postDelayed(tick, 1500L)
+        tv.text = dubState() + "\n\n" + DubLog.text()
+        val tick = object : Runnable { override fun run() { if (d.isShowing) { tv.text = dubState() + "\n\n" + DubLog.text(); h.postDelayed(this, 1000L) } } }
+        d.show()
+        h.postDelayed(tick, 1000L)
     }
 
     /**
@@ -7960,6 +7985,7 @@ class PlayerActivity : Activity(), Host {
             if (!dubLiveOn || isDestroyed || isFinishing) { dubLiveOn = false; return }
             val dp = dubPlay
             if (dp == null || !dp.live) { dubLiveOn = false; return }
+            try { val st = dubState(); if (st != dubLastState) { dubLastState = st; DubLog.add(st) } } catch (_: Throwable) {}
             try {
                 if (!dubLiveBusy) {
                     val keyS = Store.keyFor(vid)
