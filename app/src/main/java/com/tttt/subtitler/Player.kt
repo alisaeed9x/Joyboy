@@ -7126,7 +7126,7 @@ class PlayerActivity : Activity(), Host {
         val lp = videoBoxRef.layoutParams as LinearLayout.LayoutParams
         val dm = resources.displayMetrics
         lp.height = if (f) -1 else (minOf(dm.widthPixels, dm.heightPixels) - ui.dp(32)) * 9 / 16
-        if (f) lp.setMargins(0, 0, 0, 0) else lp.setMargins(ui.dp(16), ui.dp(32), ui.dp(16), 0)
+        if (f) lp.setMargins(0, 0, 0, 0) else lp.setMargins(ui.dp(16), ui.dp(32), ui.dp(16), if (ytPage && Design.isNew()) ui.dp(16) else 0)
         videoBoxRef.layoutParams = lp
         videoBoxRef.background = GradientDrawable().apply { setColor(Color.BLACK); cornerRadius = if (f) 0f else ui.dp(14).toFloat() }
         if (ytPage) { fsBtnLp.gravity = Gravity.BOTTOM or Gravity.RIGHT; fsBtnLp.setMargins(0, 0, ui.dp(10), ui.dp(10)) } else fsBtnLp.setMargins(ui.dp(10), 0, 0, ui.dp(10)); fsBtnV.layoutParams = fsBtnLp   // (v1143)

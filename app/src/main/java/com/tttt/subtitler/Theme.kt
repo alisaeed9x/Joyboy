@@ -14,7 +14,7 @@ class Theme(val id: String, val name: String, val bg: Int, val surface: Int, val
             val primary: Int, val accent: Int, val text: Int, val muted: Int, val danger: Int, val success: Int) {
     val isLight: Boolean get() = lum(bg) > 0.5
     /** (v1208) فيروزي هادي لحالات التقدّم/المشاهدة (لمسة بس، مش لون مسيطر) */
-    val progress: Int get() = if (isLight) 0xFF3E8E88.toInt() else if (Design.isMaterial()) primary else if (Design.isNew()) 0xFF7CF3D0.toInt() else 0xFF6CC4BC.toInt()
+    val progress: Int get() = if (isLight) 0xFF3E8E88.toInt() else if (Design.isMaterial() || Design.hasAccent()) primary else if (Design.isNew()) 0xFF8B7CFF.toInt() else 0xFF6CC4BC.toInt()
     /** (v913) لون النص/الأيقونة فوق primary — accent MeeTube أبيض في الداكن وأسود في الفاتح فالنص لازم يتعكس */
     val onPrimary: Int get() = if (lum(primary) > 0.5) 0xFF0F0F0F.toInt() else 0xFFFFFFFF.toInt()
     companion object {
@@ -90,10 +90,61 @@ object Design {
         try { Cfg.str("mode_" + d, "").toIntOrNull()?.let { com.tttt.subtitler.mtui.ThemeMode.set(ctx, it) } } catch (_: Throwable) {}
     }
     fun next(): String = order[(order.indexOf(cur()) + 1) % order.size]
+    /** (v1250) ألوان مميّزة (بدون أخضر): اسم · فاتح · داكن */
+    val accents: List<Triple<String, Int, Int>> = listOf(
+        Triple("بنفسجي", 0xFF6B4FD8.toInt(), 0xFF9D8CFF.toInt()), Triple("أزرق", 0xFF2F6FDB.toInt(), 0xFF7FB0FF.toInt()),
+        Triple("وردي", 0xFFC2436F.toInt(), 0xFFFF8FB1.toInt()), Triple("برتقالي", 0xFFD9622B.toInt(), 0xFFFFA066.toInt()),
+        Triple("أحمر", 0xFFC0392B.toInt(), 0xFFFF7A6B.toInt()), Triple("لاتيه", 0xFF8B6B50.toInt(), 0xFFE6D8C5.toInt()))
+    /** 0 = لون التصميم الافتراضي · 1.. = من accents (كلاسيك مالوش لون مختار) */
+    fun accIdx(): Int = try { if (!isNew()) 0 else (Cfg.str("acc_" + cur(), "").toIntOrNull() ?: 0).coerceIn(0, accents.size) } catch (_: Throwable) { 0 }
+    fun hasAccent(): Boolean = accIdx() > 0
+    /** (v1250) صفحة التصميم: التصاميم التلاتة + فاتح/داكن/تلقائي + لون مميّز للتصميم المختار. التغييرات بتتحفظ وبتتطبّق بزرار «تطبيق» أو بقفل الصفحة */
+    fun pick(act: android.app.Activity) {
+        val ui = Ui(act, Themes.current()); val th = ui.th
+        val root = android.widget.LinearLayout(act).apply { orientation = android.widget.LinearLayout.VERTICAL; setPadding(ui.dp(14), ui.dp(6), ui.dp(14), ui.dp(6)); layoutDirection = android.view.View.LAYOUT_DIRECTION_RTL }
+        var dirty = false
+        fun pill(t: String, on: Boolean, col: Int, click: () -> Unit): android.view.View = ui.text(t, 13f, if (on) 0xFFFFFFFF.toInt() else th.text, true).apply {
+            gravity = android.view.Gravity.CENTER; setPadding(ui.dp(10), ui.dp(9), ui.dp(10), ui.dp(9))
+            background = ui.box(if (on) col else th.card, if (on) col else th.border, 14, 1)
+            setOnClickListener { click() }
+        }
+        fun row(vararg v: android.view.View): android.widget.LinearLayout = android.widget.LinearLayout(act).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = android.view.View.LAYOUT_DIRECTION_RTL
+            for (x in v) addView(x, android.widget.LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
+        }
+        fun build() {
+            root.removeAllViews()
+            val pri = th.primary
+            root.addView(ui.text("التصميم", 12f, th.muted, true))
+            root.addView(row(*order.map { d -> pill(label(d), cur() == d, pri) { set(act, d); dirty = true; build() } }.toTypedArray()))
+            root.addView(ui.text("الوضع", 12f, th.muted, true).apply { setPadding(0, ui.dp(10), 0, 0) })
+            val m = com.tttt.subtitler.mtui.ThemeMode.peek(act)
+            root.addView(row(
+                pill("☀️ فاتح", m == com.tttt.subtitler.mtui.ThemeMode.LIGHT, pri) { com.tttt.subtitler.mtui.ThemeMode.set(act, com.tttt.subtitler.mtui.ThemeMode.LIGHT); dirty = true; build() },
+                pill("🌙 داكن", m == com.tttt.subtitler.mtui.ThemeMode.DARK, pri) { com.tttt.subtitler.mtui.ThemeMode.set(act, com.tttt.subtitler.mtui.ThemeMode.DARK); dirty = true; build() },
+                pill("⚙ تلقائي", m != com.tttt.subtitler.mtui.ThemeMode.LIGHT && m != com.tttt.subtitler.mtui.ThemeMode.DARK, pri) { com.tttt.subtitler.mtui.ThemeMode.set(act, com.tttt.subtitler.mtui.ThemeMode.SYSTEM); dirty = true; build() }))
+            if (isNew()) {
+                root.addView(ui.text("اللون المميّز لـ" + label(cur()), 12f, th.muted, true).apply { setPadding(0, ui.dp(10), 0, 0) })
+                val night = MeeRes.night(act)
+                val cells = ArrayList<android.view.View>()
+                cells.add(pill("الأصلي", accIdx() == 0, pri) { Cfg.put("acc_" + cur(), "0"); dirty = true; build() })
+                accents.forEachIndexed { k, a ->
+                    val c = if (night) a.third else a.second
+                    cells.add(pill(a.first, accIdx() == k + 1, c) { Cfg.put("acc_" + cur(), (k + 1).toString()); dirty = true; build() })
+                }
+                cells.chunked(3).forEach { ch -> root.addView(row(*(ch + List(3 - ch.size) { android.view.View(act) }).toTypedArray())) }
+            }
+        }
+        build()
+        GAlert(act).setTitle("🎨 تصميم التطبيق").setView(android.widget.ScrollView(act).apply { addView(root) })
+            .setPositiveButton("تطبيق") { _, _ -> try { act.recreate() } catch (e: Throwable) { LogStore.err("Design:apply", e) } }
+            .setNegativeButton("إغلاق") { _, _ -> if (dirty) try { act.recreate() } catch (_: Throwable) {} }
+            .setOnCancelListener { if (dirty) try { act.recreate() } catch (_: Throwable) {} }.show()
+    }
     private fun al(c: Int, a: Int): Int = (a shl 24) or (c and 0x00FFFFFF)
     /** اللون المميّز الأول (فانيلا: نعناعي · ماتيريال: primary بتاع الثيم) بشفافية a (0..255) */
-    fun mint(a: Int): Int = if (isMaterial()) al(Themes.current().primary, a) else al(0x7CF3D0, a)
-    fun violet(a: Int): Int = if (isMaterial()) al(Themes.current().accent, a) else al(0x8B7CFF, a)
+    fun mint(a: Int): Int = if (isMaterial() || hasAccent()) al(Themes.current().primary, a) else al(0x8B7CFF, a)
+    fun violet(a: Int): Int = if (isMaterial() || hasAccent()) al(Themes.current().accent, a) else al(0xE6D8C5, a)
 }
 
 object Themes {
@@ -139,17 +190,23 @@ object Themes {
         val night = MeeRes.night()
         val n = if (night) 1 else 0
         val dsg = Design.cur(); val isNew = dsg != Design.CLASSIC
-        cached?.let { if (cachedNight == n && cachedNew == dsg) return it }
+        cached?.let { if (cachedNight == n && cachedNew == dsg + Design.accIdx()) return it }
         // (v1205) هوية «Vanilla Studio»: فاتح = Vanilla/Latte/Mocha/Espresso · داكن = AMOLED أسود حقيقي بسطوح رمادية محايدة (v1216، بدل البني) + لمسة Latte.
         // الجانب (فاتح/داكن) لسه من إعداد MeeTube؛ الألوان بس هي اللي بقت دافية.
         val c = { h: Long -> (0xFF000000L or h).toInt() }
         val t = if (dsg == Design.MATERIAL) materialTheme(night) else if (night) Theme("vanilla_dark", "Vanilla داكن",
             c(0x000000), c(0x0E0E0E), c(0x161616), c(0x2A2A2A),
-            if (isNew) c(0x7CF3D0) else c(0xE6D8C5), if (isNew) c(0x8B7CFF) else c(0xBDBDBD), if (isNew) c(0xFFFFFF) else c(0xF5F0E7), c(0xA8A8A8), c(0xD9806E), c(0x6FB27C))
+            if (isNew) c(0x8B7CFF) else c(0xE6D8C5), if (isNew) c(0xE6D8C5) else c(0xBDBDBD), if (isNew) c(0xFFFFFF) else c(0xF5F0E7), c(0xA8A8A8), c(0xD9806E), c(0x6FB27C))
         else Theme("vanilla_light", "Vanilla فاتح",
             c(0xF5F0E7), c(0xFBF8F2), c(0xFFFDF9), c(0xE6D8C5), c(0x8B6B50), c(0x6F6052), c(0x29241F), c(0x6F6052), c(0xB3503F), c(0x3E8E55))
-        cached = t; cachedNight = n; cachedNew = dsg
-        return t
+        val ai = Design.accIdx()
+        val t2 = if (ai > 0) {
+            val a = Design.accents[ai - 1]; val pri = if (night) a.third else a.second
+            val hsv = FloatArray(3); android.graphics.Color.colorToHSV(pri, hsv); hsv[0] = (hsv[0] + 25f) % 360f
+            Theme(t.id, t.name, t.bg, t.surface, t.card, t.border, pri, android.graphics.Color.HSVToColor(hsv), t.text, t.muted, t.danger, t.success)
+        } else t
+        cached = t2; cachedNight = n; cachedNew = dsg + ai
+        return t2
     }
 
     /** (v907) أي id بيرجّع ثيم MeeTube الحالي — الثيمات المتعددة اتمسحت (الدالة باقية عشان الاستدعاءات القديمة تفضل شغّالة) */

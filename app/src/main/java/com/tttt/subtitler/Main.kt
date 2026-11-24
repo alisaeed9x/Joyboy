@@ -666,7 +666,7 @@ class MainActivity : Activity() {
             // (v606) المظهر: 7 أقسام بقوا 3 — الثيم (+ استوديو السمات + راحة العين) · الواجهة (السكِن + نوع الجهاز) · الحركة والوصول
             tab("appearance", { listOfNotNull<View>(
                 ui.section("🖼 التصميم (كلاسيك · فانيلا · ماتيريال)", true,
-                    ui.chips(Design.order.map { Design.label(it) }, { Design.label(Design.cur()) }) { n -> Design.set(this, Design.order.first { Design.label(it) == n }); recreate() },
+                    ui.button("🎨 تصميم التطبيق: " + Design.label(Design.cur()) + " (اختار التصميم · الوضع · اللون)") { Design.pick(this) },
                     ui.noHint()),
                 ui.section("🎨 المظهر (من MeeTube)", true,   // (v907) مصدر واحد: إعداد الثيم بتاع MeeTube نفسه (ThemeMode) — Joyboy وMeeTube بيتبعوه مع بعض
     ui.chips(listOf("⚙ النظام", "☀️ فاتح", "🌙 داكن"), { when (com.tttt.subtitler.mtui.ThemeMode.peek(this)) { com.tttt.subtitler.mtui.ThemeMode.LIGHT -> "☀️ فاتح"; com.tttt.subtitler.mtui.ThemeMode.DARK -> "🌙 داكن"; else -> "⚙ النظام" } }) { n ->

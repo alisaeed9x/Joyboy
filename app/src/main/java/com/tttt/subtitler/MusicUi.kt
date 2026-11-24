@@ -194,7 +194,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private var bgAnim: ValueAnimator? = null
     private val artBg: android.widget.ImageView by lazy { android.widget.ImageView(act).apply { scaleType = android.widget.ImageView.ScaleType.CENTER_CROP; alpha = 0.5f
         if (android.os.Build.VERSION.SDK_INT >= 31) try { setRenderEffect(android.graphics.RenderEffect.createBlurEffect(60f, 60f, android.graphics.Shader.TileMode.CLAMP)) } catch (_: Throwable) {} } }
-    private val orb = OrbView(act).apply { accent = if (Design.isMaterial()) Design.mint(0xFF) else if (Design.isNew()) 0xFF7CF3D0.toInt() else BLUE }   // (v1226) الجديد: نعناعي
+    private val orb = OrbView(act).apply { accent = if (Design.isMaterial() || Design.hasAccent()) Design.mint(0xFF) else if (Design.isNew()) 0xFF8B7CFF.toInt() else BLUE }   // (v1226) الجديد: نعناعي
     private val fTitle = ui.text("مفيش حاجة شغّالة", 16f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END }
     private val fArtist = ui.text("", 12f, C_DIM).apply { gravity = Gravity.CENTER; setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END }
     // (v294) زرار واحد بس جنب اسم الأغنية: «المعلومات غلط» ← يدوّر من الأول (الاسم والمغني والألبوم + الغلاف والكلمات). باقي الأزرار القديمة اتشالت.
