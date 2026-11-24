@@ -314,7 +314,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                     val col = when {
                         lim > 0 && DataMeter.dCell >= lim -> 0xFFB71C1C.toInt()
                         lim > 0 && DataMeter.dCell >= lim * 8 / 10 -> 0xFFE65100.toInt()
-                        DataMeter.isCell(act) -> 0xFF2B241F.toInt()
+                        DataMeter.isCell(act) -> 0xFF141414.toInt()
                         else -> 0xFF244A36.toInt()
                     }
                     if (col != lastCol) { lastCol = col; bg.setColor(col) }

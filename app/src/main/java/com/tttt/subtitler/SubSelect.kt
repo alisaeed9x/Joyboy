@@ -104,7 +104,7 @@ class SubBadgeView(ctx: Context) : View(ctx) {
         txtP.alpha = if (off) 120 else 255
         if (count > 0) {
             val r = s * 0.2f; val cx = rc.right; val cy = rc.top
-            fillP.color = if (off) 0xFF9A8B7C.toInt() else 0xFFE53935.toInt()
+            fillP.color = if (off) 0xFF8A8A8A.toInt() else 0xFFE53935.toInt()
             c.drawCircle(cx, cy, r, fillP)
             val t = if (count > 9) "9+" else count.toString()
             txtP.alpha = 255; txtP.textSize = r * 1.25f
@@ -157,7 +157,7 @@ class CcToggleView(ctx: Context) : View(ctx) {
     private val fillP = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val strokeP = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val txtP = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER }
-    private val cutP = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; color = 0xFF4A3F36.toInt() }
+    private val cutP = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; color = 0xFF363636.toInt() }
     private val lineP = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; color = 0xFFECEFF1.toInt() }
     private val rc = RectF()
     override fun onDraw(c: Canvas) {
@@ -169,11 +169,11 @@ class CcToggleView(ctx: Context) : View(ctx) {
         if (on) {
             fillP.color = Color.WHITE
             c.drawRoundRect(rc, s * 0.09f, s * 0.09f, fillP)
-            txtP.color = 0xFF2B241F.toInt()
+            txtP.color = 0xFF141414.toInt()
         } else {
-            strokeP.strokeWidth = s * 0.055f; strokeP.color = 0xFFB5A593.toInt()
+            strokeP.strokeWidth = s * 0.055f; strokeP.color = 0xFFA8A8A8.toInt()
             c.drawRoundRect(rc, s * 0.09f, s * 0.09f, strokeP)
-            txtP.color = 0xFFB5A593.toInt()
+            txtP.color = 0xFFA8A8A8.toInt()
         }
         c.drawText("CC", rc.centerX(), rc.centerY() + s * 0.095f, txtP)
         if (!on) {

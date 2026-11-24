@@ -156,13 +156,13 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     // ===== الشريط الصغير (كبسولة زجاجية تحت القايمة، وتقدّم الأغنية كتعبئة فيها) =====
     private val nowTitle = ui.text("", 14f, Color.WHITE, true).apply { setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END; textAlignment = View.TEXT_ALIGNMENT_TEXT_START }
     private val nowSub = ui.text("", 11f, C_DIM).apply { setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END; textAlignment = View.TEXT_ALIGNMENT_TEXT_START }
-    private val miniArt = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = ui.box(0xFF332C26.toInt(), Color.TRANSPARENT, 12); clipToOutline = true }
+    private val miniArt = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = ui.box(0xFF1A1A1A.toInt(), Color.TRANSPARENT, 12); clipToOutline = true }
     private val miniFill = View(act).apply { setBackgroundColor(0x404DB6AC) }
     private val miniPlay = GlyphBtn(act, "play", 22)
     private val miniNext = GlyphBtn(act, "next", 20)
     private val miniBar = FrameLayout(act).apply {
         layoutDirection = View.LAYOUT_DIRECTION_LTR; visibility = View.GONE
-        background = ui.box(0xFF1B1714.toInt(), 0x30F5F0E7, 30); clipToOutline = true
+        background = ui.box(0xFF0A0A0A.toInt(), 0x30F5F0E7, 30); clipToOutline = true
     }
     private var miniFillW = -1
 
@@ -189,8 +189,8 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
             return e.rawX >= loc[0] && e.rawX <= loc[0] + v.width && e.rawY >= loc[1] && e.rawY <= loc[1] + v.height
         }
     }.apply { layoutDirection = View.LAYOUT_DIRECTION_LTR; isClickable = true }
-    private val bg = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFF6B4F3A.toInt(), 0xFF2B2018.toInt(), 0xFF110C09.toInt(), BLACK))
-    private var bgColor = 0xFF6B4F3A.toInt()
+    private val bg = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFF3A3A3A.toInt(), 0xFF141414.toInt(), 0xFF080808.toInt(), BLACK))
+    private var bgColor = 0xFF3A3A3A.toInt()
     private var bgAnim: ValueAnimator? = null
     private val orb = OrbView(act).apply { accent = BLUE }
     private val fTitle = ui.text("مفيش حاجة شغّالة", 16f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END }
@@ -1066,7 +1066,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         // (v459) زرار عريض ومكتوب عليه: صوت يوتيوب بيتحوّل لفيديو من نفس المكان (نفس أكشن 🎬 اللي فوق)
         ytModeBtn = ui.text("🎬 مشاهدة الفيديو (وضع الفيديو)", 15f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER; visibility = View.GONE
-            background = ui.box(0xFF4A3F36.toInt(), 0x55F5F0E7, 24)
+            background = ui.box(0xFF363636.toInt(), 0x55F5F0E7, 24)
             setOnClickListener { YtAudio.itemOf(MusicEngine.current)?.let { onYtVideo?.invoke(it, MusicEngine.posMs) } }
         }
         col.addView(ytModeBtn, LinearLayout.LayoutParams(-1, ui.dp(48)).apply { setMargins(ui.dp(16), ui.dp(4), ui.dp(16), ui.dp(6)) })

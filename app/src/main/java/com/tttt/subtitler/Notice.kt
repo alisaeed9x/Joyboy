@@ -306,7 +306,7 @@ object SendPill {
         val root = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(dp(18), dp(10), dp(18), dp(12)); elevation = dp(12).toFloat()
-            background = android.graphics.drawable.GradientDrawable().apply { setColor(0xF01F1A16.toInt()); setStroke(dp(1), 0x66D4B896); cornerRadius = dp(22).toFloat() }
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(0xF00F0F0F.toInt()); setStroke(dp(1), 0x66D4B896); cornerRadius = dp(22).toFloat() }
             addView(title, LinearLayout.LayoutParams(-1, -2))
             addView(sub, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(1) })
             addView(bar, LinearLayout.LayoutParams(-1, dp(6)).apply { topMargin = dp(7) })

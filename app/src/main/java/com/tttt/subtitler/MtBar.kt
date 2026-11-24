@@ -665,9 +665,9 @@ object MtBar {
 
     private fun mtGlassPanelBg(u: Ui): GradientDrawable {
         val cols = if (MtGlass.on()) {
-            intArrayOf(0xE63A322B.toInt(), 0xEB1A1612.toInt())
+            intArrayOf(0xE62C2C2C.toInt(), 0xEB0C0C0C.toInt())
         } else {
-            intArrayOf(0xF2332C26.toInt(), 0xF51B1714.toInt())
+            intArrayOf(0xF21A1A1A.toInt(), 0xF50A0A0A.toInt())
         }
         return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, cols).apply {
             cornerRadius = u.dp(if (MtGlass.on()) 24 else 18).toFloat()
@@ -1297,7 +1297,7 @@ object MtBar {
         row.addView(trChip)
         row.addView(u.fsCircle("⚙") { MtTranslate.translateMenu(trChip) }.apply {
             textSize = 14f
-            background = u.box(0xE04A3F36.toInt(), 0x33FFFFFF, 12)
+            background = u.box(0xE0363636.toInt(), 0x33FFFFFF, 12)
             layoutParams = lp(dp(a, 38))
         })
         row.addView(u.fsBtn("🔁 إعادة") {
@@ -1642,7 +1642,7 @@ object MtBar {
             setPadding(dp(a, 6), dp(a, 6), dp(a, 6), dp(a, 6))
             background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(0xF2332C26.toInt(), 0xF51B1714.toInt())
+                intArrayOf(0xF21A1A1A.toInt(), 0xF50A0A0A.toInt())
             ).apply {
                 cornerRadius = dp(a, 24).toFloat()
                 setStroke(1, 0x3DFFFFFF)
@@ -1707,7 +1707,7 @@ object MtBar {
                 layoutDirection = View.LAYOUT_DIRECTION_RTL
                 background = GradientDrawable(
                     GradientDrawable.Orientation.TOP_BOTTOM,
-                    intArrayOf(0xF2332C26.toInt(), 0xF51B1714.toInt())
+                    intArrayOf(0xF21A1A1A.toInt(), 0xF50A0A0A.toInt())
                 ).apply {
                     cornerRadius = dp(a, 24).toFloat()
                     setStroke(1, 0x3DFFFFFF)

@@ -90,7 +90,7 @@ object RotateHint {
             btn?.let { return it }
             val b = TextView(act).apply {
                 text = "🔄"; textSize = 20f; gravity = Gravity.CENTER; includeFontPadding = false; setTextColor(Color.WHITE)
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xE62B241F.toInt()); setStroke(dp(1), 0x66FFFFFF) }
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xE6141414.toInt()); setStroke(dp(1), 0x66FFFFFF) }
                 elevation = dp(12).toFloat(); visibility = View.GONE
                 contentDescription = "لفّ الشاشة"
                 setOnClickListener {

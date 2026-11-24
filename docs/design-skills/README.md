@@ -17,8 +17,8 @@ Joyboy أندرويد Kotlin (Views/WebView)، والمهارات مكتوبة �
 | قواعد مراجعة واجهة (محزومة جوه، من غير نت) | `community/web-design-guidelines` |
 | اتجاه بصري/ثيمات/بوسترات/صفحات HTML | `anthropic/frontend-design` · `theme-factory` · `canvas-design` · `web-artifacts-builder` |
 
-## هوية Joyboy الحالية (Vanilla Studio — v1205 → v1214)
-- الباليتة: Vanilla Cream `#F5F0E7` · Latte `#E6D8C5` · Mocha `#8B6B50` · Espresso `#29241F`. الداكن: Espresso عميق (`#1F1A16` / `#2B241F` / `#332C26`) بنص Latte/Cream، مش عكس الفاتح.
+## هوية Joyboy الحالية (Vanilla Studio — v1205 → v1216)
+- الباليتة: Vanilla Cream `#F5F0E7` · Latte `#E6D8C5` · Mocha `#8B6B50` · Espresso `#29241F`. الداكن (من v1216): AMOLED أسود حقيقي `#000000` بسطوح رمادية محايدة (`#0E0E0E`/`#161616`/`#2A2A2A`) ولمسة Latte — مش بني.
 - التقدّم/التشغيل: فيروزي هادي (`Theme.progress`: `#3E8E88` فاتح · `#6CC4BC` داكن؛ `#4DB6AC` · `#2A8C8C` في بعض الأماكن). التحديد: Mocha/Latte.
 - المصادر المركزية: `Theme.kt` · `MtGlass.kt` · `Glass.kt` · `Motion.kt` — عدّل منها قبل ما تبدّل ألوان ثابتة في الشاشات.
 - متساب عمدًا: شاشات IR والتلفزيون (فوكس/D-pad) · التصفح الخفي (بنفسجي = علامة الخصوصية) · ألوان يوتيوب · الأحمر/الأخضر الدلاليين · أنيميشن اللودينج الزجاجي الفيروزي.

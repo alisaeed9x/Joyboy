@@ -37,7 +37,7 @@ class YtBubble(
 
     private val art = ImageView(act).apply {
         scaleType = ImageView.ScaleType.CENTER_CROP
-        setBackgroundColor(0xFF332C26.toInt())
+        setBackgroundColor(0xFF1A1A1A.toInt())
         outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(v: View, o: Outline) {
                 o.setOval(0, 0, v.width, v.height)
@@ -135,7 +135,7 @@ class YtBubble(
 
     init {
         bubble.addView(art, LinearLayout.LayoutParams(circle, circle))
-        bubble.background = ui.box(0xEE1F1A16.toInt(), 0xFF8FB4FF.toInt(), 26, 2)
+        bubble.background = ui.box(0xEE0F0F0F.toInt(), 0xFF8FB4FF.toInt(), 26, 2)
         parent.addView(bubble, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.LEFT))
         parent.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or2, ob ->
             if (r - l != or2 - ol || b - t != ob - ot) place(false)

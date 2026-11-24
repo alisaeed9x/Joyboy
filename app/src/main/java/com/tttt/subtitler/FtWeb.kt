@@ -180,9 +180,9 @@ async function up(){
 """
         return "<!doctype html><html dir=\"rtl\" lang=\"ar\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Joyboy — نقل ملفات</title>" +
             "<style>body{font-family:-apple-system,sans-serif;background:#171512;color:#f3ead8;padding:18px;line-height:1.7}h2{margin:0 0 6px}h3{margin:22px 0 8px;color:#ffb340}" +
-            "a.f{display:block;background:#26221c;border:1px solid #3a342b;border-radius:12px;padding:13px;margin:7px 0;color:#f3ead8;text-decoration:none;font-size:16px;word-break:break-all}small{opacity:.65}" +
+            "a.f{display:block;background:#141414;border:1px solid #2C2C2C;border-radius:12px;padding:13px;margin:7px 0;color:#f3ead8;text-decoration:none;font-size:16px;word-break:break-all}small{opacity:.65}" +
             "label.b,button{display:block;width:100%;box-sizing:border-box;text-align:center;background:#ffb340;color:#000;border:0;border-radius:12px;padding:14px;font-size:17px;margin:8px 0}" +
-            ".r{background:#26221c;border-radius:10px;padding:9px 12px;margin:5px 0;word-break:break-all}input[type=file]{display:none}</style>" +
+            ".r{background:#141414;border-radius:10px;padding:9px 12px;margin:5px 0;word-break:break-all}input[type=file]{display:none}</style>" +
             "<body><h2>📲 Joyboy</h2><div style=\"opacity:.7;font-size:13px\">نقل ملفات بين الموبايل والآيفون على نفس الواي فاي</div>" +
             sb.toString() +
             "<h3>⬆ ابعت ملفات للموبايل</h3><label class=\"b\" for=\"f\">📎 اختار ملفات من الجهاز ده</label><input id=\"f\" type=\"file\" multiple onchange=\"up()\"><div id=\"s\"></div>" +

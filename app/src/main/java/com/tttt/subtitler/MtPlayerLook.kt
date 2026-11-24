@@ -123,7 +123,7 @@ object MtLook {
         val tiles = ArrayList<Pair<String, LinearLayout>>()
         fun paint() = tiles.forEach { (id, t) ->
             val on = id == loaderId()
-            t.background = GradientDrawable().apply { cornerRadius = 16 * d; setColor(0xFF1B1714.toInt()); setStroke(if (on) (2 * d).toInt() else 1, if (on) th.primary else 0x33FFFFFF) }
+            t.background = GradientDrawable().apply { cornerRadius = 16 * d; setColor(0xFF0A0A0A.toInt()); setStroke(if (on) (2 * d).toInt() else 1, if (on) th.primary else 0x33FFFFFF) }
         }
         for (l in loaders) {
             val iv = ImageView(ctx).apply { setImageDrawable(newLoader(ctx, l.id)) }

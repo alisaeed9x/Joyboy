@@ -297,7 +297,7 @@ internal object PrayerCard {
     }
 
     private fun drawBg(cv: Canvas, bmp: Bitmap?, w: Float, h: Float) {
-        if (bmp == null) { cv.drawColor(0xFF1F1A16.toInt()); return }
+        if (bmp == null) { cv.drawColor(0xFF0F0F0F.toInt()); return }
         val iw = bmp.width.toFloat(); val ih = bmp.height.toFloat()
         val aspect = w / h
         var sw = iw; var sh = iw / aspect
@@ -347,7 +347,7 @@ internal object PrayerCard {
 
         val clip = Path(); clip.addRoundRect(RectF(0f, 0f, wDp, hDp), 22f, 22f, Path.Direction.CW)
         cv.save(); cv.clipPath(clip)
-        val fadeCol = if (dark) 0xFF15110E.toInt() else 0xFFEEF0F4.toInt()
+        val fadeCol = if (dark) 0xFF080808.toInt() else 0xFFEEF0F4.toInt()
         val fadeRgb = fadeCol and 0x00FFFFFF
         val fadeA = if (dark) 0xE6000000.toInt() else 0xF2000000.toInt()
 

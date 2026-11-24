@@ -42,7 +42,7 @@ class MiniDock(
     private var artKey = ""
 
     private val art = ImageView(act).apply {
-        scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(0xFF332C26.toInt())
+        scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(0xFF1A1A1A.toInt())
         outlineProvider = object : ViewOutlineProvider() { override fun getOutline(v: View, o: Outline) { o.setOval(0, 0, v.width, v.height) } }
         clipToOutline = true
     }
@@ -233,14 +233,14 @@ class MiniDock(
             val key = if (on) 1 else 0
             if (glassKey != key) {
                 glassKey = key
-                val tint = if (on) 0xB04A3A2C.toInt() else MeeRes.color("meetube_toast_glass", 0xA3303034.toInt(), 0xA3303034.toInt())
+                val tint = if (on) 0xB02E2E2E.toInt() else MeeRes.color("meetube_toast_glass", 0xA3303034.toInt(), 0xA3303034.toInt())
                 try { com.tttt.subtitler.mtui.GlassDrawable.apply(dock, src, 0, tint) } catch (_: Throwable) { glassKey = -1 }
             }
             if (glassKey != -1) return
         }
         glassKey = -1
         dock.background = if (MtGlass.on()) MtGlass.floatPill(ui.dp(if (expanded) 28 else 26).toFloat(), dock.resources.displayMetrics.density, if (on) 0xFFD4B896.toInt() else 0)   // (v901) زجاج MeeTube
-            else ui.box(0xEE1F1A16.toInt(), if (on) 0xFFD4B896.toInt() else 0x55FFFFFF, if (expanded) 28 else 26, 2)
+            else ui.box(0xEE0F0F0F.toInt(), if (on) 0xFFD4B896.toInt() else 0x55FFFFFF, if (expanded) 28 else 26, 2)
     }
 
     /** مكان الدايرة/الكبسولة: لازقة في الحافة (شمال/يمين) بالارتفاع المحفوظ — من غير ما تطلع بره الشاشة */

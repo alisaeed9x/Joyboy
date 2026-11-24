@@ -697,7 +697,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
             onLong = { showStats() })
         capMover = mv
         CapMover.pad(c, mv.side, den)
-        c.background = capBg(0xE62B241F.toInt())
+        c.background = capBg(0xE6141414.toInt())
         c.setOnTouchListener(mv)
         frame.addView(c, FrameLayout.LayoutParams(-2, -2, mv.gravity()))
         c.translationX = 0f; c.translationY = p.getFloat("sv_cap_ly", 0f)
@@ -740,7 +740,7 @@ class BrowserSaver(private val act: BrowserActivity, private val frame: FrameLay
             level == EMERG -> 0xE6B71C1C.toInt()
             lim > 0 && dCell >= lim -> 0xE6B71C1C.toInt()
             lim > 0 && dCell >= lim * 8 / 10 -> 0xE6E65100.toInt()
-            net == N_CELL -> 0xE62B241F.toInt()
+            net == N_CELL -> 0xE6141414.toInt()
             else -> 0xE6244A36.toInt()
         }
         if (col != lastCol) { lastCol = col; try { c.background = capBg(col) } catch (_: Throwable) {} }

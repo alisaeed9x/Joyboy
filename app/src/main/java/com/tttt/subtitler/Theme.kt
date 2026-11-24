@@ -89,11 +89,11 @@ object Themes {
         val night = MeeRes.night()
         val n = if (night) 1 else 0
         cached?.let { if (cachedNight == n) return it }
-        // (v1205) هوية «Vanilla Studio»: فاتح = Vanilla/Latte/Mocha/Espresso · داكن = Espresso عميق بسطوح Mocha غامقة (مش عكس الفاتح).
+        // (v1205) هوية «Vanilla Studio»: فاتح = Vanilla/Latte/Mocha/Espresso · داكن = AMOLED أسود حقيقي بسطوح رمادية محايدة (v1216، بدل البني) + لمسة Latte.
         // الجانب (فاتح/داكن) لسه من إعداد MeeTube؛ الألوان بس هي اللي بقت دافية.
         val c = { h: Long -> (0xFF000000L or h).toInt() }
         val t = if (night) Theme("vanilla_dark", "Vanilla داكن",
-            c(0x1B1714), c(0x29241F), c(0x332C26), c(0x453B32), c(0xE6D8C5), c(0xB5A798), c(0xF5F0E7), c(0xB5A798), c(0xD9806E), c(0x6FB27C))
+            c(0x000000), c(0x0E0E0E), c(0x161616), c(0x2A2A2A), c(0xE6D8C5), c(0xBDBDBD), c(0xF5F0E7), c(0xA8A8A8), c(0xD9806E), c(0x6FB27C))
         else Theme("vanilla_light", "Vanilla فاتح",
             c(0xF5F0E7), c(0xFBF8F2), c(0xFFFDF9), c(0xE6D8C5), c(0x8B6B50), c(0x6F6052), c(0x29241F), c(0x6F6052), c(0xB3503F), c(0x3E8E55))
         cached = t; cachedNight = n

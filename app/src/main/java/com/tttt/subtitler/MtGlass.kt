@@ -81,7 +81,7 @@ object MtGlass {
     /** (v901) كبسولة/دوك عايم زجاجي داكن (نص أبيض فوقه): سطح شبه شفاف + لمعة + حافة مضيئة (أو لون تمييز لما accent != 0) */
     fun floatPill(radiusPx: Float, density: Float, accent: Int = 0): Drawable {
         // (v909) زجاج وحافة رسائل MeeTube (meetube_toast_glass / meetube_toast_rim) — نفس MobileSnackbar
-        val base = GradientDrawable().apply { setColor(MeeRes.color("meetube_toast_glass", 0xC0332C26.toInt(), 0xC0332C26.toInt())); cornerRadius = radiusPx }   // (v1206) توست/كبسولة عايمة بلون Espresso دافي
+        val base = GradientDrawable().apply { setColor(MeeRes.color("meetube_toast_glass", 0xC01A1A1A.toInt(), 0xC01A1A1A.toInt())); cornerRadius = radiusPx }   // (v1206) توست/كبسولة عايمة بلون Espresso دافي
         val top = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x1AFFFFFF, 0x00FFFFFF)).apply { cornerRadius = radiusPx }
         val edge = GradientDrawable().apply { setColor(Color.TRANSPARENT); cornerRadius = radiusPx; setStroke(max(1, density.roundToInt()), if (accent != 0) accent else MeeRes.color("meetube_toast_rim", 0x3DFFFFFF, 0x3DFFFFFF)) }
         return LayerDrawable(arrayOf<Drawable>(base, top, edge))
@@ -226,7 +226,7 @@ object MtGlass {
     /** (v1209) ألوان Espresso دافية بدل الكحلي البارد. زرار/قايمة صغيرة فوق الفيديو: زجاج داكن بلمعة من فوق + حافة شعرية (الخلفية دايمًا داكنة فمابيتبعش الثيم). المينيمال بيأثر على الدواير بس عشان القوايم تفضل مقروءة. */
     fun overlayPill(d: Float, rDp: Int): GradientDrawable {
         val frosted = playerBtnLook() == 1
-        val cols = if (frosted) intArrayOf(0xCC463B32.toInt(), 0xD91A1410.toInt()) else intArrayOf(0xA6382F28.toInt(), 0xB3150F0B.toInt())
+        val cols = if (frosted) intArrayOf(0xCC2C2C2C.toInt(), 0xD90A0A0A.toInt()) else intArrayOf(0xA6282828.toInt(), 0xB3080808.toInt())
         return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, cols).apply {
             cornerRadius = radPx(rDp * d, d); setStroke(hair(d), if (frosted) 0x4DF5F0E7 else 0x33F5F0E7)
         }
@@ -235,10 +235,10 @@ object MtGlass {
     /** زرار دايري فوق الفيديو — حسب {@link #playerBtnLook} */
     fun overlayCircle(d: Float): GradientDrawable = when (playerBtnLook()) {
         2 -> GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x00000000) }   // مينيمال: من غير دايرة ولا حافة
-        1 -> GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xCC4A3F36.toInt(), 0xD91A1410.toInt())).apply {
+        1 -> GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xCC363636.toInt(), 0xD90A0A0A.toInt())).apply {
             shape = GradientDrawable.OVAL; setStroke(hair(d), 0x59F5F0E7)
         }
-        else -> GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xA6403630.toInt(), 0xB3150F0B.toInt())).apply {
+        else -> GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xA62C2C2C.toInt(), 0xB3080808.toInt())).apply {
             shape = GradientDrawable.OVAL; setStroke(hair(d), 0x40F5F0E7)
         }
     }

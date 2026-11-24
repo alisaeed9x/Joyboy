@@ -1691,7 +1691,7 @@ class PlayerActivity : Activity(), Host {
             val decor = window.decorView as? android.view.ViewGroup ?: return
             val b = android.widget.TextView(this).apply {
                 text = "📜"; textSize = 20f; gravity = Gravity.CENTER; setTextColor(0xFFFFFFFF.toInt())
-                background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(0xB33A332A.toInt()) }
+                background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(0xB32C2C2C.toInt()) }
                 setOnClickListener { trToggle() }
             }
             decor.addView(b, android.widget.FrameLayout.LayoutParams(trDp(52), trDp(52), Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, trDp(16), trDp(96)) })
@@ -2865,18 +2865,18 @@ class PlayerActivity : Activity(), Host {
         fun tidy(v: TextView) { v.setSingleLine(); v.includeFontPadding = false }
         val webVid = uri == null && (url != null || intent.getStringExtra("ytid") != null)   // (v378) يوتيوب: اللينك بيتجاب بعد بناء الشريط، فزرار الجودة كان بيختفي
         var dlRef: TextView? = null
-        val dlB = b("⬇", 0xFF4A3F36.toInt()) { dlRef?.let { downloadPopup(it) } }
+        val dlB = b("⬇", 0xFF363636.toInt()) { dlRef?.let { downloadPopup(it) } }
         dlRef = dlB
         if (MtGlass.on() && MtLook.hideDl()) dlB.visibility = View.GONE   // (v899) إعداد MeeTube: إخفاء الزرار
         var trRef: TextView? = null
         val tr = b("▶ ترجم ▾", 0xFFE53935.toInt()) { trRef?.let { trMainClick(it) } }   // (v254) قبل البداية: الإعداد المحفوظ أو شاشة «طريقة الترجمة»
         trRef = tr
         var gearRef: TextView? = null
-        val gearB = b("⚙", 0xFF4A3F36.toInt()) { gearRef?.let { trSettings(it) } }   // (v1097) T2: إعدادات الترجمة + سلايدر سريع↔دقيق
+        val gearB = b("⚙", 0xFF363636.toInt()) { gearRef?.let { trSettings(it) } }   // (v1097) T2: إعدادات الترجمة + سلايدر سريع↔دقيق
         gearRef = gearB
         // (v1138) CC إظهار/إخفاء الترجمة — اتنقل هنا جنب زراير الترجمة: منوّر = الترجمة ظاهرة · خط مايل = مخفية
         val ccV = CcToggleView(this).apply {
-            background = ui.box(0xFF4A3F36.toInt(), 0x33FFFFFF, if (compact) 8 else 10); isClickable = true; isFocusable = true
+            background = ui.box(0xFF363636.toInt(), 0x33FFFFFF, if (compact) 8 else 10); isClickable = true; isFocusable = true
             contentDescription = "إظهار/إخفاء الترجمة"; on = ccOn
         }
         ccV.setOnClickListener { ccToggleFn(); ccV.on = ccOn }
@@ -2884,11 +2884,11 @@ class PlayerActivity : Activity(), Host {
         ccSync = { prevSync?.invoke(); ccV.on = ccOn }
         // (v1137) ➕ استيراد ملف ترجمة من بره + CC برقم عدد ملفات الترجمة المتاحة (مرسومين باليد) — جنب زرار الترجمة/الإعدادات
         val plusB = PlusView(this).apply {
-            background = ui.box(0xFF4A3F36.toInt(), 0x33FFFFFF, if (compact) 8 else 10); isClickable = true; isFocusable = true
+            background = ui.box(0xFF363636.toInt(), 0x33FFFFFF, if (compact) 8 else 10); isClickable = true; isFocusable = true
             contentDescription = "إضافة ملف ترجمة من بره"; setOnClickListener { subImport() }
         }
         val subB = SubBadgeView(this).apply {
-            background = ui.box(0xFF4A3F36.toInt(), 0x33FFFFFF, if (compact) 8 else 10); isClickable = true; isFocusable = true
+            background = ui.box(0xFF363636.toInt(), 0x33FFFFFF, if (compact) 8 else 10); isClickable = true; isFocusable = true
             contentDescription = "ملفات الترجمة المتاحة"; visibility = View.GONE
         }
         subB.setOnClickListener { subSelectSheet(subB) }
@@ -2900,17 +2900,17 @@ class PlayerActivity : Activity(), Host {
             plusB.visibility = if (uri != null && !webVid) View.VISIBLE else View.GONE
         }
         var lgRef: TextView? = null
-        val lgB = b("🌐", 0xFF4A3F36.toInt()) { lgRef?.let { langPopup(it) } }
+        val lgB = b("🌐", 0xFF363636.toInt()) { lgRef?.let { langPopup(it) } }
         lgRef = lgB
         trLgB = lgB
         fun qBtn(): TextView {
             val cur = qOpts.getOrNull(qCur)?.h ?: 0
-            val v = b(if (cur > 0) "${cur}p ▾" else "الجودة ▾", 0xFF4A3F36.toInt()) { }
+            val v = b(if (cur > 0) "${cur}p ▾" else "الجودة ▾", 0xFF363636.toInt()) { }
             v.setOnClickListener { qualPopFn?.invoke(v) }
             qualRowRefs.add(v); return v
         }
         fun aBtn(): TextView {   // (v388) مربع لغة الصوت: بيظهر بس لو الفيديو له أكتر من لغة
-            val v = b("🔊 ▾", 0xFF4A3F36.toInt()) { }
+            val v = b("🔊 ▾", 0xFF363636.toInt()) { }
             v.setOnClickListener { audPopFn?.invoke(v) }
             audRowRefs.add(v); v.visibility = View.GONE; paintAud(); return v
         }
@@ -2920,7 +2920,7 @@ class PlayerActivity : Activity(), Host {
             val chipB = b("▶ ترجم ▾", 0xFFE53935.toInt()) { chipRef?.let { trMainClick(it) } }   // (v415) زرار واحد بقايمة منسدلة
             chipRef = chipB
             // (v1137) ⏸/▶ مرسوم باليد (PausePlayView) — الإيموجي/الأيقونة كانت بتظهر شفافة فاضية
-            val pz = PausePlayView(this).apply { playing = true; background = ui.box(0xFF5A4B3F.toInt(), 0x33FFFFFF, 8); isClickable = true; isFocusable = true; contentDescription = "إيقاف مؤقت للترجمة"
+            val pz = PausePlayView(this).apply { playing = true; background = ui.box(0xFF454545.toInt(), 0x33FFFFFF, 8); isClickable = true; isFocusable = true; contentDescription = "إيقاف مؤقت للترجمة"
                 setOnClickListener { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() } }   // (v438) إيقاف مؤقت / كمّل ظاهر جنب «ترجم» (كان جوه القايمة بس)
             val cx = stopBtn(8)   // (v741) مربع أبيض مرسوم باليد جوه الأحمر (كان بيختفي)
             tidy(chipB); dlB.setPadding(0, 0, 0, 0)
@@ -2939,7 +2939,7 @@ class PlayerActivity : Activity(), Host {
                 pz.visibility = if (started) View.VISIBLE else View.GONE
                 cx.visibility = if (started) View.VISIBLE else View.GONE
                 pz.playing = !paused
-                pz.background = ui.box(if (paused) 0xFF2E7D32.toInt() else 0xFF5A4B3F.toInt(), 0x33FFFFFF, 8)
+                pz.background = ui.box(if (paused) 0xFF2E7D32.toInt() else 0xFF454545.toInt(), 0x33FFFFFF, 8)
                 paintSub()   // (v1137)
                 gearB.visibility = View.VISIBLE   // (v1097) ⚙ ظاهر دايمًا جنب «ترجم» حتى والترجمة شغّالة
                 lgB.visibility = if (caps().dialect) View.VISIBLE else View.GONE   // (v444) بس في الأوضاع اللي فيها لهجات
@@ -2955,7 +2955,7 @@ class PlayerActivity : Activity(), Host {
                 }
             }
         } else {
-            val pz2 = PausePlayView(this).apply { playing = true; background = ui.box(0xFF5A4B3F.toInt(), 0x33FFFFFF, 10); isClickable = true; isFocusable = true; contentDescription = "إيقاف مؤقت للترجمة"
+            val pz2 = PausePlayView(this).apply { playing = true; background = ui.box(0xFF454545.toInt(), 0x33FFFFFF, 10); isClickable = true; isFocusable = true; contentDescription = "إيقاف مؤقت للترجمة"
                 setOnClickListener { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() } }   // (v438) (v1137) مرسوم باليد
             val cx2 = stopBtn(10)   // (v741)
             tidy(tr); dlB.setPadding(0, 0, 0, 0)
@@ -2976,7 +2976,7 @@ class PlayerActivity : Activity(), Host {
                 cx2.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 pz2.playing = !paused
                 paintSub()   // (v1137)
-                pz2.background = ui.box(if (paused) 0xFF2E7D32.toInt() else 0xFF5A4B3F.toInt(), 0x33FFFFFF, 10)
+                pz2.background = ui.box(if (paused) 0xFF2E7D32.toInt() else 0xFF454545.toInt(), 0x33FFFFFF, 10)
             }
         }
         updateTr()
@@ -3244,7 +3244,7 @@ class PlayerActivity : Activity(), Host {
     }
 
     // ===================== (v741) نوافذ حوار بنفس شكل الشيت (بدل AlertDialog القديم) =====================
-    private val SH_BLUE = 0xFF8B6B50.toInt(); private val SH_RED = 0xFFB71C1C.toInt(); private val SH_GRAY = 0xFF5A4B3F.toInt()
+    private val SH_BLUE = 0xFF8B6B50.toInt(); private val SH_RED = 0xFFB71C1C.toInt(); private val SH_GRAY = 0xFF454545.toInt()
     private class ShBtn(val t: String, val fill: Int, val f: () -> Unit)
     private fun shDialog(maxDp: Int = 330, onCancel: () -> Unit = {}, build: (LinearLayout, () -> Unit) -> Unit): android.app.Dialog {
         val dlg = android.app.Dialog(this)
@@ -3855,7 +3855,7 @@ class PlayerActivity : Activity(), Host {
     }
 
     /** (v445) خلفية القوايم المنسدلة: زجاج غامق بتدرّج + حد فاتح ورفيع بدل المستطيل المسطّح */
-    private fun glassPanelBg(): GradientDrawable = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, if (MtGlass.on()) intArrayOf(0xE63A322B.toInt(), 0xEB1A1612.toInt()) else intArrayOf(0xF22B241F.toInt(), 0xF5101017.toInt())).apply {   // (v894) موبايل: زجاج MeeTube — استدارة 24 + حافة مضيئة
+    private fun glassPanelBg(): GradientDrawable = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, if (MtGlass.on()) intArrayOf(0xE62C2C2C.toInt(), 0xEB0C0C0C.toInt()) else intArrayOf(0xF2141414.toInt(), 0xF5101017.toInt())).apply {   // (v894) موبايل: زجاج MeeTube — استدارة 24 + حافة مضيئة
         cornerRadius = ui.dp(if (MtGlass.on()) 24 else 18).toFloat(); setStroke(maxOf(1, if (MtGlass.on()) MtGlass.hair(ui.ctx.resources.displayMetrics.density) else ui.dp(1)), if (MtGlass.on()) 0x3DFFFFFF else 0x33FFFFFF)
     }
     /** (v450) اسم الوضع الحالي مختصر على زرار «ترجم» عشان تعرف الوضع من غير ما تفتح القايمة */

@@ -58,7 +58,7 @@ object TaskAgg {
 /** (v472) دايرة زي دايرة مشغّل الموسيقى: حلقة تقدّم بتلف حواليها + الوقت المتبقي (أو النسبة) في النص + عدد المهام في ركن صغير */
 class TaskRingView(ctx: Context, private val accent: Int) : View(ctx) {
     private val d = resources.displayMetrics.density
-    private val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = if (MtGlass.on()) 0xC71C1C21.toInt() else 0xF01F1A16.toInt() }   // (v902) زجاج MeeTube
+    private val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = if (MtGlass.on()) 0xC71C1C21.toInt() else 0xF00F0F0F.toInt() }   // (v902) زجاج MeeTube
     private val rimP = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = 0x3DFFFFFF; strokeWidth = d }
     private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = 0x33FFFFFF; strokeWidth = 4f * d }
     private val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeWidth = 4f * d; color = accent }
@@ -81,7 +81,7 @@ class TaskRingView(ctx: Context, private val accent: Int) : View(ctx) {
         val inset = 4f * d + track.strokeWidth / 2f
         box.set(w / 2f - r + inset, h / 2f - r + inset, w / 2f + r - inset, h / 2f + r - inset)
         c.drawArc(box, 0f, 360f, false, track)
-        arc.color = if (dim) 0xFF8F8272.toInt() else accent
+        arc.color = if (dim) 0xFF7A7A7A.toInt() else accent
         if (frac > 0.005f) c.drawArc(box, -90f, 360f * frac.coerceIn(0f, 1f), false, arc)
         val cy = h / 2f
         if (small.isEmpty()) c.drawText(main, w / 2f, cy - (txt.ascent() + txt.descent()) / 2f, txt)
