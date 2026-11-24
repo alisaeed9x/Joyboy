@@ -259,7 +259,7 @@ class YtPlayerKit(private val act: Activity, private val ui: Ui) : FrameLayout(a
     private val playB = FrameLayout(act).apply { background = GradientDrawable().apply { setShape(GradientDrawable.OVAL); setColor(0x99000000.toInt()) } }
     private val msgTv = TextView(act).apply { textSize = 13f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; visibility = View.GONE; setPadding(ui.dp(28), 0, ui.dp(28), 0) }
     private val timeTv = TextView(act).apply { textSize = 11f; setTextColor(Color.WHITE); text = "0:00 / 0:00" }
-    private val seek = SeekBar(act)
+    private val seek = SeekBar(act).apply { if (Design.isNew()) layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR }
     private val expandG = YtGlyph(act, 2)
     private val closeG = YtGlyph(act, 3)
     private val gearG = YtGlyph(act, 4)

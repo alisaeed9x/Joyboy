@@ -2953,11 +2953,14 @@ class PlayerActivity : Activity(), Host {
                     val tx = trIsTx()
                     val soft = hasSoftSubNow()
                     chipB.text = if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else if (soft) "💬 سوفت سب · " + modeShort() + " ▾" else (if (tx) "✍ تفريغ · " else if (TrProfile.uiMode() == TrProfile.DUB) "🎙 دبّلج · " else "▶ ترجم · ") + modeShort() + " ▾"
-                    chipB.background = ui.box(if (soft) 0xFF2E7D32.toInt() else if (tx) 0xFF2A8C8C.toInt() else 0xFFE53935.toInt(), 0x33FFFFFF, 12)
+                    val aur = Design.isNew() && !soft && !tx
+                    chipB.background = if (aur) auroraPill(12) else ui.box(if (soft) 0xFF2E7D32.toInt() else if (tx) 0xFF2A8C8C.toInt() else 0xFFE53935.toInt(), 0x33FFFFFF, 12)
+                    if (Design.isNew()) chipB.setTextColor(if (aur) 0xFF0B0A18.toInt() else Color.WHITE)
                 }
                 else {
                     LoadUi.set(chipB, (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + dotsNow() + " ▾")
                     chipB.background = ui.box(if (paused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF2A8C8C.toInt(), 0x33FFFFFF, 12)
+                    if (Design.isNew()) chipB.setTextColor(Color.WHITE)
                 }
             }
         } else {
@@ -2977,7 +2980,9 @@ class PlayerActivity : Activity(), Host {
                 val tx = trIsTx()
                 val soft = hasSoftSubNow()
                 LoadUi.set(tr, if (!engineStarted) (if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else if (soft) "💬 سوفت سب · " + modeShort() + " ▾" else (if (tx) "✍ تفريغ · " else if (TrProfile.uiMode() == TrProfile.DUB) "🎙 دبّلج · " else "▶ ترجم · ") + modeShort() + " ▾") else (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + dotsNow() + " ▾")
-                tr.background = ui.box(if (!engineStarted) (if (soft) 0xFF2E7D32.toInt() else if (tx) 0xFF2A8C8C.toInt() else 0xFFE53935.toInt()) else (if (paused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF2A8C8C.toInt()), 0x33FFFFFF, 10)
+                val aur2 = Design.isNew() && !engineStarted && !soft && !tx
+                tr.background = if (aur2) auroraPill(10) else ui.box(if (!engineStarted) (if (soft) 0xFF2E7D32.toInt() else if (tx) 0xFF2A8C8C.toInt() else 0xFFE53935.toInt()) else (if (paused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF2A8C8C.toInt()), 0x33FFFFFF, 10)
+                if (Design.isNew()) tr.setTextColor(if (aur2) 0xFF0B0A18.toInt() else Color.WHITE)
                 pz2.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 cx2.visibility = if (engineStarted) View.VISIBLE else View.GONE
                 pz2.playing = !paused
@@ -5433,8 +5438,8 @@ class PlayerActivity : Activity(), Host {
         // زي MX: صف الوقت+التقدم فوق، وتحته: 🔓 قفل (شمال) | ⏮ ⏯ ⏭ (النص) | ⛶ احتواء/تمديد + ⧉ نافذة صغيرة (يمين)
         val fsBar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
-            setPadding(ui.dp(14), ui.dp(34), ui.dp(14), 0)
-            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, if (Design.isNew()) intArrayOf(0x00000000, 0x7A120F2B, 0xE60A0918.toInt()) else intArrayOf(0x00000000, 0x66000000, 0xCC000000.toInt()))   // (v445) تدرّج أنعم
+            if (Design.isNew()) setPadding(ui.dp(16), ui.dp(10), ui.dp(16), ui.dp(6)) else setPadding(ui.dp(14), ui.dp(34), ui.dp(14), 0)
+            background = if (Design.isNew()) GradientDrawable().apply { setColor(0xB8141224.toInt()); cornerRadius = ui.dp(26).toFloat(); setStroke(ui.dp(1), 0x33FFFFFF) } else GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x00000000, 0x66000000, 0xCC000000.toInt()))   // (v445) تدرّج أنعم
         }
         val timeRow = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL }
         timeRow.addView(fsEl, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(8) })
@@ -5493,14 +5498,14 @@ class PlayerActivity : Activity(), Host {
         }
         leftB.addView(lockB, lockLp()); leftB.addView(aiB); smallIcon(lgIcon); smallIcon(audRouteB)
         btnRow.addView(leftB, LinearLayout.LayoutParams(0, -2, 1f))
-        val pillBg = { ui.box(0xE00F0F12.toInt(), 0x29FFFFFF, 24) }
+        val pillBg = { if (Design.isNew()) ui.box(0x00000000, 0x00000000, 24) else ui.box(0xE00F0F12.toInt(), 0x29FFFFFF, 24) }
         val prevB = ui.fsCircle("⏮") { stepOrSeek(-1); showChrome() }.apply { textSize = 20f; background = pillBg() }
         val nextB = ui.fsCircle("⏭") { stepOrSeek(1); showChrome() }.apply { textSize = 20f; background = pillBg() }
         fsPlayB.textSize = 30f
-        fsPlayB.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xE00F0F12.toInt()); setStroke(ui.dp(1), if (MtGlass.on()) 0x40FFFFFF else 0x29FFFFFF) }
+        fsPlayB.background = if (Design.isNew()) GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x40FFFFFF); setStroke(ui.dp(1), 0x66FFFFFF) } else GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xE00F0F12.toInt()); setStroke(ui.dp(1), if (MtGlass.on()) 0x40FFFFFF else 0x29FFFFFF) }
         val mid = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER; setPadding(ui.dp(6), 0, ui.dp(6), 0) }
         mid.addView(prevB, LinearLayout.LayoutParams(ui.dp(60), ui.dp(44)).apply { marginEnd = ui.dp(8) })
-        mid.addView(fsPlayB, LinearLayout.LayoutParams(ui.dp(56), ui.dp(56)))
+        mid.addView(fsPlayB, LinearLayout.LayoutParams(ui.dp(fsPlayDp()), ui.dp(fsPlayDp())))
         mid.addView(nextB, LinearLayout.LayoutParams(ui.dp(60), ui.dp(44)).apply { marginStart = ui.dp(8) })
         btnRow.addView(mid, LinearLayout.LayoutParams(-2, -2))
         val rightB = LinearLayout(this).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.END or Gravity.CENTER_VERTICAL }
@@ -5581,7 +5586,7 @@ class PlayerActivity : Activity(), Host {
             val mf = if (w >= ui.dp(720)) 1f else if (w >= ui.dp(480)) 0.86f else 0.76f
             (prevB.layoutParams as LinearLayout.LayoutParams).apply { width = (ui.dp(60) * mf).toInt(); height = (ui.dp(44) * mf).toInt(); marginEnd = (ui.dp(8) * mf).toInt() }.also { prevB.layoutParams = it }
             (nextB.layoutParams as LinearLayout.LayoutParams).apply { width = (ui.dp(60) * mf).toInt(); height = (ui.dp(44) * mf).toInt(); marginStart = (ui.dp(8) * mf).toInt() }.also { nextB.layoutParams = it }
-            (fsPlayB.layoutParams as LinearLayout.LayoutParams).apply { width = (ui.dp(56) * mf).toInt(); height = (ui.dp(56) * mf).toInt() }.also { fsPlayB.layoutParams = it }
+            (fsPlayB.layoutParams as LinearLayout.LayoutParams).apply { width = (ui.dp(fsPlayDp()) * mf).toInt(); height = (ui.dp(fsPlayDp()) * mf).toInt() }.also { fsPlayB.layoutParams = it }
             val midW = (ui.dp(60) * 2 + ui.dp(8) * 2 + ui.dp(56)) * mf + ui.dp(12)
             val avail = ((w - ui.dp(28) - midW) / 2f - ui.dp(2)).toInt().coerceAtLeast(ui.dp(60))
             scaleSide(leftB, avail); scaleSide(rightB, avail)
@@ -5611,7 +5616,7 @@ class PlayerActivity : Activity(), Host {
             if (tbl.topMargin != tp) { tbl.topMargin = tp; tb.layoutParams = tbl; placeFloatFn() }
         }
         if (::badgeRowV.isInitialized) badgeRowV.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, orr, ob -> if (r - l != orr - ol || b - t != ob - ot) fixTopRowFn() }   // (v265) في ملء الشاشة الهامش بيكبر عشان الشريط مايغطّيش الكبسولات   // (v90) يمين، جنب عداد الجمل
-        chromeFrame.addView(fsBar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(0, 0, 0, ui.dp(6)) })
+        chromeFrame.addView(fsBar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { if (Design.isNew()) setMargins(ui.dp(12), 0, ui.dp(12), ui.dp(6)) else setMargins(0, 0, 0, ui.dp(6)) })
         // زرار القفل الصغير: بيظهر لما تلمس الشاشة وهي مقفولة
         lockOv = ui.fsCircle("🔒") { setLock(false) }.apply { visibility = View.GONE }
         videoBox.addView(lockOv, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.BOTTOM or Gravity.START).apply { setMargins(ui.dp(22), 0, 0, ui.dp(22)) })
@@ -7865,6 +7870,8 @@ class PlayerActivity : Activity(), Host {
     @Volatile private var dubForce = false
     @Volatile private var dubBypass = false
     private var dubWait = 0
+    private fun fsPlayDp(): Int = if (Design.isNew()) 64 else 56
+    private fun auroraPill(rDp: Int): GradientDrawable = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xFF7CF3D0.toInt(), 0xFF8B7CFF.toInt())).apply { cornerRadius = ui.dp(rDp).toFloat() }
     private fun trComplete(): Boolean = try { trPct >= 100 || (::realEngine.isInitialized && realEngine.fullyDone()) } catch (_: Throwable) { false }
     private val dubPoll = object : Runnable {
         override fun run() {

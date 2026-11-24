@@ -777,6 +777,7 @@ object MtBar {
             val id = a.resources.getIdentifier("mobile_player_time_bar", "id", a.packageName)
             timeBar = if (id != 0) a.findViewById(id) else null
         } catch (_: Throwable) { timeBar = null }
+        if (Design.isNew()) try { timeBar?.layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR } catch (_: Throwable) {}
         snapStock(a)   // (v978)
         hookFilmstrip(a)
         // (v947) أزرار MeeTube الأصلية اللي Joyboy عنده بدايلها في الصف الرئيسي: ⏮ ⏯ ⏭ (النص) + ⛶ + سهم الأكشنز — بتتخبّى (كانت بتظهر مرتين)
@@ -1835,6 +1836,7 @@ object MtBar {
         }
         val lab = u.text("⏩ السرعة: " + PlayerLogic.speedLabel(cur), 14f, Color.WHITE, true)
         val bar = SeekBar(a).apply {
+            if (Design.isNew()) layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR
             max = 275
             progress = ((cur - 0.25f) * 100f).toInt().coerceIn(0, 275)
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
@@ -1923,6 +1925,7 @@ object MtBar {
         }
         val toneLab = u.text("🎨 الأسلوب: " + (if (curS == "عائلي") "مناسب للمشاهدة العائلية" else "حرفي") + "   (حرفي ◂ عائلي)", 13f, Color.WHITE, false)
         val styleBar = SeekBar(a).apply {
+            if (Design.isNew()) layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR
             max = 1
             progress = styles.indexOf(curS).coerceIn(0, 1)
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
