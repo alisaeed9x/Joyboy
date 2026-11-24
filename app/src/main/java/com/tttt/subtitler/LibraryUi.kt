@@ -427,7 +427,7 @@ class LibraryUi(
             srcRow = sr; root.addView(sr, LinearLayout.LayoutParams(-1, -2))
         }
         // (v345) بحث شامل: 🔎 جنب الخانة بيفتح بحث واحد في الفيديوهات والموسيقى ويوتيوب
-        val uniBtn = ui.text("🔎", 20f, Color.WHITE).apply {
+        val uniBtn = ui.text("🔎", 20f, if (Design.isNew() && th.isLight) th.text else Color.WHITE).apply {
             gravity = Gravity.CENTER; background = ui.box(th.card, th.border, 14)
             setOnClickListener { onUniSearch?.invoke(searchEt.text.toString().trim()) }
         }

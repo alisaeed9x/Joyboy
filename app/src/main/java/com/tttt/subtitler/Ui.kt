@@ -11,8 +11,9 @@ import android.widget.*
 class Ui(val ctx: Context, var th: Theme) {
     fun dp(v: Int) = (v * ctx.resources.displayMetrics.density).toInt()
     fun box(fill: Int, stroke: Int, r0: Int, sw: Int = 1): GradientDrawable {
+        val rr = if (r0 in 10..16 && Design.isNew()) r0 + 6 else r0   // (v1223) الشكل الجديد: استدارة أكبر للكروت
         if (MtGlass.on()) {
-            val rpx = dp(MtGlass.rad(r0)).toFloat(); val dn = ctx.resources.displayMetrics.density
+            val rpx = dp(MtGlass.rad(rr)).toFloat(); val dn = ctx.resources.displayMetrics.density
             if (MtSkin.on()) {   // (v897) زجاج حقيقي شفاف: الكارت/السطح مابقوش لون صلب
                 if (fill == th.card || fill == th.surface) {
                     val g = if (fill == th.card) MtGlass.glassCard(th, rpx, dn) else MtGlass.glassWell(th, rpx, dn)
@@ -22,7 +23,7 @@ class Ui(val ctx: Context, var th: Theme) {
             }
             return MtGlass.shape(th, fill, stroke, rpx, dn, dp(sw))   // (v893) زجاج MeeTube: استدارة أكبر + خط شعري
         }
-        val r = Skins.rad(r0)   // (v352) استدارة حسب وضع الواجهة
+        val r = Skins.rad(rr)   // (v352) استدارة حسب وضع الواجهة
         // الكروت (لون card) بتتحوّل لزجاج بتدرّج خفيف؛ الباقي زي ما هو
         if (fill == th.card && r0 >= 12) return Glass.drawable(th, dp(r).toFloat(), dp(sw), stroke)
         return GradientDrawable().apply { setColor(fill); cornerRadius = dp(r).toFloat(); setStroke(dp(sw), stroke) }
