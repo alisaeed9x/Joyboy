@@ -31,11 +31,14 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         val BAR_ORDER = listOf(0, REMOTE, 4, 2, NET, 8)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»   // (v1041) «العناية» اتشالت
         /** (v475) خلايا يوتيوب الافتراضية (مش بوابات): الرئيسية 9 · الاشتراكات 10 · أنا 11 — بتحل محل خلية «يوتيوب» وانت جواه */
         const val YT_HOME = 9; const val YT_SUBS = 10; const val YT_ME = 11
+        /** (v1275) «فتح كلام»: خليتين (الرئيسية 17 · الأقسام 18) بيظهروا في الشريط وانت جواه، وتبويبه الداخلي رقمه 17 */
+        const val FK_HOME = 17; const val FK_SECS = 18
+        val FK_ORDER = listOf(0, FK_HOME, FK_SECS, 4, 2, MORE)
         val NORMAL_ORDER = BAR_ORDER
         val YT_ORDER = listOf(0, YT_HOME, YT_SUBS, YT_ME, 2, NET, MORE)  // نسخة كاملة وانت في يوتيوب: الموسيقى والمتصفح بيروحوا لـ«المزيد» · (v829) زرار النت بعد «أنا» (كان قبلها)
         val LITE_ORDER = listOf(YT_HOME, YT_SUBS, 0, YT_ME)           // نسخة اللايت: الرئيسية · الاشتراكات · محلي · أنا
         val DEFS = listOf("🎞" to "الفيديوهات", "🎵" to "الموسيقى", "🌐" to "المتصفح", "🗂" to "المخزن", "▶" to "يوتيوب", "⬇" to "مركز التحميل", "" to "", "⚙️" to "الإعدادات", "⋯" to "المزيد",
-            "🏠" to "الرئيسية", "📺" to "الاشتراكات", "👤" to "أنا", "📱" to "الريموت", "📎" to "الكليبورد", "📶" to "", "📡" to "ريموت IR", "🩺" to "العناية")
+            "🏠" to "الرئيسية", "📺" to "الاشتراكات", "👤" to "أنا", "📱" to "الريموت", "📎" to "الكليبورد", "📶" to "", "📡" to "ريموت IR", "🩺" to "العناية", "💞" to "الرئيسية", "🗂" to "الأقسام")
     }
     /** البوابات اللي ورا ⋯ المزيد: أي بوابة مش في الشريط (حاليًا: الملفات 3 · المهام 5 · الذكاء 6 · الإعدادات 7) — الزرار بيتلوّن لما واحدة منهم تبقى هي النشطة */
     private val lite = act.packageName.endsWith(".lite")
@@ -93,6 +96,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         // (v861) ترتيب جديد: كل مجموعة مضبوطة على 3 في الصف، والأيقونات مش مكرّرة
         val secs = ArrayList<MoreItem>()
         for (id in listOf(0, 4, 2, 1, 5)) secs.add(MoreItem(DEFS[id].first, if (id == 0) "الفيديوهات" else DEFS[id].second, id == active) { onPick(id) })   // فيديوهات · يوتيوب · متصفح · موسيقى · مخزن · مهام
+        if (!tvDev) secs.add(MoreItem("💞", "فتح كلام", false) { onPick(FK_HOME) })   // (v1275)
         val trl = ArrayList<MoreItem>()
         // (v1037) «الاستوديو» اتمسح خالص — بس «📚 مكتبة الترجمات» (من v990) فضلت لأنها مستقلة (مش جزء منه)
         if (!tvDev) trl.add(MoreItem("📚", "مكتبة الترجمات", false) { try { TrLibUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:trlib", e) } })
@@ -111,9 +115,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         sys.add(MoreItem("🎨", "التصميم: " + Design.label(Design.cur()), false) { try { Design.pick(act) } catch (e: Throwable) { LogStore.err("Nav:design", e) } })   // (v1219) تبديل الشكل جديد/قديم
         if (!tvDev) sys.add(MoreItem("🎓", "شرح الاستخدام", false) { try { collapseMore(); Tour.replay(act) } catch (e: Throwable) { LogStore.err("Nav:tour", e) } })   // (v1258)
         sys.add(MoreItem(DEFS[7].first, "الإعدادات", 7 == active) { onPick(7) })
-        val tiles = ArrayList<MoreItem>()
-        for (t in HtmlTiles.all) tiles.add(MoreItem(t.emoji, t.title, false) { HtmlTiles.open(act, t) })   // (v1275) بلاطات HTML
-        return listOf("الأقسام" to secs, "الترجمة" to trl, "تحكم وريموت" to ctl) + (if (tiles.isNotEmpty()) listOf("ألعاب وأدوات" to tiles) else emptyList()) + listOf("النظام والتحديث" to sys)
+        return listOf("الأقسام" to secs, "الترجمة" to trl, "تحكم وريموت" to ctl, "النظام والتحديث" to sys)
     }
 
     private fun keyOf(m: MoreItem): String = m.label.substringBefore(":")
@@ -428,8 +430,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         }
     }
     /** (v475) وانت في يوتيوب (نسخة كاملة) الشريط بيعرض الرئيسية/الاشتراكات/أنا بدل «يوتيوب»؛ اللايت ترتيبه ثابت */
-    fun mode(inYoutube: Boolean) {
-        val o = if (lite) LITE_ORDER else if (inYoutube) ytOrder() else normalOrder()
+    fun mode(inYoutube: Boolean, inFk: Boolean = false) {
+        val o = if (lite) LITE_ORDER else if (inFk) FK_ORDER else if (inYoutube) ytOrder() else normalOrder()
         if (o == order) return
         order = o; snap = true; indicator.animate().cancel(); moving = false; indicator.alpha = 0f
         fillRow(); paint(); rowLL.requestLayout()

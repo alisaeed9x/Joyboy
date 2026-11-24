@@ -90,6 +90,7 @@ class MainActivity : Activity() {
     private var warmView: View? = null   // (v469) D2 طبقة الفلتر الدافئ
     /** (v469) D2 فلتر راحة العين الدافئ: طبقة عنبرية شفافة فوق الشاشة الرئيسية (٠ = مقفول، ١٠٠ = أقصى دفء ≈ ٪٣٣ عتمة) */
     private fun refreshWarm() { val v = try { Cfg.int("warm", 0) } catch (_: Throwable) { 0 }.coerceIn(0, 100); warmView?.let { it.setBackgroundColor(android.graphics.Color.argb((v * 0.85f).toInt(), 255, 138, 42)); it.visibility = if (v > 0) View.VISIBLE else View.GONE } }
+    private var fkUi: FkUi? = null   // (v1275) فتح كلام (تبويب 17)
     private var ytUi: YtProUi? = null                // (v1105 Y5) يوتيوب Joyboy القديم (تبويب 4) = يوتيوب البرنامج الوحيد (ميتيوب اتشال)
     private fun openYoutube() { showTabFn(4) }   // (v1105 Y5)
     private var musicUi: MusicUi? = null            // (v189) صفحة الموسيقى
@@ -602,6 +603,7 @@ class MainActivity : Activity() {
                         recreate() }),
                 ui.section("🗣 لغة الترجمة (مستقلة عن لغة التطبيق)", true,
                     LangPicker.settingRow(this, ui, "🗣 لغة الترجمة", { Cfg.str("tr_lang", "auto") }) { c -> I18n.setTranslationLang(c) })) }, false, "", "🌐"),
+            TabDef("fkset", "💞 إعدادات فتح كلام", { try { FkUi.settingsViews(this, ui, th) } catch (e: Throwable) { LogStore.err("Main:fkset", e); listOf<View>(ui.noHint()) } }, false, "الجرأة والرومانسية والعمق · حجم الخط · التوليد", "💞"),
             TabDef("navcust", "🧩 تخصيص البلاطات", { try { NavCustom.views(this, ui, th, navUi?.catalog(this) ?: emptyList()) } catch (e: Throwable) { LogStore.err("Main:navcust", e); listOf<View>(ui.noHint()) } }, false, "رتّب/أخفِ أزرار الشريط وبلاطات المزيد · أقسام الإعدادات كبلاطات · صفحة البداية", "🧩"),
             // ===== 🚀 خط الترجمة: الخطة (تفريغ ← ترجمة ← لهجة) + اللهجة والأسلوب + البرومبتات =====
             tab("general", { listOf<View>(
@@ -994,6 +996,13 @@ class MainActivity : Activity() {
             pane.addView(yt.busyView, FrameLayout.LayoutParams(-1, -1))
             return yt
         }
+        fun ensureFk(): FkUi {   // (v1275)
+            fkUi?.let { return it }
+            val f = FkUi(this, ui, th) { syncNav() }
+            fkUi = f; f.root.visibility = View.INVISIBLE
+            pane.addView(f.root, 1, FrameLayout.LayoutParams(-1, -1))
+            return f
+        }
         uniSearchFn = { q ->   // (v345) بحث شامل: فيديوهات + موسيقى + يوتيوب
             val m = ensureMusic()
             UniSearch.show(this, ui, th, q, { x -> lib.searchHits(x) }, { x -> m.lib.searchHits(x) },
@@ -1003,9 +1012,9 @@ class MainActivity : Activity() {
         // (v189) البوابات: 0 الفيديوهات · 1 الموسيقى · 2 المتصفح · 3 الملفات (شاشات لوحدها) · (v324) 4 يوتيوب
         // (v324) 5 = صفحة المهام: مش في الشريط، بتتفتح من الزرار العايم (الشريط ساعتها مفيهوش بوابة نشطة)
         showTabFn = { i ->
-            if (i == 0 || i == 1 || i == 4 || i == 5 || i == 7) {
+            if (i == 0 || i == 1 || i == 4 || i == 5 || i == 7 || i == BottomNav.FK_HOME) {
                 val prevTab = curTab
-                val prevView: View? = when (prevTab) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> ytUi?.root; 7 -> settingsHostRef; 5 -> tasksUi.root; else -> null }   // (v621) للأنيميشن الخارج
+                val prevView: View? = when (prevTab) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> ytUi?.root; 7 -> settingsHostRef; 5 -> tasksUi.root; BottomNav.FK_HOME -> fkUi?.root; else -> null }   // (v621) للأنيميشن الخارج
                 if (i == 5 && prevTab != 5) tabBeforeTasks = prevTab
                 if (i == 7 && prevTab != 7) tabBeforeSettings = prevTab
                 if (prevTab == 7 && i != 7) { try { save(); refreshChip() } catch (_: Throwable) {} }
@@ -1017,8 +1026,11 @@ class MainActivity : Activity() {
                 lib.root.visibility = if (i == 0) View.VISIBLE else View.INVISIBLE   // (v940) كل التبويبات متقاسة ورا بعض: التبديل من غير layout تقيل
                 if (i == 1) ensureMusic()
                 if (i == 4) ensureYt()   // (v1103 Y2)
+                if (i == BottomNav.FK_HOME) ensureFk()
                 musicUi?.root?.visibility = if (i == 1) View.VISIBLE else View.INVISIBLE
                 ytUi?.root?.visibility = if (i == 4) View.VISIBLE else View.INVISIBLE
+                fkUi?.root?.visibility = if (i == BottomNav.FK_HOME) View.VISIBLE else View.INVISIBLE
+                if (i == BottomNav.FK_HOME) fkUi?.refresh()
                 if (i == 4) { ytUi?.refresh(); ytUi?.tvFocusList() } else if (prevTab == 4) ytUi?.onHide()
                 tasksUi.root.visibility = if (i == 5) View.VISIBLE else View.INVISIBLE
                 settingsHostRef?.visibility = if (i == 7) View.VISIBLE else View.INVISIBLE
@@ -1029,7 +1041,7 @@ class MainActivity : Activity() {
                 updateTasksFab()
                 pageGearUi?.sync(i)   // (v820) ⚙️ الصفحة: بيظهر في الفيديوهات/الموسيقى/المهام بس
                 if (prevTab != i) {   // (v312) الصفحة الجديدة بتنزلق من ناحية اتجاه الانتقال (الشريط RTL: رقم أكبر = شمال)
-                    val target: View? = when (i) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> ytUi?.root; 7 -> settingsHostRef; else -> tasksUi.root }
+                    val target: View? = when (i) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> ytUi?.root; 7 -> settingsHostRef; BottomNav.FK_HOME -> fkUi?.root; else -> tasksUi.root }
                     if (target != null && Cfg.bool("anim_tabs", true)) {
                         val dir = if (NavAnim.pos(i) > NavAnim.pos(prevTab)) -1 else 1
                         Motion.tabEnter(target, dir)
@@ -1046,7 +1058,7 @@ class MainActivity : Activity() {
             dv.postDelayed({ if (!isFinishing && !isDestroyed) android.os.Looper.myQueue().addIdleHandler { if (!isFinishing && !isDestroyed) { try { ensureMusic(); musicUi?.ensureLoaded() } catch (e: Throwable) { LogStore.err("Main:prewarmMusic", e) } }; false } }, 1500L)   // (v940) الموسيقى تتبني وتتحمّل ورا الستار بدري
         }
         val tabletShell = DeviceUi.isTablet(this)   // (v462) قشرة التابلت: ريل جانبي زي يوتيوب التابلت بدل الشريط السفلي
-        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { musicReturnTab = -1; val was = curTab == 4; if (!was) showTabFn(4); ytUi?.tapTab(i - BottomNav.YT_HOME, !was) /* (v1105 Y5) */ } else if (i == 2) { save(); NavAnim.set(curTab, 2); showBrowserLoading(); startActivity(TabNav.front(Intent(this, BrowserActivity::class.java))) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(TabNav.front(FilesHub.intent(this))) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
+        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i == BottomNav.FK_HOME || i == BottomNav.FK_SECS) { musicReturnTab = -1; val was = curTab == BottomNav.FK_HOME; if (!was) showTabFn(BottomNav.FK_HOME); fkUi?.tapTab(i - BottomNav.FK_HOME) } else if (i >= BottomNav.YT_HOME) { musicReturnTab = -1; val was = curTab == 4; if (!was) showTabFn(4); ytUi?.tapTab(i - BottomNav.YT_HOME, !was) /* (v1105 Y5) */ } else if (i == 2) { save(); NavAnim.set(curTab, 2); showBrowserLoading(); startActivity(TabNav.front(Intent(this, BrowserActivity::class.java))) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(TabNav.front(FilesHub.intent(this))) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
         navUi = nav
         nav.onMoreToggle = { o -> pageGearUi?.moreOpen = o }   // (v820)
         if (!fromPlayer) {
@@ -1949,9 +1961,9 @@ class MainActivity : Activity() {
         tvBar?.select(if (curTab == 4) 2 else if (curTab == 0) 4 else -1)   // (v516)
         val n = navUi ?: return
         val liteApp = packageName.endsWith(".lite")
-        n.mode(curTab == 4)
+        n.mode(curTab == 4, curTab == BottomNav.FK_HOME)
         mediaSw?.show(if (!liteApp && !fromPlayer && !tvShellOn && (curTab == 0 || curTab == 1)) curTab else -1)   // (v654)
-        n.set(if (curTab == 4) BottomNav.YT_HOME + (ytUi?.currentTab ?: 0).coerceIn(0, 2) else if (liteApp && curTab == 7) BottomNav.YT_ME else curTab)   // (v1103 Y2)
+        n.set(if (curTab == BottomNav.FK_HOME) BottomNav.FK_HOME + (fkUi?.currentTab ?: 0) else if (curTab == 4) BottomNav.YT_HOME + (ytUi?.currentTab ?: 0).coerceIn(0, 2) else if (liteApp && curTab == 7) BottomNav.YT_ME else curTab)   // (v1103 Y2)
     }
     fun openSettingsRoot() { try { settingsShow?.invoke(null) } catch (_: Throwable) {} }
     private var ytBgAt = 0L
@@ -2079,6 +2091,7 @@ class MainActivity : Activity() {
         if (!fromPlayer && curTab == 7) { settingsBack?.invoke(); return }   // (v370)
         if (!fromPlayer && curTab == 5) { showTabFn(if (tabBeforeTasks == 5) 0 else tabBeforeTasks); return }   // (v324) صفحة المهام ← للصفحة اللي جيت منها
         if (!fromPlayer && curTab == 4 && ytUi?.back() == true) return   // (v1103 Y2)
+        if (!fromPlayer && curTab == BottomNav.FK_HOME && fkUi?.back() == true) return   // (v1275)
         if (!fromPlayer && curTab == 1 && musicUi?.onBack() == true) return   // (v193) يقفل مشغّل الأسطوانة/الفولدر الأول
         if (!fromPlayer && curTab != 0) { if (fromTv && DeviceUi.isTv(this) && TvFocus.goHome(this)) return; showTabFn(0); return }   // (v477) تلفزيون: Back من أي قسم = الشاشة الرئيسية
         if (!fromPlayer && fromTv && curTab == 0 && libUi?.back() != true) { try { startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)); finish() } catch (_: Throwable) { super.onBackPressed() }; return }   // (v467) زيارة من التلفزيون: رجوع من الجذر يرجّع للتلفزيون
