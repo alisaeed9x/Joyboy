@@ -14,7 +14,7 @@ class Theme(val id: String, val name: String, val bg: Int, val surface: Int, val
             val primary: Int, val accent: Int, val text: Int, val muted: Int, val danger: Int, val success: Int) {
     val isLight: Boolean get() = lum(bg) > 0.5
     /** (v1208) فيروزي هادي لحالات التقدّم/المشاهدة (لمسة بس، مش لون مسيطر) */
-    val progress: Int get() = if (isLight) 0xFF3E8E88.toInt() else 0xFF6CC4BC.toInt()
+    val progress: Int get() = if (isLight) 0xFF3E8E88.toInt() else 0xFF7CF3D0.toInt()
     /** (v913) لون النص/الأيقونة فوق primary — accent MeeTube أبيض في الداكن وأسود في الفاتح فالنص لازم يتعكس */
     val onPrimary: Int get() = if (lum(primary) > 0.5) 0xFF0F0F0F.toInt() else 0xFFFFFFFF.toInt()
     companion object {
@@ -93,7 +93,7 @@ object Themes {
         // الجانب (فاتح/داكن) لسه من إعداد MeeTube؛ الألوان بس هي اللي بقت دافية.
         val c = { h: Long -> (0xFF000000L or h).toInt() }
         val t = if (night) Theme("vanilla_dark", "Vanilla داكن",
-            c(0x000000), c(0x0E0E0E), c(0x161616), c(0x2A2A2A), c(0xE6D8C5), c(0xBDBDBD), c(0xF5F0E7), c(0xA8A8A8), c(0xD9806E), c(0x6FB27C))
+            c(0x000000), c(0x0E0E0E), c(0x161616), c(0x2A2A2A), c(0x7CF3D0), c(0x8B7CFF), c(0xFFFFFF), c(0xA8A8A8), c(0xD9806E), c(0x6FB27C))
         else Theme("vanilla_light", "Vanilla فاتح",
             c(0xF5F0E7), c(0xFBF8F2), c(0xFFFDF9), c(0xE6D8C5), c(0x8B6B50), c(0x6F6052), c(0x29241F), c(0x6F6052), c(0xB3503F), c(0x3E8E55))
         cached = t; cachedNight = n

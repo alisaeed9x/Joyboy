@@ -123,7 +123,7 @@ object Glass {
         if (MtGlass.on()) { MtGlass.press(v); return }   // (v893) press_3d
         v.setOnTouchListener { view, ev ->
             when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> view.animate().setStartDelay(0L).scaleX(0.95f).scaleY(0.95f).alpha(0.88f).setDuration(Skins.dur(90)).start()
+                MotionEvent.ACTION_DOWN -> view.animate().setStartDelay(0L).scaleX(0.97f).scaleY(0.97f).alpha(0.9f).setDuration(Skins.dur(90)).start()
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> view.animate().setStartDelay(0L).scaleX(1f).scaleY(1f).alpha(1f).setDuration(Skins.dur(200)).setInterpolator(Skins.interp(2.4f)).start()
             }
             false

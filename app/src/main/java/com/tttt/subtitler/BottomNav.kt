@@ -437,5 +437,6 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             labels[i].setTextColor(if (on) onC else off)
         }
         (indicator.background as? GradientDrawable)?.setColor(if (glassNav) (if (tinted) 0x33FFFFFF else MtGlass.selected(th)) else if (tinted) 0xFFFFFFFF.toInt() else th.primary)
+        if (glassNav && !tinted && !th.isLight) (indicator.background as? GradientDrawable)?.colors = intArrayOf(0x557CF3D0, 0x558B7CFF)
     }
 }

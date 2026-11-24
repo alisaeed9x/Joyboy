@@ -157,8 +157,8 @@ object Motion {
             return
         }
         if (cur != null) return
-        val a = ObjectAnimator.ofPropertyValuesHolder(v, PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.06f), PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.06f))
-        a.duration = 900L; a.repeatCount = ValueAnimator.INFINITE; a.repeatMode = ValueAnimator.REVERSE; a.interpolator = AccelerateDecelerateInterpolator()
+        val a = ObjectAnimator.ofPropertyValuesHolder(v, PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.04f), PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.04f))
+        a.duration = 1200L; a.repeatCount = ValueAnimator.INFINITE; a.repeatMode = ValueAnimator.REVERSE; a.interpolator = AccelerateDecelerateInterpolator()
         breathing[v] = a
         a.start()
     }
