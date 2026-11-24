@@ -53,6 +53,9 @@ object I18n {
     fun isRtl(): Boolean = code() in RTL
     fun translationCode(): String { val t = try { Cfg.str("tr_lang", "auto") } catch (_: Throwable) { "auto" }; return if (t == "auto" || LANGS.none { it.first == t }) code() else t }
 
+    /** اللهجة الدارجة للغة الترجمة: مصري للعربي، وللباقي صيغة المحكية بنفس اللغة */
+    fun dialectName(): String { val c = translationCode(); return if (c == "ar") "مصري" else nameOf(c) + " (محكية دارجة، مش رسمية)" }
+
     fun setAppLang(c: String) {
         Cfg.put("app_lang", c)
         Cfg.put("lang_chosen", "1")
