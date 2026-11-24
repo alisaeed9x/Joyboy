@@ -436,6 +436,7 @@ class LibraryUi(
         sRow.addView(uniBtn, LinearLayout.LayoutParams(ui.dp(46), ui.dp(44)).apply { marginStart = ui.dp(6) })
         root.addView(sRow, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(2)) })
         // (v471) لوحة البداية (أكمل المشاهدة + آخر المضافات + البلاطات) اتشالت بطلب صاحب التطبيق — dashBox ما بقاش بيتعلّق في الواجهة
+        if (Design.isNew() && !audio) root.addView(dashBox, LinearLayout.LayoutParams(-1, -2))   // (v1222) الشكل الجديد: كارت «كمّل المشاهدة» فوق القايمة
 
         listV.apply {
             divider = null; dividerHeight = 0; setSelector(android.R.color.transparent); isVerticalScrollBarEnabled = false
@@ -699,9 +700,59 @@ class LibraryUi(
         if (::recBtn.isInitialized) recBtn.text = if (inRecents) "📂" else "🕘"
     }
 
+    /** (v1222) الشكل الجديد: كارت كبير «كمّل المشاهدة» (آخر فيديو وقفت عنده + شريط تقدّم) وتحته قوايم بالطول: كمّل كمان + آخر المضافات. */
+    private fun updateHero() {
+        if (audio) return
+        val showDash = !inHidden && !inRecents && query.isEmpty() && curFolder == null && smartFilter == null && mode == "ready"
+        if (!showDash) { dashBox.visibility = View.GONE; return }
+        val src = visible()
+        val cont = src.mapNotNull { v -> val r = recMap[v.videoId]; if (r != null && r.durSec > 0 && r.posSec > 5 && r.posSec / r.durSec < 0.95) Triple(v, r, (r.posSec / r.durSec * 100).toInt()) else null }.sortedByDescending { it.second.ts }.take(4)
+        val fresh = src.sortedByDescending { it.added }.take(3)
+        val key = (cont.joinToString(",") { it.first.videoId + ":" + it.third } + "|" + fresh.joinToString(",") { it.videoId } + "|hero").hashCode()
+        if (cont.isEmpty() && fresh.isEmpty()) { dashBox.visibility = View.GONE; return }
+        dashBox.visibility = View.VISIBLE
+        if (key == dashKey) return
+        dashKey = key
+        dashBox.removeAllViews()
+        if (cont.isNotEmpty()) {
+            val hv = cont[0].first
+            val hp = cont[0].third.coerceIn(1, 99)
+            val card = LinearLayout(act).apply {
+                orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+                setPadding(ui.dp(16), ui.dp(14), ui.dp(16), ui.dp(14))
+                val cols = if (th.isLight) intArrayOf(th.card, th.surface) else intArrayOf(0x337CF3D0, 0x338B7CFF)
+                background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, cols).apply { cornerRadius = ui.dp(20).toFloat(); setStroke(ui.dp(1), th.border) }
+                isClickable = true
+                setOnClickListener { markPlayed(hv); onPlay(hv) }
+            }
+            card.addView(ui.text("▶ كمّل المشاهدة", 12f, th.primary, true))
+            card.addView(ui.text(hv.title, 16f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
+            val bar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; background = ui.box(th.border, th.border, 3) }
+            bar.addView(View(act).apply { background = ui.box(th.primary, th.primary, 3) }, LinearLayout.LayoutParams(0, ui.dp(5), hp.toFloat()))
+            bar.addView(View(act), LinearLayout.LayoutParams(0, ui.dp(5), (100 - hp).toFloat()))
+            card.addView(bar, LinearLayout.LayoutParams(-1, ui.dp(5)).apply { topMargin = ui.dp(12) })
+            card.addView(ui.text("وقفت عند $hp%", 11.5f, th.muted), LinearLayout.LayoutParams(-2, -2).apply { topMargin = ui.dp(6) })
+            dashBox.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(8) })
+        }
+        fun section(t: String) { dashBox.addView(ui.text(t, 12f, th.muted, true).apply { setPadding(ui.dp(2), ui.dp(6), 0, ui.dp(4)) }) }
+        fun row(v: VideoItem, sub: String) {
+            val r = LinearLayout(act).apply {
+                orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+                setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(10)); background = ui.box(th.surface, th.border, 14)
+                isClickable = true; setOnClickListener { markPlayed(v); onPlay(v) }
+            }
+            r.addView(ui.text(v.title, 13.5f, th.text, true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END })
+            if (sub.isNotEmpty()) r.addView(ui.text(sub, 11.5f, th.muted))
+            dashBox.addView(r, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(6) })
+        }
+        if (cont.size > 1) { section("كمّل كمان"); cont.drop(1).forEach { (v, _, pc) -> row(v, "وقفت عند $pc%") } }
+        if (fresh.isNotEmpty()) { section("آخر المضافات"); fresh.forEach { v -> row(v, "") } }
+    }
+
     /** (v469) D3 لوحة البداية: أكمل المشاهدة (من سجل الاستئناف) + آخر المضافات + بلاطات إجراءات سريعة — بتتحدّث بس لما محتواها يتغيّر فعليًا (مفتاح بصمة) عشان التحديث التلقائي كل ١٠ ثوانٍ ما يومضهاش */
     private fun updateDash() {
-        return   // (v471) اللوحة اتشالت — الدالة مقفولة (الكود تحتها متسيب من غير حذف عشان ما نكسرش مراجع)
+        if (!Design.isNew()) return   // (v471) القديم: اللوحة مقفولة زي ما كانت
+        updateHero(); return   // (v1222) الجديد: كارت كمّل المشاهدة (الكود تحتها متسيب من غير حذف)
         if (audio) return
         val showDash = !inHidden && !inRecents && query.isEmpty() && curFolder == null && smartFilter == null && mode == "ready"
         if (!showDash) { dashBox.visibility = View.GONE; return }
