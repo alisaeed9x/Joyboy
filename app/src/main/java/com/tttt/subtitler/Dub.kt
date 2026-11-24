@@ -53,15 +53,15 @@ object EdgeTts {
     private fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&apos;")
 
     /** بيرجّع بايتات MP3 أو null. [ratePct] نسبة تسريع (0 = عادي، 20 = أسرع 20%) */
-    fun synth(text: String, voice: String, ratePct: Int): ByteArray? {
+    fun synth(text: String, voice: String, ratePct: Int, pitchHz: Int = 0, volPct: Int = 0): ByteArray? {
         for (attempt in 0..1) {
-            val r = synthOnce(text, voice, ratePct)
+            val r = synthOnce(text, voice, ratePct, pitchHz, volPct)
             if (r != null) return r
         }
         return null
     }
 
-    private fun synthOnce(text: String, voice: String, ratePct: Int): ByteArray? {
+    private fun synthOnce(text: String, voice: String, ratePct: Int, pitchHz: Int = 0, volPct: Int = 0): ByteArray? {
         val out = ByteArrayOutputStream()
         val done = CountDownLatch(1)
         val failed = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -75,8 +75,10 @@ object EdgeTts {
             .header("Cookie", "muid=$muid;")
             .build()
         val rate = (if (ratePct >= 0) "+" else "") + ratePct + "%"
+        val pitch = (if (pitchHz >= 0) "+" else "") + pitchHz + "Hz"
+        val vol = (if (volPct >= 0) "+" else "") + volPct + "%"
         val ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='ar-EG'><voice name='$voice'>" +
-            "<prosody pitch='+0Hz' rate='$rate' volume='+0%'>${esc(text)}</prosody></voice></speak>"
+            "<prosody pitch='$pitch' rate='$rate' volume='$vol'>${esc(text)}</prosody></voice></speak>"
         val ws = client.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 val ts = stamp()
@@ -200,7 +202,8 @@ object Pcm {
 }
 
 object Dub {
-    class Seg(val start: Double, val end: Double, val text: String)
+    /** (v1217) voice فاضي = الصوت الافتراضي · rate/pitch/vol = نبرة المشاعر (تسريع %، هرتز، صوت %) */
+    class Seg(val start: Double, val end: Double, val text: String, val voice: String = "", val rate: Int = 0, val pitch: Int = 0, val vol: Int = 0)
     const val RATE = 24000
     private const val TOL = 1.5          // أقصى تمديد بعد نهاية الجملة (ثواني) لو الجملة اللي بعدها لسه بعيدة
     private const val MAX_FAST = 40      // أقصى تسريع % (VideoLingo: 1.4×)
@@ -210,16 +213,64 @@ object Dub {
     fun voiceLabel(v: String = voice()): String = if (v.contains("Salma")) "سلمى (أنثى)" else "شاكر (ذكر)"
     fun origVol(): Float = (Cfg.int("dub_orig_vol", 12).coerceIn(0, 100)) / 100f
 
-    fun segsOf(subs: List<Sub>): List<Seg> =
-        subs.filter { !it.isSound && it.translated.isNotBlank() }.sortedBy { it.start }
-            .map { Seg(it.start, maxOf(it.end, it.start + 0.4), it.translated.replace(Regex("\\s+"), " ").trim()) }
+    // (v1217) أصوات عربي لكل جنس (أول واحد = الأساسي). الأسماء متأكدة من قوايم Edge/Azure.
+    private val FEM = listOf("ar-EG-SalmaNeural", "ar-SA-ZariyahNeural", "ar-AE-FatimaNeural", "ar-JO-SanaNeural", "ar-KW-NouraNeural", "ar-LB-LaylaNeural", "ar-QA-AmalNeural", "ar-SY-AmanyNeural")
+    private val MAL = listOf("ar-EG-ShakirNeural", "ar-SA-HamedNeural", "ar-AE-HamdanNeural", "ar-JO-TaimNeural", "ar-KW-FahedNeural", "ar-LB-RamiNeural", "ar-QA-MoazNeural", "ar-SY-LaithNeural")
+
+    /** دبلجة بأصوات متعددة (حسب جنس المتكلم واسمه) ونبرة المشاعر. dub_multi=0 يرجّع صوت واحد زي الأول */
+    fun multi(): Boolean = Cfg.int("dub_multi", 1) != 0
+
+    /** نبرة من حقل emotion/faint اللي جيميناي بيحدده من نبرة الصوت الحقيقية: (تسريع %، pitch هرتز، صوت %) */
+    private fun tone(s: Sub): Triple<Int, Int, Int> {
+        val t = when (s.emotion) {
+            "shout" -> Triple(8, 6, 30)
+            "surprise" -> Triple(5, 10, 8)
+            "cry" -> Triple(-12, -4, -10)
+            "whisper" -> Triple(-8, 0, -35)
+            else -> Triple(0, 0, 0)
+        }
+        return if (s.faint) Triple(t.first, t.second, minOf(t.third, -40)) else t
+    }
+
+    private fun clean(s: String): String =
+        s.replace(Regex("\\s+"), " ").replace("\u0640", "").replace("\u266A", "").replace(Regex("^[\\-\\u2013\\u2014]+\\s*"), "").trim()
+
+    fun segsOf(subs: List<Sub>): List<Seg> {
+        val list = subs.filter { !it.isSound && it.translated.isNotBlank() }.sortedBy { it.start }
+        if (!multi()) return list.map { Seg(it.start, maxOf(it.end, it.start + 0.4), it.translated.replace(Regex("\\s+"), " ").trim()) }
+        fun key(s: Sub) = s.speakerName.trim().ifBlank { s.voice.trim() }
+        val fav = HashMap<String, Int>()
+        for (s in list) { val k = key(s); if (k.isNotEmpty()) fav[k] = (fav[k] ?: 0) + 1 }
+        // ترتيب الشخصيات لكل جنس بالأكتر كلامًا: الأكتر = الصوت الأساسي، والباقي أصوات تانية
+        val rank = HashMap<String, Int>()
+        for (g in listOf("female", "male")) {
+            list.filter { it.gender.lowercase() == g && key(it).isNotEmpty() }.map { key(it) }.distinct()
+                .sortedByDescending { fav[it] ?: 0 }.forEachIndexed { i, k -> rank[g + "|" + k] = i }
+        }
+        val out = ArrayList<Seg>()
+        for (s in list) {
+            val txt = clean(s.translated); if (txt.isBlank()) continue
+            val g = s.gender.lowercase(); val k = key(s)
+            var voice = ""; var pitchBase = 0
+            if (g == "female" || g == "male") {
+                val pool = if (g == "female") FEM else MAL
+                val idx = if (k.isEmpty()) 0 else (rank[g + "|" + k] ?: 0)
+                voice = pool[idx % pool.size]
+                val wrap = idx / pool.size
+                if (wrap > 0) pitchBase = (if (wrap % 2 == 1) -6 else 6) * ((wrap + 1) / 2)   // لو الشخصيات أكتر من الأصوات: نفس الصوت بطبقة مختلفة
+            }
+            val (r, pz, v) = tone(s)
+            out.add(Seg(s.start, maxOf(s.end, s.start + 0.4), txt, voice, r, pz + pitchBase, v))
+        }
+        return out
+    }
 
     fun fileFor(ctx: Context, key: String): File = File(File(ctx.filesDir, "dub").also { it.mkdirs() }, key + ".wav")
 
     private fun hashOf(segs: List<Seg>, voice: String): String {
         val md = MessageDigest.getInstance("MD5")
         md.update(voice.toByteArray())
-        for (s in segs) md.update("${(s.start * 100).toLong()}|${(s.end * 100).toLong()}|${s.text}\n".toByteArray())
+        for (s in segs) md.update("${(s.start * 100).toLong()}|${(s.end * 100).toLong()}|${s.voice}|${s.rate}|${s.pitch}|${s.vol}|${s.text}\n".toByteArray())
         return md.digest().joinToString("") { String.format(Locale.US, "%02x", it) }
     }
 
@@ -240,12 +291,14 @@ object Dub {
             progress(i, segs.size)
             val nextStart = if (i + 1 < segs.size) segs[i + 1].start else total
             val slot = minOf(s.end - s.start + TOL, nextStart - s.start).coerceAtLeast(0.7)
-            var clip = clipFor(tmp, s.text, voice, 0)
+            val sv = s.voice.ifBlank { voice }
+            val base = s.rate
+            var clip = clipFor(tmp, s.text, sv, base, s.pitch, s.vol)
             if (clip == null) { if (++fails >= 6 && i < 7) return null; continue }   // أول جمل كلها فاشلة = مفيش نت/الخدمة واقفة
             var dur = clip.data.size.toDouble() / clip.rate
             if (dur > slot * 1.03) {
-                val pct = Math.ceil((dur / slot - 1.0) * 100.0).toInt().coerceIn(5, MAX_FAST)
-                val c2 = clipFor(tmp, s.text, voice, pct)
+                val pct = Math.ceil(((1.0 + base / 100.0) * (dur / slot) - 1.0) * 100.0).toInt().coerceIn(maxOf(5, base), MAX_FAST + maxOf(base, 0))
+                val c2 = clipFor(tmp, s.text, sv, pct, s.pitch, s.vol)
                 if (c2 != null) { clip = c2; dur = clip.data.size.toDouble() / clip.rate }
             }
             val pcm = Pcm.resample(clip, RATE)
@@ -264,11 +317,11 @@ object Dub {
         return out
     }
 
-    private fun clipFor(dir: File, text: String, voice: String, pct: Int): Pcm.Clip? {
-        val name = MessageDigest.getInstance("MD5").digest("$voice|$pct|$text".toByteArray()).joinToString("") { String.format(Locale.US, "%02x", it) } + ".mp3"
+    private fun clipFor(dir: File, text: String, voice: String, pct: Int, pitch: Int = 0, vol: Int = 0): Pcm.Clip? {
+        val name = MessageDigest.getInstance("MD5").digest("$voice|$pct|$pitch|$vol|$text".toByteArray()).joinToString("") { String.format(Locale.US, "%02x", it) } + ".mp3"
         val f = File(dir, name)
         if (!f.exists() || f.length() < 200) {
-            val b = EdgeTts.synth(text, voice, pct) ?: return null
+            val b = EdgeTts.synth(text, voice, pct, pitch, vol) ?: return null
             f.writeBytes(b)
         }
         return Pcm.decode(f)
