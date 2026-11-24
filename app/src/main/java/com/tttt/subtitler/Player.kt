@@ -6041,6 +6041,7 @@ class PlayerActivity : Activity(), Host {
         // المحرك + استرجاع التقدم المحفوظ
         freshOnce = intent.getBooleanExtra("fresh", false)
         initEngine()
+        if (!remote && !pendingYt && !handedOff) try { setBuffering(true) } catch (_: Throwable) {}
         if (pendingYt) startYtPend()   // (v351)
         if (Build.VERSION.SDK_INT >= 33) { try { requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 7) } catch (e: Exception) { LogStore.err("Main:1892", e) } }
         PlayerRemote.act = java.lang.ref.WeakReference(this)
