@@ -473,20 +473,20 @@ class LibraryUi(
         body.addView(toastTv, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
         body.addView(resumeBtn, FrameLayout.LayoutParams(ui.dp(58), ui.dp(58), Gravity.BOTTOM or Gravity.LEFT).apply { setMargins(ui.dp(20), 0, 0, ui.dp(24)) })
         // سحب لتحت من أول القايمة = ريفريش
-        var y0 = 0f; var pulling = false; var pd = 0f; var wasLock = false; var heroGesture = false
+        var y0 = 0f; var pulling = false; var pd = 0f; var wasLock = false; var heroGesture = false; var startedAtTop = false
         val thr = ui.dp(60).toFloat(); val lockThr = ui.dp(125).toFloat()
         listV.setOnScrollListener(object : AbsListView.OnScrollListener {   // (v1224) السكرول بيرجّع الكارت صغير
             override fun onScrollStateChanged(v: AbsListView?, st: Int) {}
-            override fun onScroll(v: AbsListView?, f: Int, c: Int, t: Int) { if (f > 0 && heroExpanded) heroExpand(false) }
+            override fun onScroll(v: AbsListView?, f: Int, c: Int, t: Int) { if (f > 0 && heroExpanded) heroExpand(false, false) }   // (v1245) من غير أنيميشن وقت السكرول (كان بيهنّج)
         })
         listV.setOnTouchListener { v, e ->
             when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { y0 = e.rawY; pulling = false; wasLock = false; heroGesture = Design.isNew() && !heroExpanded && dashBox.visibility == View.VISIBLE; false }
+                MotionEvent.ACTION_DOWN -> { y0 = e.rawY; pulling = false; wasLock = false; startedAtTop = listV.firstVisiblePosition == 0 && (listV.childCount == 0 || listV.getChildAt(0).top >= listV.paddingTop); heroGesture = Design.isNew() && !heroExpanded && dashBox.visibility == View.VISIBLE; false }
                 MotionEvent.ACTION_MOVE -> {
                     if (refreshing) return@setOnTouchListener false
                     val dy = e.rawY - y0
                     val atTop = listV.firstVisiblePosition == 0 && (listV.childCount == 0 || listV.getChildAt(0).top >= listV.paddingTop)
-                    if (!pulling && dy > ui.dp(10) && atTop) {
+                    if (!pulling && dy > ui.dp(10) && atTop && startedAtTop) {   // (v1245) السحب لتحت بيشتغل بس لو الصباع نزل والقايمة أصلًا فوق — مش لما سكرول لفوق يوصل الأول (كان بيخطف السكرول ويعمل ريفريش)
                         pulling = true; y0 = e.rawY
                         val c = MotionEvent.obtain(e); c.action = MotionEvent.ACTION_CANCEL; listV.onTouchEvent(c); c.recycle()
                     }
@@ -715,10 +715,10 @@ class LibraryUi(
     /** (v1224) الشكل الجديد: كارت «كمّل المشاهدة» مصغّر فوق القايمة (صورة الفيديو + شريط تقدّم من الشمال لليمين). بالسحب لتحت من أول القايمة بيتكبّر ويبيّن لقطة من الفيديو عند اللحظة اللي وقفت عندها، وبالسكرول بيرجع صغير. */
     @Volatile private var heroExpanded = false
     private val frameCache = HashMap<String, android.graphics.Bitmap>()
-    private fun heroExpand(on: Boolean) {
+    private fun heroExpand(on: Boolean, animate: Boolean = true) {
         if (!Design.isNew() || on == heroExpanded) return
         heroExpanded = on; dashKey = Int.MIN_VALUE
-        try { android.transition.TransitionManager.beginDelayedTransition(dashBox, android.transition.AutoTransition().apply { duration = 300; interpolator = android.view.animation.DecelerateInterpolator(1.6f) }) } catch (_: Throwable) {}
+        if (animate) try { android.transition.TransitionManager.beginDelayedTransition(dashBox, android.transition.AutoTransition().apply { duration = 300; interpolator = android.view.animation.DecelerateInterpolator(1.6f) }) } catch (_: Throwable) {}
         updateHero()
     }
     private fun roundClip(v: View, rDp: Int) {
