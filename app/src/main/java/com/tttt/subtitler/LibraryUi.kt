@@ -473,6 +473,10 @@ class LibraryUi(
         // سحب لتحت من أول القايمة = ريفريش
         var y0 = 0f; var pulling = false; var pd = 0f; var wasLock = false
         val thr = ui.dp(60).toFloat(); val lockThr = ui.dp(125).toFloat()
+        listV.setOnScrollListener(object : AbsListView.OnScrollListener {   // (v1224) السكرول بيرجّع الكارت صغير
+            override fun onScrollStateChanged(v: AbsListView?, st: Int) {}
+            override fun onScroll(v: AbsListView?, f: Int, c: Int, t: Int) { if (f > 0 && heroExpanded) heroExpand(false) }
+        })
         listV.setOnTouchListener { v, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> { y0 = e.rawY; pulling = false; wasLock = false; false }
@@ -487,6 +491,7 @@ class LibraryUi(
                     if (pulling) {
                         val cap = if (inHidden) ui.dp(95).toFloat() else ui.dp(150).toFloat()
                         pd = ((e.rawY - y0) * 0.5f).coerceIn(0f, cap)
+                        if (pd > ui.dp(30) && Design.isNew()) heroExpand(true)   // (v1224) السحب لتحت بيكبّر كارت كمّل المشاهدة
                         listV.translationY = pd; ptr.translationY = pd - ui.dp(50)
                         ptr.alpha = (pd / ui.dp(40)).coerceIn(0f, 1f)
                         val lock = !inHidden && pd >= lockThr
@@ -700,53 +705,80 @@ class LibraryUi(
         if (::recBtn.isInitialized) recBtn.text = if (inRecents) "📂" else "🕘"
     }
 
-    /** (v1222) الشكل الجديد: كارت كبير «كمّل المشاهدة» (آخر فيديو وقفت عنده + شريط تقدّم) وتحته قوايم بالطول: كمّل كمان + آخر المضافات. */
+    /** (v1224) الشكل الجديد: كارت «كمّل المشاهدة» مصغّر فوق القايمة (صورة الفيديو + شريط تقدّم من الشمال لليمين). بالسحب لتحت من أول القايمة بيتكبّر ويبيّن لقطة من الفيديو عند اللحظة اللي وقفت عندها، وبالسكرول بيرجع صغير. */
+    @Volatile private var heroExpanded = false
+    private val frameCache = HashMap<String, android.graphics.Bitmap>()
+    private fun heroExpand(on: Boolean) {
+        if (!Design.isNew() || on == heroExpanded) return
+        heroExpanded = on; dashKey = Int.MIN_VALUE
+        try { android.transition.TransitionManager.beginDelayedTransition(dashBox) } catch (_: Throwable) {}
+        updateHero()
+    }
+    private fun roundClip(v: View, rDp: Int) {
+        v.outlineProvider = object : android.view.ViewOutlineProvider() { override fun getOutline(vw: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, vw.width, vw.height, ui.dp(rDp).toFloat()) } }
+        v.clipToOutline = true
+    }
+    private fun fmtT(sec: Double): String { val t = sec.toInt(); return "%d:%02d".format(t / 60, t % 60) }
+    private fun loadFrame(v: VideoItem, posSec: Double, iv: ImageView) {
+        val k = v.uri + "@" + posSec.toInt()
+        frameCache[k]?.let { iv.setImageBitmap(it); return }
+        Thumbs.load(act, v) { b -> if (b != null && iv.drawable == null) iv.setImageBitmap(b) }
+        Thread {
+            var out: android.graphics.Bitmap? = null
+            try {
+                val r = android.media.MediaMetadataRetriever()
+                try {
+                    r.setDataSource(act, android.net.Uri.parse(v.uri))
+                    val fr = r.getFrameAtTime((posSec * 1000000.0).toLong(), android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    if (fr != null) out = if (fr.width > 960) android.graphics.Bitmap.createScaledBitmap(fr, 960, (fr.height * 960L / fr.width).toInt().coerceAtLeast(1), true) else fr
+                } finally { try { r.release() } catch (_: Throwable) {} }
+            } catch (_: Throwable) {}
+            val bb = out
+            if (bb != null) act.runOnUiThread { try { frameCache[k] = bb; iv.setImageBitmap(bb) } catch (_: Throwable) {} }
+        }.start()
+    }
     private fun updateHero() {
         if (audio) return
         val showDash = !inHidden && !inRecents && query.isEmpty() && curFolder == null && smartFilter == null && mode == "ready"
         if (!showDash) { dashBox.visibility = View.GONE; return }
         val src = visible()
-        val cont = src.mapNotNull { v -> val r = recMap[v.videoId]; if (r != null && r.durSec > 0 && r.posSec > 5 && r.posSec / r.durSec < 0.95) Triple(v, r, (r.posSec / r.durSec * 100).toInt()) else null }.sortedByDescending { it.second.ts }.take(4)
-        val fresh = src.sortedByDescending { it.added }.take(3)
-        val key = (cont.joinToString(",") { it.first.videoId + ":" + it.third } + "|" + fresh.joinToString(",") { it.videoId } + "|hero").hashCode()
-        if (cont.isEmpty() && fresh.isEmpty()) { dashBox.visibility = View.GONE; return }
+        val cont = src.mapNotNull { v -> val r = recMap[v.videoId]; if (r != null && r.durSec > 0 && r.posSec > 5 && r.posSec / r.durSec < 0.95) Triple(v, r, (r.posSec / r.durSec * 100).toInt()) else null }.sortedByDescending { it.second.ts }.take(1)
+        if (cont.isEmpty()) { dashBox.visibility = View.GONE; return }
+        val hv = cont[0].first; val hr = cont[0].second
+        val hp = cont[0].third.coerceIn(1, 99)
+        val key = (hv.videoId + ":" + hp + "|" + heroExpanded + "|hero2").hashCode()
         dashBox.visibility = View.VISIBLE
         if (key == dashKey) return
         dashKey = key
         dashBox.removeAllViews()
-        if (cont.isNotEmpty()) {
-            val hv = cont[0].first
-            val hp = cont[0].third.coerceIn(1, 99)
-            val card = LinearLayout(act).apply {
-                orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-                setPadding(ui.dp(16), ui.dp(14), ui.dp(16), ui.dp(14))
-                val cols = if (th.isLight) intArrayOf(th.card, th.surface) else intArrayOf(0x337CF3D0, 0x338B7CFF)
-                background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, cols).apply { cornerRadius = ui.dp(20).toFloat(); setStroke(ui.dp(1), th.border) }
-                isClickable = true
-                setOnClickListener { markPlayed(hv); onPlay(hv) }
-            }
-            card.addView(ui.text("▶ كمّل المشاهدة", 12f, th.primary, true))
-            card.addView(ui.text(hv.title, 16f, th.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
-            val bar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; background = ui.box(th.border, th.border, 3) }
-            bar.addView(View(act).apply { background = ui.box(th.primary, th.primary, 3) }, LinearLayout.LayoutParams(0, ui.dp(5), hp.toFloat()))
-            bar.addView(View(act), LinearLayout.LayoutParams(0, ui.dp(5), (100 - hp).toFloat()))
-            card.addView(bar, LinearLayout.LayoutParams(-1, ui.dp(5)).apply { topMargin = ui.dp(12) })
-            card.addView(ui.text("وقفت عند $hp%", 11.5f, th.muted), LinearLayout.LayoutParams(-2, -2).apply { topMargin = ui.dp(6) })
-            dashBox.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(8) })
+        val exp = heroExpanded
+        val card = LinearLayout(act).apply {
+            orientation = if (exp) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            gravity = Gravity.CENTER_VERTICAL
+            val cols = if (th.isLight) intArrayOf(th.card, th.surface) else intArrayOf(0x337CF3D0, 0x338B7CFF)
+            background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, cols).apply { cornerRadius = ui.dp(20).toFloat(); setStroke(ui.dp(1), th.border) }
+            isClickable = true
+            setOnClickListener { markPlayed(hv); onPlay(hv) }
         }
-        fun section(t: String) { dashBox.addView(ui.text(t, 12f, th.muted, true).apply { setPadding(ui.dp(2), ui.dp(6), 0, ui.dp(4)) }) }
-        fun row(v: VideoItem, sub: String) {
-            val r = LinearLayout(act).apply {
-                orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-                setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(10)); background = ui.box(th.surface, th.border, 14)
-                isClickable = true; setOnClickListener { markPlayed(v); onPlay(v) }
-            }
-            r.addView(ui.text(v.title, 13.5f, th.text, true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END })
-            if (sub.isNotEmpty()) r.addView(ui.text(sub, 11.5f, th.muted))
-            dashBox.addView(r, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(6) })
+        roundClip(card, 20)
+        val iv = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(th.border) }
+        val info = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)) }
+        info.addView(ui.text("▶ كمّل المشاهدة" + (if (exp) "  ·  وقفت عند " + fmtT(hr.posSec) else ""), 11.5f, th.primary, true))
+        info.addView(ui.text(hv.title, if (exp) 15f else 13.5f, th.text, true).apply { maxLines = if (exp) 2 else 1; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(3) })
+        val bar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; background = ui.box(th.border, th.border, 3) }
+        bar.addView(View(act).apply { background = ui.box(th.primary, th.primary, 3) }, LinearLayout.LayoutParams(0, ui.dp(4), hp.toFloat()))
+        bar.addView(View(act), LinearLayout.LayoutParams(0, ui.dp(4), (100 - hp).toFloat()))
+        info.addView(bar, LinearLayout.LayoutParams(-1, ui.dp(4)).apply { topMargin = ui.dp(7) })
+        if (exp) {
+            card.addView(iv, LinearLayout.LayoutParams(-1, ui.dp(190)))
+            card.addView(info, LinearLayout.LayoutParams(-1, -2))
+            loadFrame(hv, hr.posSec, iv)
+        } else {
+            card.addView(iv, LinearLayout.LayoutParams(ui.dp(92), ui.dp(64)))
+            card.addView(info, LinearLayout.LayoutParams(0, -2, 1f))
+            Thumbs.load(act, hv) { b -> if (b != null) iv.setImageBitmap(b) }
         }
-        if (cont.size > 1) { section("كمّل كمان"); cont.drop(1).forEach { (v, _, pc) -> row(v, "وقفت عند $pc%") } }
-        if (fresh.isNotEmpty()) { section("آخر المضافات"); fresh.forEach { v -> row(v, "") } }
+        dashBox.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(6) })
     }
 
     /** (v469) D3 لوحة البداية: أكمل المشاهدة (من سجل الاستئناف) + آخر المضافات + بلاطات إجراءات سريعة — بتتحدّث بس لما محتواها يتغيّر فعليًا (مفتاح بصمة) عشان التحديث التلقائي كل ١٠ ثوانٍ ما يومضهاش */
