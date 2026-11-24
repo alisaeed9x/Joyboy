@@ -751,14 +751,15 @@ class YtPlayerKit(private val act: Activity, private val ui: Ui) : FrameLayout(a
         try {
             val f = DefaultHttpDataSource.Factory().setUserAgent(pick.ua)
                 .setDefaultRequestProperties(mapOf("Referer" to "https://www.youtube.com/")).setAllowCrossProtocolRedirects(true)
-            val p = ExoPlayer.Builder(act, DefaultRenderersFactory(act).setEnableDecoderFallback(true)).build()
+            val cf: androidx.media3.datasource.DataSource.Factory = try { NetCache.factory(act, f) } catch (_: Throwable) { f }   // (v1249) كاش القرص: الرجوع في الجزء المتحمّل من الكاش مش من الشبكة
+            val p = ExoPlayer.Builder(act, DefaultRenderersFactory(act).setEnableDecoderFallback(true)).setLoadControl(NetCache.loadControl()).build()
             try { p.setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true) } catch (_: Throwable) {}
             p.setVideoTextureView(tex)
             val au = pick.audio
             val src = if (!au.isNullOrBlank()) {
-                val pf = ProgressiveMediaSource.Factory(f)
+                val pf = ProgressiveMediaSource.Factory(cf)
                 MergingMediaSource(pf.createMediaSource(MediaItem.fromUri(Uri.parse(pick.url))), pf.createMediaSource(MediaItem.fromUri(Uri.parse(au))))
-            } else DefaultMediaSourceFactory(f).createMediaSource(MediaItem.fromUri(Uri.parse(pick.url)))
+            } else DefaultMediaSourceFactory(cf).createMediaSource(MediaItem.fromUri(Uri.parse(pick.url)))
             p.addListener(listener)
             if (audioOnly && audioTrackMode) { try { p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true).build() } catch (_: Throwable) {} }
             if (seekMs > 0L) p.setMediaSource(src, seekMs) else p.setMediaSource(src)

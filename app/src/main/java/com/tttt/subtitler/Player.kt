@@ -2252,6 +2252,8 @@ class PlayerActivity : Activity(), Host {
     }
     var uri: Uri? = null
     private var httpDsf: DefaultHttpDataSource.Factory? = null
+    /** (v1249) كل مصادر الإنترنت (تبديل الجودة/الصوت، دمج فيديو+صوت يوتيوب) بتعدّي على كاش القرص: الرجوع في الجزء المتحمّل (الخط الأزرق) بيتقرا من الكاش حتى لو النت قطع، مش من الشبكة */
+    private fun cachedDsf(f: androidx.media3.datasource.DataSource.Factory): androidx.media3.datasource.DataSource.Factory = try { NetCache.factory(this, f) } catch (_: Throwable) { f }
     val hdr = HashMap<String, String>()
     var touching = false
     lateinit var conf: Conf
@@ -6284,7 +6286,7 @@ class PlayerActivity : Activity(), Host {
         if (i == qCur && !force) return
         try {
             val pos = player.currentPosition; val play = player.playWhenReady
-            val f = httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).setTransferListener(netStreamTl)
+            val f = cachedDsf(httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).setTransferListener(netStreamTl))
             val au = if (o.audio != null) (aOverride ?: o.audio) else null   // (v388) لغة الصوت اللي اخترتها بتفضل مع تبديل الجودة
             // (v120) أي موقع: من غير صوت منفصل بنسيب ExoPlayer يختار النوع (MP4/HLS…) من اللينك؛ يوتيوب بصوت منفصل بيتدمج
             val src = if (au != null) { val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(f)
@@ -6344,7 +6346,7 @@ class PlayerActivity : Activity(), Host {
                     } else Notice.show(this, "الفيديو ده ملوش مسار صوت منفصل", 2000L)
                     return }
                 val pos = player.currentPosition
-                val f = httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).setTransferListener(netStreamTl)
+                val f = cachedDsf(httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).setTransferListener(netStreamTl))
                 val src = DefaultMediaSourceFactory(f).createMediaSource(MediaItem.fromUri(Uri.parse(au)))
                 player.exo()?.let { xp -> xp.setMediaSource(src, pos); xp.prepare() }; player.playWhenReady = play
                 ytAudioOnly = true
@@ -6557,7 +6559,7 @@ class PlayerActivity : Activity(), Host {
         val xp0: ExoPlayer = player.exo() ?: return
         ytVideoTrackOn(); ytMerged = (uri == null && au != null)   // (v1150)
         if (uri == null && au != null) {
-            val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).setTransferListener(netStreamTl))
+            val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(cachedDsf(httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).setTransferListener(netStreamTl)))
             xp0.setMediaSource(androidx.media3.exoplayer.source.MergingMediaSource(pf.createMediaSource(MediaItem.fromUri(Uri.parse(url!!))), pf.createMediaSource(MediaItem.fromUri(Uri.parse(au)))))
         } else xp0.setMediaItem(uri?.let { mediaItemFor(it) } ?: MediaItem.fromUri(Uri.parse(url!!)))
         xp0.prepare(); xp0.playWhenReady = true
@@ -6856,7 +6858,7 @@ class PlayerActivity : Activity(), Host {
                     val au = aurl
                     ytMerged = au != null   // (v1150)
                     if (au != null) {
-                        val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).setTransferListener(netStreamTl))
+                        val pf = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(cachedDsf(httpDsf ?: DefaultHttpDataSource.Factory().setDefaultRequestProperties(hdr).setAllowCrossProtocolRedirects(true).setTransferListener(netStreamTl)))
                         player.exo()?.setMediaSource(androidx.media3.exoplayer.source.MergingMediaSource(pf.createMediaSource(MediaItem.fromUri(Uri.parse(got.url))), pf.createMediaSource(MediaItem.fromUri(Uri.parse(au)))))
                     } else player.exo()?.setMediaItem(MediaItem.fromUri(Uri.parse(got.url)))
                     player.exo()?.prepare(); if (pos > 0L) player.seekTo(pos); player.playWhenReady = true
