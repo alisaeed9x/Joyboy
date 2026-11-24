@@ -206,6 +206,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private var navPending = false   // (v911) دوسة تبويب لسه مستنية تخلّص الأنيميشن قبل ما نبدّل الشاشة
     // (v939) عدّاد إعادة محاولة وضع الكبسولة: الخلية لسه ما اتقاستش — بنعيد لحد 10 مرات وبعدين نقف بدل ما ندوّر للأبد
     private var placeTries = 0
+    private var capAnim: android.animation.ValueAnimator? = null
     private lateinit var rowLL: LinearLayout
     private val glassNav = MtGlass.on() && !rail   // (v893) تبويب مضيء (lit tab) بدل خط المؤشّر
     private val indicator = View(act).apply {
@@ -425,10 +426,24 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         if (animate) {
             moving = true
             indicator.animate().cancel()
-            Motion.spring(indicator, androidx.dynamicanimation.animation.DynamicAnimation.TRANSLATION_X, x, 330f, 0.86f)   // (v1247) الكبسولة بتتحرك بسبرينج: لو اتقطعت بتكمل من سرعتها من غير نتشة
+            Motion.cancelSprings(indicator); capAnim?.cancel()
+            val x0 = indicator.translationX
+            if (glassNav && !rail && Design.isNew() && Math.abs(x - x0) > ui.dp(8)) {   // (v1252) الانتقال: الكبسولة تصغّر لنقطة صغيرة في النص بين التبويبين وبعدين تكبر حوالين التبويب الجديد
+                indicator.pivotX = indicator.width / 2f; indicator.pivotY = indicator.height / 2f
+                capAnim = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+                    duration = 420L; interpolator = android.view.animation.PathInterpolator(0.25f, 0.9f, 0.3f, 1f)
+                    addUpdateListener { a ->
+                        val p = a.animatedValue as Float; val k = Math.sin(Math.PI * Math.min(1f, p).toDouble()).toFloat()
+                        indicator.translationX = x0 + (x - x0) * p
+                        indicator.scaleX = 1f - 0.68f * k; indicator.scaleY = 1f - 0.3f * k
+                    }
+                    addListener(object : android.animation.AnimatorListenerAdapter() { override fun onAnimationEnd(an: android.animation.Animator) { indicator.scaleX = 1f; indicator.scaleY = 1f } })
+                    start()
+                }
+            } else Motion.spring(indicator, androidx.dynamicanimation.animation.DynamicAnimation.TRANSLATION_X, x, 330f, 0.86f)
             indicator.removeCallbacks(doneMoving); indicator.postDelayed(doneMoving, 360L)   // (v1119) RenderThread
         } else {
-            indicator.animate().cancel(); Motion.cancelSprings(indicator); moving = false
+            indicator.animate().cancel(); Motion.cancelSprings(indicator); capAnim?.cancel(); moving = false
             indicator.translationX = x
         }
         return true
