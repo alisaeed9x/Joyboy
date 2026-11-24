@@ -19,7 +19,7 @@ import java.net.URL
 
 /** (v1259) مركز التحديث الجديد: فحص الريليز عند كل فتح، تنزيل جوه البرنامج بشريط تقدّم وقابل للاستكمال، تثبيت مباشر لو الملف منزّل، وبادج أحمر. */
 object Upd {
-    private const val API = "https://api.github.com/repos/alisaeed9x/Joyboy/releases/latest"
+    private const val API = "https://api.github.com/repos/alisaeed9x/Joyboy/releases?per_page=15"
 
     class AppInfo(val name: String, val tag: String, val url: String, val size: Long, val notes: String, val page: String)
 
@@ -73,7 +73,7 @@ object Upd {
             val c = URL(API).openConnection() as HttpURLConnection
             c.connectTimeout = 8000; c.readTimeout = 12000
             c.setRequestProperty("Accept", "application/vnd.github+json"); c.setRequestProperty("User-Agent", "Joyboy")
-            val j = JSONObject(c.inputStream.bufferedReader().readText())
+            val j = Changelog.pickLatest(c.inputStream.bufferedReader().readText())
             val name = j.optString("name"); val tag = j.optString("tag_name")
             var apk = ""; var size = 0L
             val assets = j.optJSONArray("assets")
@@ -364,6 +364,10 @@ object Upd {
     fun centerViews(a: Activity, ui: Ui, th: Theme): View {
         val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         if (DeviceUi.isTv(a)) return col
+        col.addView(ui.text("📜 سجل التغييرات", 12.5f, if (th.isLight) android.graphics.Color.WHITE else android.graphics.Color.BLACK, true).apply {
+            background = ui.box(th.primary, th.primary, 14); setPadding(ui.dp(12), ui.dp(5), ui.dp(12), ui.dp(5)); gravity = android.view.Gravity.CENTER
+            setOnClickListener { try { Changelog.show(a) } catch (e: Throwable) { LogStore.err("Upd:chlog", e) } }
+        }, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = ui.dp(6) })
         col.addView(ui.switchRow("🔄 تحديث تلقائي (ينزّل لوحده ويسأل تثبّت؟)", autoOn()) { v -> Cfg.put("upd_auto", if (v) "1" else "0") })
         val box = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         col.addView(box)

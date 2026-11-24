@@ -17,7 +17,7 @@ import java.net.URL
  * وفيه «لاحقًا» و«تحميل». «تحميل» بيفتح لينك الـAPK في المتصفح مباشرة (مش المنزّل بتاع البرنامج).
  */
 object UpdateSheet {
-    private const val API = "https://api.github.com/repos/alisaeed9x/Joyboy/releases/latest"
+    private const val API = "https://api.github.com/repos/alisaeed9x/Joyboy/releases?per_page=15"
 
     fun show(a: Activity) {
         val th = Themes.current()
@@ -47,7 +47,7 @@ object UpdateSheet {
                 val c = URL(API).openConnection() as HttpURLConnection
                 c.connectTimeout = 10000; c.readTimeout = 15000
                 c.setRequestProperty("Accept", "application/vnd.github+json")
-                val j = JSONObject(c.inputStream.bufferedReader().readText())
+                val j = Changelog.pickLatest(c.inputStream.bufferedReader().readText())
                 tName = j.optString("name"); body = j.optString("body")
                 page = j.optString("html_url", page)
                 val assets = j.optJSONArray("assets")
@@ -99,7 +99,7 @@ object UpdateSheet {
                 val c = URL(API).openConnection() as HttpURLConnection
                 c.connectTimeout = 8000; c.readTimeout = 12000
                 c.setRequestProperty("Accept", "application/vnd.github+json")
-                val j = JSONObject(c.inputStream.bufferedReader().readText())
+                val j = Changelog.pickLatest(c.inputStream.bufferedReader().readText())
                 val name = j.optString("name"); val tag = j.optString("tag_name"); val body = j.optString("body")
                 val remote = verParts(name)
                 if (remote.isEmpty() || !isNewer(remote, verParts(ver))) return@Thread
@@ -150,7 +150,7 @@ object UpdateSheet {
             val order = ArrayList<String>(); val items = HashMap<String, ArrayList<String>>()
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                if (o.optBoolean("draft")) continue
+                if (!Changelog.isAppRelease(o)) continue
                 val nm = o.optString("name"); val rv = verParts(nm)
                 if (rv.isEmpty() || !isNewer(rv, local)) continue
                 val tag = Regex("v\\d+\\.\\d+").find(nm)?.value ?: nm

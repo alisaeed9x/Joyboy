@@ -389,6 +389,7 @@ object GhCi {
             val o = arr.getJSONObject(i)
             if (o.optBoolean("expired", false)) continue
             val name = s(o, "name")
+            if (name.contains("plugin", true) || name.contains("aniyomi", true)) continue
             if (!name.contains("universal-debug", true) && !name.contains("apk", true)) continue
             val wr = o.optJSONObject("workflow_run")
             all.add(Art(o.optLong("id"), name, o.optLong("size_in_bytes"), wr?.optLong("id") ?: 0L, if (wr != null) s(wr, "head_branch") else "", ms(s(o, "created_at"))))
