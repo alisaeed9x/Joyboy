@@ -1635,6 +1635,13 @@ class Engine(
                 throw e
             } catch (e: ApiErr) {
                 val invalid = e.code == 401 || e.code == 403 || (e.code == 400 && (e.message ?: "").contains("API key", true))
+                if (e.code == 404 && fbModel != null && fbModel != curModel()) {   // (v1241) الموديل الاحتياطي مش متاح: بنعلّمه ميت ونختار غيره
+                    val dm = fbModel!!; Models.markDead(dm)
+                    val nx = Models.alt(curModel(), key)
+                    host.log("⚠ الموديل $dm مش متاح لمفتاحك (404) — " + (if (nx == curModel()) "هكمّل على الأساسي" else "بجرّب $nx"))
+                    fbModel = if (nx == curModel()) null else nx
+                    srv = 0; continue
+                }
                 if (e.code == 429) {
                     noteQuota()
                     pool.block(key, 60_000)
@@ -1653,7 +1660,7 @@ class Engine(
                 if (e.code >= 500) {
                     srv++
                     Overload.hit()
-                    if (srv >= 2 && fbModel == null) { fbModel = Models.alt(curModel()); host.log("⚠ جيميناي عليه ضغط (${e.code}) على كل المفاتيح — بجرّب موديل ${fbModel}") }
+                    if (srv >= 2 && fbModel == null) { fbModel = Models.alt(curModel(), key).let { if (it == curModel()) null else it } ?: curModel(); host.log("⚠ جيميناي عليه ضغط (${e.code}) على كل المفاتيح — بجرّب موديل ${fbModel}") }
                     if (srv >= 3) nap(minOf(6000L, 1200L * srv) + (Math.random() * 600).toLong())
                     // (v1114) 503 — تصحيح: إعادة فورية من غير أي انتظار — الأولوية لمفتاح تاني فاضي، ولو مفيش مفتاح فاضي الإعادة فورًا على نفس المفتاح
                     val alt = try { switchKey(key) } catch (_: RehomeEx) { null }
@@ -3670,7 +3677,7 @@ class Engine(
             try {
                 gapEx.submit {
                     try { for (pt in Gaps.parts(g[0], g[1], minOf(ch, Coverage.PIECE_SEC))) { if (!running) break; fillGap(pt[0], pt[1], key) } }
-                    catch (e: Exception) { host.log("⚠ سدّ الفجوة فشل: " + (e.message ?: "").take(100)) }
+                    catch (e: Exception) { host.log("⚠ سدّ الفجوة فشل: " + (e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName).take(100)) }
                     finally { gapKeys.remove(key); gapBusy.decrementAndGet() }
                 }
                 started = true
@@ -3826,7 +3833,7 @@ class Engine(
                 host.log("✅ فجوة ${a.toInt()}ث: اتسدّ ${marked.size} جملة")
                 return
             } catch (e: ApiErr) {
-                if (e.code == 429) { noteQuota(); pool.block(key, 60_000) } else if (e.code == 403) pool.block(key, 3_600_000) else if (e.code >= 500 && gapFb == null) { gapFb = Models.alt(curModel()); host.log("⚠ جيميناي عليه ضغط — سدّ الفجوة بموديل " + gapFb) } else throw e
+                if (e.code == 429) { noteQuota(); pool.block(key, 60_000) } else if (e.code == 403) pool.block(key, 3_600_000) else if (e.code == 404 && gapFb != null) { Models.markDead(gapFb!!); val nx = Models.alt(curModel(), key); gapFb = if (nx == curModel()) null else nx; host.log("⚠ موديل احتياطي مش متاح (404) — " + (gapFb ?: "الأساسي")) } else if (e.code >= 500 && gapFb == null) { gapFb = Models.alt(curModel(), key).let { if (it == curModel()) null else it }; host.log("⚠ جيميناي عليه ضغط — سدّ الفجوة بموديل " + gapFb) } else throw e
                 key = pool.gapKey(gapKeys - key, rr.getAndIncrement()) ?: return
             }
         }

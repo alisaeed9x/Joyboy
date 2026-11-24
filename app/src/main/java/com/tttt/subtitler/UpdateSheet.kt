@@ -32,11 +32,12 @@ object UpdateSheet {
         col.addView(notes, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
         val sv = ScrollView(a).apply { isVerticalScrollBarEnabled = false; addView(col) }
         var apkUrl = ""
+        var upToDateFlag = false
         var page = "https://github.com/alisaeed9x/Joyboy/releases/latest"
         val g = GAlert(a).setView(sv)
         g.setNegativeButton("لاحقًا", null)
         g.setPositiveButton("تحميل") { _, _ ->
-            try { a.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(if (apkUrl.isNotBlank()) apkUrl else page)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            if (!upToDateFlag) try { a.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(if (apkUrl.isNotBlank()) apkUrl else page)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             catch (e: Throwable) { LogStore.err("UpdateSheet:open", e) }
         }
         val d: Dialog = g.show()
@@ -57,9 +58,15 @@ object UpdateSheet {
                 }
             } catch (e: Throwable) { body = "ما قدرتش أجيب التغييرات. دوس «تحميل» وهيفتح صفحة آخر نسخة في المتصفح." }
             val clean = body.replace(Regex("<[^>]+>"), "").replace(Regex("(?m)^#+\\s*"), "").replace("`", "").take(4000)
+            val ver = try { a.packageManager.getPackageInfo(a.packageName, 0).versionName ?: "" } catch (_: Throwable) { "" }
+            val upToDate = tName.isNotBlank() && ver.isNotBlank() && !isNewer(verParts(tName), verParts(ver))
             a.runOnUiThread {
                 try {
-                    if (tName.isNotBlank()) title.text = "⬆ $tName"
+                    if (upToDate) {
+                        title.text = "✅ أنت على آخر تحديث"
+                        try { (d as? android.app.AlertDialog)?.getButton(android.content.DialogInterface.BUTTON_POSITIVE)?.text = "تمام" } catch (_: Throwable) {}
+                        upToDateFlag = true
+                    } else if (tName.isNotBlank()) title.text = "⬆ $tName"
                     notes.text = clean.ifBlank { "مفيش ملاحظات للنسخة دي." }
                 } catch (_: Throwable) {}
             }
