@@ -8948,6 +8948,7 @@ class PlayerActivity : Activity(), Host {
             h.postDelayed({ try { if (!isFinishing && !isDestroyed) PermAsk.overlay(this, { }, { }) } catch (_: Throwable) {} }, 900L)
         }
         trEnsureBtn()   // (v463) زرار لوحة النص في وضع التابلت
+        Tour.maybePlayer(this)   // (v1258) جولة أزرار المشغّل أول مرة
         WebMute.pauseAll()   // (v149) أي صوت WebView (متصفح/يوتيوب) يتقفل أول ما المشغّل يظهر
         if (audioOnlyMode) {   // رجعنا من وضع «صوت بس»: المحرك كان موقوف، نجهّزه من جديد (الترجمة بتبدأ لما تدوس ترجم)
             audioOnlyMode = false; engineStarted = false

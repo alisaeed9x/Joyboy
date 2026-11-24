@@ -64,6 +64,16 @@ object PermAsk {
 
     private const val HOW = "هتفتحلك صفحة إعدادات النظام ← دوّر على اسم البرنامج «Joyboy» في القايمة واضغط عليه ← شغّل المفتاح ← ارجع للبرنامج."
 
+    /** (v1258) «تثبيت تطبيقات غير معروفة» — لتثبيت تحديث البرنامج. لو متفعّل بيكمّل من غير أي سؤال */
+    fun installApps(act: Activity, onGranted: () -> Unit, onSkip: () -> Unit) = ask(
+        act, "🔐 صلاحية تثبيت التحديث",
+        "عشان البرنامج يثبّت التحديث الجديد، أندرويد لازم تسمح له بـ«تثبيت تطبيقات غير معروفة». دي مرة واحدة بس.",
+        HOW + "\nبعد ما تفعّلها وترجع، التثبيت هيكمّل لوحده.",
+        "افتح الإعدادات", "لاحقًا",
+        { Build.VERSION.SDK_INT < 26 || act.packageManager.canRequestPackageInstalls() },
+        { act.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, pkg(act))) }, onGranted, onSkip
+    )
+
     /** «العرض فوق التطبيقات» — الصورة المصغّرة (PiP) وترجمتها */
     fun overlay(act: Activity, onGranted: () -> Unit, onSkip: () -> Unit) = ask(
         act, "🖼 الصورة المصغّرة (PiP)",

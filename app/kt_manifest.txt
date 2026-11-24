@@ -324,3 +324,4 @@ com/tttt/subtitler/GhAudio.kt
 com/tttt/subtitler/UpdateSheet.kt
 com/tttt/subtitler/Streamer.kt
 com/tttt/subtitler/Plugins.kt
+com/tttt/subtitler/Tour.kt

@@ -2005,6 +2005,7 @@ class MainActivity : Activity() {
         if (!fromPlayer) CrashLog.showIfAny(this)
         if (!fromPlayer) ClipOverlay.ensure(this)   // (v735) مراقب الكليبورد بإذن العرض فوق التطبيقات (بيشتغل لوحده أول ما الإذن يتفعّل)
         if (!fromPlayer) ModelWatch.maybeCheck(this)   // (v141) فحص يومي لموديل flash-lite أحدث
+        if (!fromPlayer) Tour.maybeMain(this)   // (v1258) جولة أول تشغيل
         if (!fromPlayer) GhCi.onForeground(this)   // (v856) فشل ورك فلو GitHub ← إشعار + تحميل اللوج · تحديث جاهز ← تثبيت
         // المخفي بيتقفل تاني لو التطبيق قعد في الخلفية أكتر من دقيقة
         if (stoppedAt > 0 && System.currentTimeMillis() - stoppedAt > 60_000) { libUi?.relock(); musicUi?.lib?.relock() }

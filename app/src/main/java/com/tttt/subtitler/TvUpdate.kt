@@ -262,19 +262,11 @@ object TvUpdate {
     }
 
     fun install(a: Activity, f: File) {
+        PermAsk.installApps(a, { doInstall(a, f) }, { })
+    }
+
+    private fun doInstall(a: Activity, f: File) {
         try {
-            if (Build.VERSION.SDK_INT >= 26 && !a.packageManager.canRequestPackageInstalls()) {
-                pendingApk = f
-                GAlert(a).setTitle("🔐 صلاحية التثبيت (مرة واحدة)")
-                    .setMessage("أندرويد محتاج تسمح لـ Subtitler بتثبيت التطبيقات. هتتفتح شاشة الإعدادات — فعّل الخيار وارجع، والتثبيت هيكمل لوحده.")
-                    .setPositiveButton("افتح الإعدادات") { _, _ ->
-                        try { a.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + a.packageName))) }
-                        catch (e: Throwable) { LogStore.err("TvUpdate:perm", e); Notice.show(a, "فعّل «مصادر غير معروفة» لـ Subtitler من إعدادات التلفزيون ← التطبيقات", 5000L) }
-                    }
-                    .setNegativeButton("إلغاء") { _, _ -> pendingApk = null }
-                    .show()
-                return
-            }
             pendingApk = null
             val uri = FileProvider.getUriForFile(a, a.packageName + ".fmprov", f)
             a.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
