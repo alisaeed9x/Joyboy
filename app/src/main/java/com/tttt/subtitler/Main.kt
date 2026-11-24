@@ -602,6 +602,7 @@ class MainActivity : Activity() {
                         recreate() }),
                 ui.section("🗣 لغة الترجمة (مستقلة عن لغة التطبيق)", true,
                     LangPicker.settingRow(this, ui, "🗣 لغة الترجمة", { Cfg.str("tr_lang", "auto") }) { c -> I18n.setTranslationLang(c) })) }, false, "", "🌐"),
+            TabDef("navcust", "🧩 تخصيص البلاطات", { try { NavCustom.views(this, ui, th, navUi?.catalog(this) ?: emptyList()) } catch (e: Throwable) { LogStore.err("Main:navcust", e); listOf<View>(ui.noHint()) } }, false, "رتّب/أخفِ أزرار الشريط وبلاطات المزيد · أقسام الإعدادات كبلاطات · صفحة البداية", "🧩"),
             // ===== 🚀 خط الترجمة: الخطة (تفريغ ← ترجمة ← لهجة) + اللهجة والأسلوب + البرومبتات =====
             tab("general", { listOf<View>(
                 ui.noHint(),
@@ -1116,6 +1117,16 @@ class MainActivity : Activity() {
             if (t0 == "music") frame.post { showTabFn(1) }
             else if (t0 == "tasks") frame.post { showTabFn(5) }
             else if (t0 == "settings") frame.post { settingsShow?.invoke(null) }
+            else if (t0 == null && b == null && !fromTv && intent?.getStringExtra("reopen_tab") == null && (intent?.action == null || intent?.action == Intent.ACTION_MAIN) && NavCustom.startPage().isNotEmpty()) {   // (v1273) صفحة البداية المختارة
+                val sp = NavCustom.startPage()
+                frame.post { try { when (sp) {
+                    "browser" -> { save(); startActivity(TabNav.front(Intent(this, BrowserActivity::class.java))) }
+                    "music" -> showTabFn(1)
+                    "settings" -> settingsShow?.invoke(null)
+                    "yt_home", "yt_subs", "yt_me" -> { showTabFn(4); frame.post { try { ytUi?.tapTab(when (sp) { "yt_home" -> 0; "yt_subs" -> 1; else -> 2 }, false) } catch (_: Throwable) {} } }
+                    else -> {}
+                } } catch (e: Throwable) { LogStore.err("Main:startpage", e) } }
+            }
             else if (t0 == "youtube") frame.post { if (intent?.getStringExtra("yt_open") == null) { openYoutube() }; openYtFromIntent(intent) }   // (v880) أيقونة/تايل يوتيوب ← MeeTube
             if (intent?.getBooleanExtra("lib_tv", false) == true) { intent?.removeExtra("lib_tv"); frame.post { libSourceFn?.invoke(true) } }   // (v691) التطبيق ماكانش شغّال: افتح مكتبة التلفزيون
         }

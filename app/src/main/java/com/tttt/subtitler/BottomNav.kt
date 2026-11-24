@@ -40,7 +40,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     /** البوابات اللي ورا ⋯ المزيد: أي بوابة مش في الشريط (حاليًا: الملفات 3 · المهام 5 · الذكاء 6 · الإعدادات 7) — الزرار بيتلوّن لما واحدة منهم تبقى هي النشطة */
     private val lite = act.packageName.endsWith(".lite")
     private val tvDev = try { DeviceUi.isTv(act) } catch (_: Throwable) { false }   // (v521) على التلفزيون زرار الريموت مخفي
-    private fun normalOrder(): List<Int> = NORMAL_ORDER.filter { it != REMOTE && !(it == IR && tvDev) }.map { if (it == NET && tvDev) 3 else it }   // (v815) على التلفزيون «المخزن» يفضل مكانه
+    private fun normalOrder(): List<Int> { val cu = if (tvDev || lite) null else try { NavCustom.barIds() } catch (_: Throwable) { null }; return cu ?: normalOrder0() }   // (v1273) تخصيص الشريط
+    private fun normalOrder0(): List<Int> = NORMAL_ORDER.filter { it != REMOTE && !(it == IR && tvDev) }.map { if (it == NET && tvDev) 3 else it }   // (v815) على التلفزيون «المخزن» يفضل مكانه
     private fun ytOrder(): List<Int> = YT_ORDER.filter { it != NET || !tvDev }   // (v823) على التلفزيون زرار النت مش في الشريط
     private var order: List<Int> = if (lite) LITE_ORDER else normalOrder()   // (v554) زرار الريموت اتشال: وضع التلفزيون بزرار عايم
     private fun cellOf(a: Int): Int = if (a in order) a else if (a == 1 && !lite && 0 in order) 0 else if (a == 4 && YT_HOME in order) YT_HOME else if ((a == YT_HOME || a == YT_SUBS || a == YT_ME) && 4 in order) 4 else if (lite) (if (a == 7) YT_ME else -1) else MORE
@@ -113,6 +114,24 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         return listOf("الأقسام" to secs, "الترجمة" to trl, "تحكم وريموت" to ctl, "النظام والتحديث" to sys)
     }
 
+    private fun keyOf(m: MoreItem): String = m.label.substringBefore(":")
+    /** (v1273) كتالوج بلاطات «المزيد» الأصلية للشاشة بتاعة التخصيص: (مفتاح، إيموجي، اسم) */
+    fun catalog(act: Activity): List<Triple<String, String, String>> = moreGroups(act).flatMap { g -> g.second.map { Triple(keyOf(it), it.emoji, it.label.substringBefore(":")) } }
+    /** (v1273) «المزيد» بعد التخصيص: إخفاء + ترتيب + مجموعة «بلاطاتي» لأقسام الإعدادات المضافة */
+    private fun customGroups(act: Activity): List<Pair<String, List<MoreItem>>> {
+        val raw = moreGroups(act)
+        if (tvDev) return raw
+        return try {
+            val hide = NavCustom.moreHide(); val ord = NavCustom.moreOrder()
+            fun rank(k: String): Int = ord.indexOf(k).let { if (it < 0) 10000 else it }
+            val out = ArrayList<Pair<String, List<MoreItem>>>()
+            for ((t, l) in raw) out.add(t to l.filter { keyOf(it) !in hide }.sortedBy { rank(keyOf(it)) })
+            val ex = NavCustom.moreExtras().map { id -> val (e, n) = NavCustom.split(NavCustom.tabLabel(id)); MoreItem(e, n, false) { NavCustom.open(act, id) } }
+            if (ex.isNotEmpty()) out.add("بلاطاتي" to ex)
+            out
+        } catch (e: Throwable) { LogStore.err("Nav:cust", e); raw }
+    }
+
     private fun tileView(act: Activity, t: MoreItem, onDone: () -> Unit): View {
         val inner = tileInner(act, t, onDone)
         if (t.badge <= 0) return inner
@@ -165,7 +184,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         head.addView(x, LinearLayout.LayoutParams(-2, -2))
         box.addView(head, LinearLayout.LayoutParams(-1, -2))
         val inner = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-        for ((title, tiles) in moreGroups(act)) {
+        for ((title, tiles) in customGroups(act)) {
             if (tiles.isEmpty()) continue
             inner.addView(ui.text(title, 12.5f, th.muted, true).apply { setPadding(ui.dp(6), ui.dp(12), ui.dp(6), ui.dp(2)) }, LinearLayout.LayoutParams(-1, -2))
             // (v1009) الصف الأخير بيتفرد لحد الآخر: كل مربع weight=1 (ولا فراغ فاضي). مربع واحد لوحده في آخر صف بينضم للصف اللي قبله (cols+1 جنب بعض)؛ ولو هو القسم كله بياخد العرض كله
@@ -238,7 +257,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
             background = navBgD()
         }
         // (v336) الأرقام ثابتة (0 فيديوهات · 1 موسيقى · 2 متصفح · 3 ملفات · 4 يوتيوب · 5 مهام) لكن ترتيب العرض: يوتيوب قبل الملفات، والمهام رجعت زرار في الشريط
-        val defs = DEFS
+        val defs = DEFS + (try { NavCustom.customDefs() } catch (_: Throwable) { emptyList() })   // (v1273) أزرار إعدادات مخصّصة بعد الأساسية
         rowLL = row
         defs.forEachIndexed { idx, d ->
             val icon = IconTextView(act).apply { text = d.first; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false }
@@ -259,7 +278,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                 addView(box, if (idx == NET) LinearLayout.LayoutParams(ui.dp(54), ui.dp(30)) else LinearLayout.LayoutParams(ui.dp(38), ui.dp(20)))
                 addView(lab, LinearLayout.LayoutParams(-2, -2))
                 Glass.pressable(this)
-                setOnClickListener { if (idx == MORE) { set(idx); toggleMore(act) } else if (idx == REMOTE) { set(idx); try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else if (idx == CARE) { set(idx); collapseMore(); try { CareUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:care", e) } } else if (idx == IR) { set(idx); collapseMore(); try { IrCatalogUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:ir", e) } } else if (idx == NET) { collapseMore(); try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } } else { collapseMore(); val leaves = act !is MainActivity || idx == 2 || idx == 3 || idx == 4   // (v911) كل اللي بيفتح شاشة تانية (متصفح/مخزن/يوتيوب)؛ التبويبات الداخلية في Main عندها أنيميشنها
+                setOnClickListener { if (idx >= DEFS.size) { try { NavCustom.open(act, NavCustom.customTabs()[idx - DEFS.size]) } catch (_: Throwable) {} } else if (idx == MORE) { set(idx); toggleMore(act) } else if (idx == REMOTE) { set(idx); try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else if (idx == CARE) { set(idx); collapseMore(); try { CareUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:care", e) } } else if (idx == IR) { set(idx); collapseMore(); try { IrCatalogUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:ir", e) } } else if (idx == NET) { collapseMore(); try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } } else { collapseMore(); val leaves = act !is MainActivity || idx == 2 || idx == 3 || idx == 4   // (v911) كل اللي بيفتح شاشة تانية (متصفح/مخزن/يوتيوب)؛ التبويبات الداخلية في Main عندها أنيميشنها
                     if (leaves && !rail && cellOf(idx) != cellOf(active) && !navPending) {   // (v911) الشاشات التانية Activity لوحدها: كانت بتتفتح/تتقفل لحظة الدوسة فمفيش عدسة ولا انزلاق ولا ضغطة، والفتح الثقيل كان بيتزامن مع الأنيميشن فيقطّع. دلوقتي الأنيميشن بيخلّص الأول وبعدها الانتقال
                         val prev = active; val inMain = act is MainActivity
                         navPending = true; set(idx)

@@ -329,3 +329,4 @@ com/tttt/subtitler/I18n.kt
 com/tttt/subtitler/UpdDlService.kt
 com/tttt/subtitler/LangPicker.kt
 com/tttt/subtitler/Changelog.kt
+com/tttt/subtitler/NavCustom.kt
