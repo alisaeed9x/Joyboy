@@ -164,6 +164,7 @@
         <service android:name=".YtFeedJob" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE"/>   <!-- (v1103 Y2) فحص فيديوهات الاشتراكات الجديدة (يوتيوب القديم) -->
         <service android:name=".GhCiJob" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE"/>   <!-- (v856) فحص GitHub Actions + التحديث -->
         <service android:name=".MusicService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
+        <service android:name=".UpdDlService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false"/>   <!-- (v1268) تنزيل التحديث في الخلفية -->
         <service android:name=".TaskService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false"/>   <!-- (v420) خدمة التحميلات في الخلفية -->
         <!-- (v518) هدف مشاركة «ابعت للتلفزيون» · الخدمة الأمامية (v603: الريموت القديم اتمسح، الأيقونة بتفتح الكنترولر الجديد) -->
         <!-- (v595) أيقونة الريموت: شاشة شفافة بتفتح شاشة الكنترولر الجديد (الجويستيك) في كل مرة -->

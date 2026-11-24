@@ -61,7 +61,7 @@ object Upd {
             val inst = instCode(c)
             for (f in dir(c).listFiles() ?: emptyArray()) {
                 if (!f.name.startsWith("app-")) continue
-                if (f.name.endsWith(".part")) continue
+                if (f.name.endsWith(".part") || Regex("\\.p\\d$").containsMatchIn(f.name)) continue
                 val v = archCode(c, f)
                 if (v == null || v <= inst) { f.delete(); File(f.path + ".part").delete() }
             }
@@ -155,9 +155,76 @@ object Upd {
     }
     private val jobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
 
+    private const val SEGS = 4
+
+    /** (v1268) تنزيل بـ4 اتصالات متوازية (Range) في ملفات أجزاء بتتكمّل لوحدها، ثم بتتجمّع. false = السيرفر مش بيدعم Range فنكمّل بالطريقة العادية */
+    private fun pullParallel(j: Job): Boolean {
+        val probe = URL(j.url).openConnection() as HttpURLConnection
+        var total = -1L
+        try {
+            probe.connectTimeout = 15000; probe.readTimeout = 30000; probe.instanceFollowRedirects = true
+            probe.setRequestProperty("User-Agent", "Joyboy"); probe.setRequestProperty("Range", "bytes=0-0")
+            if (probe.responseCode == 206) total = probe.getHeaderField("Content-Range")?.substringAfter('/')?.toLongOrNull() ?: -1L
+        } finally { try { probe.disconnect() } catch (_: Throwable) {} }
+        if (total < 2L * 1048576L) return false
+        j.total = total
+        val sz = (total + SEGS - 1) / SEGS
+        val files = (0 until SEGS).map { File(j.dest.path + ".p" + it) }
+        j.dest.parentFile?.mkdirs()
+        val lens = LongArray(SEGS) { i -> minOf(sz, total - i * sz) }
+        var have0 = 0L
+        for (i in 0 until SEGS) { val f = files[i]; if (f.isFile && f.length() > lens[i]) f.delete(); if (f.isFile) have0 += f.length() }
+        j.done = have0; j.startBytes = have0; j.startMs = System.currentTimeMillis()
+        val errs = java.util.concurrent.CopyOnWriteArrayList<Throwable>()
+        val ths = (0 until SEGS).map { i ->
+            Thread {
+                try {
+                    val f = files[i]; var have = if (f.isFile) f.length() else 0L
+                    if (have >= lens[i]) return@Thread
+                    val c = URL(j.url).openConnection() as HttpURLConnection
+                    try {
+                        c.connectTimeout = 15000; c.readTimeout = 30000; c.instanceFollowRedirects = true
+                        c.setRequestProperty("User-Agent", "Joyboy")
+                        val st = i * sz + have; val en = i * sz + lens[i] - 1
+                        c.setRequestProperty("Range", "bytes=$st-$en")
+                        if (c.responseCode != 206) throw IOException("التنزيل فشل (HTTP " + c.responseCode + ")")
+                        c.inputStream.use { ins ->
+                            FileOutputStream(f, true).use { out ->
+                                val b = ByteArray(131072)
+                                while (have < lens[i]) {
+                                    if (j.stop) return@Thread
+                                    val n = ins.read(b)
+                                    if (n < 0) break
+                                    out.write(b, 0, n); have += n
+                                    synchronized(j) { j.done += n }
+                                }
+                            }
+                        }
+                    } finally { try { c.disconnect() } catch (_: Throwable) {} }
+                } catch (e: Throwable) { errs.add(e) }
+            }.apply { isDaemon = true; start() }
+        }
+        for (t in ths) t.join()
+        if (j.stop) throw IOException("⏸ التنزيل واقف (الجزء المنزّل محفوظ)")
+        if (errs.isNotEmpty()) throw IOException(errs[0].message ?: "التنزيل فشل")
+        for (i in 0 until SEGS) if (files[i].length() != lens[i]) throw IOException("التنزيل اتقطع (الجزء المنزّل محفوظ)")
+        val part = j.part()
+        FileOutputStream(part, false).use { out ->
+            val b = ByteArray(262144)
+            for (f in files) f.inputStream().use { ins -> while (true) { val n = ins.read(b); if (n < 0) break; out.write(b, 0, n) } }
+        }
+        for (f in files) f.delete()
+        val bad = j.verify(part)
+        if (bad != null) { part.delete(); throw IOException(bad + " (اتمسح، دوس «تنزيل من الأول»)") }
+        if (j.dest.exists()) j.dest.delete()
+        if (!part.renameTo(j.dest)) throw IOException("مقدرتش أحفظ الملف")
+        return true
+    }
+
     private fun pull(j: Job) {
         val part = j.part(); part.parentFile?.mkdirs()
         var have = if (part.isFile) part.length() else 0L
+        if (have == 0L) { try { if (pullParallel(j)) return } catch (e: IOException) { throw e } catch (_: Throwable) {} }
         val con = URL(j.url).openConnection() as HttpURLConnection
         con.connectTimeout = 15000; con.readTimeout = 30000; con.instanceFollowRedirects = true
         con.setRequestProperty("User-Agent", "Joyboy")
@@ -197,14 +264,24 @@ object Upd {
         if (!part.renameTo(j.dest)) throw IOException("مقدرتش أحفظ الملف")
     }
 
+    @Volatile var lastResult: String? = null
+    internal fun svcState(): LongArray? {
+        val r = jobs.values.filter { it.running }
+        if (r.isEmpty()) return null
+        return longArrayOf(r.sumOf { it.done }, r.sumOf { it.total })
+    }
+    private var appCtx: Context? = null
+
     private fun startJob(j: Job) {
         if (j.running) return
-        j.running = true; j.stop = false; j.err = null; j.finished = false
+        j.running = true; j.stop = false; j.err = null; j.finished = false; lastResult = null
+        try { appCtx?.let { UpdDlService.start(it) } } catch (_: Throwable) {}
         Thread {
             try {
                 pull(j)
                 j.finished = true
             } catch (e: Throwable) { j.err = e.message ?: e.javaClass.simpleName }
+            lastResult = if (j.finished) "ok" else if (j.stop) "stop" else (j.err ?: "فشل")
             j.running = false
             if (j.finished) main().post { try { j.onDone?.invoke(j.dest) } catch (x: Throwable) { LogStore.err("Upd:onDone", x) } }
         }.apply { isDaemon = true; start() }
@@ -215,6 +292,7 @@ object Upd {
     private fun clock(s: Long): String = String.format(java.util.Locale.US, "%d:%02d", s / 60, s % 60)
 
     fun downloadUi(a: Activity, key: String, url: String, dest: File, totalHint: Long, title: String, curName: String, newName: String, verify: (File) -> String?, onDone: (File) -> Unit) {
+        appCtx = a.applicationContext
         val j = jobs.getOrPut(key) { Job(url, dest, verify) }
         j.onDone = onDone
         if (j.total <= 0L) j.total = totalHint
@@ -244,7 +322,7 @@ object Upd {
                 if (mode == "err" || mode == "idle") {
                     if (j.part().isFile && j.part().length() > 0L) btns.addView(ui.button("▶ استكمال", true) { startJob(j) })
                     else btns.addView(ui.button("⬇ ابدأ التنزيل", true) { startJob(j) })
-                    btns.addView(ui.button("🔄 تنزيل من الأول") { j.part().delete(); j.done = 0L; startJob(j) })
+                    btns.addView(ui.button("🔄 تنزيل من الأول") { j.part().delete(); for (k in 0 until SEGS) File(j.dest.path + ".p" + k).delete(); j.done = 0L; startJob(j) })
                 }
             }
             val total = j.total; val done = j.done

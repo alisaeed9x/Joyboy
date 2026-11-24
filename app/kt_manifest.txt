@@ -326,3 +326,4 @@ com/tttt/subtitler/Tour.kt
 com/tttt/subtitler/Upd.kt
 com/tttt/subtitler/Notes.kt
 com/tttt/subtitler/I18n.kt
+com/tttt/subtitler/UpdDlService.kt
