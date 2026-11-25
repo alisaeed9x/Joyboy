@@ -39,13 +39,13 @@ import kotlin.math.min
 class JoystickView(ctx: Context, private val onKey: (String) -> Unit, private val onLong: (() -> Unit)? = null) : View(ctx) {
     private val h = Handler(Looper.getMainLooper())
     private val den = resources.displayMetrics.density
-    private val pBase = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0xFF1A2230.toInt() }
-    private val pRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f * den; color = 0x55FFFFFF }
+    private val pBase = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = Themes.current().card }   // (v1316) ثيم البرنامج
+    private val pRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f * den; color = Themes.current().border }   // (v1316)
     private val pOkFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val pOkRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3.5f * den }
     private val pArrow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val pKnob = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0xFF1E6BFF.toInt() }
-    private val pTxt = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.CENTER; isFakeBoldText = true }
+    private val pKnob = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = Themes.current().primary }   // (v1316)
+    private val pTxt = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Themes.current().onPrimary; textAlign = Paint.Align.CENTER; isFakeBoldText = true }   // (v1316)
     private val path = Path()
     private var kx = 0f
     private var ky = 0f
@@ -122,9 +122,9 @@ class JoystickView(ctx: Context, private val onKey: (String) -> Unit, private va
         c.drawCircle(cx, cy, r, pBase); c.drawCircle(cx, cy, r, pRing)
         // دايرة الـOK: بتنوّر وهي مدوسة وجوّاها (من غير حركة)
         val armed = down && dir == null && !fired
-        pOkFill.color = if (armed) 0x552F80FF else 0x222F80FF
+        pOkFill.color = (if (armed) 0x55000000 else 0x22000000).toInt() or (Themes.current().primary and 0x00FFFFFF)   // (v1316)
         c.drawCircle(cx, cy, ok, pOkFill)
-        pOkRing.color = if (armed) 0xFFFFFFFF.toInt() else 0xAAFFFFFF.toInt()
+        pOkRing.color = if (armed) Themes.current().primary else Themes.current().muted   // (v1316)
         c.drawCircle(cx, cy, ok, pOkRing)
         val a = r * 0.80f; val s = 14f * den
         fun arrow(name: String, ax: Float, ay: Float, ux: Float, uy: Float) {
@@ -134,7 +134,7 @@ class JoystickView(ctx: Context, private val onKey: (String) -> Unit, private va
             path.lineTo(ax - ux * s * 0.6f + px * s, ay - uy * s * 0.6f + py * s)
             path.lineTo(ax - ux * s * 0.6f - px * s, ay - uy * s * 0.6f - py * s)
             path.close()
-            pArrow.color = if (dir == name) 0xFFFFFFFF.toInt() else 0x88FFFFFF.toInt()
+            pArrow.color = if (dir == name) Themes.current().primary else Themes.current().muted   // (v1316)
             c.drawPath(path, pArrow)
         }
         arrow("up", cx, cy - a, 0f, -1f); arrow("down", cx, cy + a, 0f, 1f)
@@ -242,20 +242,21 @@ class PadIcon(ctx: Context, private val kind: String, private val tint: Int = Co
  *  صف (رجوع · الرئيسية · آخر المشغّل) ← صف (خفض الصوت · كتم · رفع الصوت) ← صف (تشغيل · إيقاف مؤقت · يوتيوب · متصفح). (v678: «آخر المشغّل» مكان «المداخل»، ويوتيوب/متصفح مكان قناة ±)
  *  «لوحة اللمس» = الجويستيك القديم بالظبط. الشاشة بتتسحب (ScrollView) والإغلاق بزرار/إيماءة الرجوع. */
 object ControllerPad {
-    fun show(act: Activity, onClose: (() -> Unit)? = null) {
+    fun show(act: Activity, onClose: (() -> Unit)? = null, onNav: ((Int) -> Unit)? = null) {   // (v1316) onNav = شريط البرنامج فوق الريموت
         try {
             try { RemoteClient.init(act) } catch (_: Throwable) {}
             val dm = act.resources.displayMetrics
             fun dp(v: Int) = (v * dm.density).toInt()
             fun dpf(v: Float) = v * dm.density
             val d = Dialog(act, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+            val th = Themes.current()   // (v1316) الريموت بنفس ثيم البرنامج
             var plDispose: (() -> Unit)? = null   // (v787) تنضيف صفحة المشغّل المدمجة عند قفل الريموت
-            val root = FrameLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR; setBackgroundColor(0xFF0F1830.toInt()) }
+            val root = FrameLayout(act).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR; setBackgroundColor(th.bg) }   // (v1316)
             val hh = Handler(Looper.getMainLooper())
 
             var stRef: TextView? = null
             val sayHide = Runnable { stRef?.visibility = View.GONE }
-            fun say(t: String, c: Int = 0xFFB0BEC5.toInt()) { stRef?.let { it.text = t; it.setTextColor(c); it.visibility = View.VISIBLE; hh.removeCallbacks(sayHide); hh.postDelayed(sayHide, 3500L) } }
+            fun say(t: String, c: Int = th.muted) { stRef?.let { it.text = t; it.setTextColor(c); it.visibility = View.VISIBLE; hh.removeCallbacks(sayHide); hh.postDelayed(sayHide, 3500L) } }   // (v1316)
             // (v821) كل الأزرار بتعدّي على الراوتر المركزي: أمر منطقي واحد ← واي فاي أساسي / IR احتياطي تلقائي (RemoteRouter)
             var statusRemove: (() -> Unit)? = null
             fun sendKey(k: String) {
@@ -299,8 +300,8 @@ object ControllerPad {
             }
 
             fun cardBg(dashed: Boolean) = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(22f)); setColor(MtGlass.pf(if (dashed) 0xFF1B2C47.toInt() else 0xFF14203A.toInt()))
-                if (dashed) setStroke(dp(1), MtGlass.ps(0xFF3A5278.toInt()), dpf(5f), dpf(4f)) else setStroke(dp(1), MtGlass.ps(0xFF2B3C60.toInt()))
+                shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(22f)); setColor(MtGlass.pf(if (dashed) th.surface else th.card))   // (v1316)
+                if (dashed) setStroke(dp(1), MtGlass.ps(th.border), dpf(5f), dpf(4f)) else setStroke(dp(1), MtGlass.ps(th.border))   // (v1316)
             }
             fun iconBox(kind: String, c1: Int, c2: Int, dim: Boolean, ic: Int = 40): View {
                 val box = FrameLayout(act).apply {
@@ -313,12 +314,12 @@ object ControllerPad {
             /** كارت: مربع أيقونة ملوّن 40dp + الاسم تحته (زي الصورة) */
             fun card(label: String, kind: String, c1: Int, c2: Int, dashed: Boolean = false, repeat: Boolean = false, fs: Float = 15f, ic: Int = 40, fire: () -> Unit): View {
                 val cd = android.widget.LinearLayout(act).apply {
-                    orientation = android.widget.LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = cardBg(dashed)
+                    orientation = android.widget.LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = cardBg(dashed); elevation = dpf(5f)   // (v1316) زرار مرفوع
                     contentDescription = label; setPadding(dp(2), if (ic < 40) dp(4) else dp(8), dp(2), if (ic < 40) dp(4) else dp(8))
                 }
                 cd.addView(iconBox(kind, c1, c2, dashed, ic), android.widget.LinearLayout.LayoutParams(dp(ic), dp(ic)))
                 val tv = TextView(act).apply {
-                    text = label; textSize = fs; setTextColor(if (dashed) 0xFF8FA0BC.toInt() else Color.WHITE); gravity = Gravity.CENTER
+                    text = label; textSize = fs; setTextColor(if (dashed) th.muted else th.text)   // (v1316); gravity = Gravity.CENTER
                     typeface = android.graphics.Typeface.DEFAULT_BOLD; includeFontPadding = false; maxLines = if (ic < 40) 2 else 1
                     layoutDirection = View.LAYOUT_DIRECTION_RTL
                 }
@@ -342,9 +343,9 @@ object ControllerPad {
 
             // ── (v680) شريط الحالة اتشال من فوق — كبسولة عايمة بتظهر مع الصوت/البحث الصوتي وبتختفي لوحدها ──
             val st = TextView(act).apply {
-                textSize = 13f; setTextColor(0xFFB0BEC5.toInt()); gravity = Gravity.CENTER; visibility = View.GONE
+                textSize = 13f; setTextColor(th.muted); gravity = Gravity.CENTER; visibility = View.GONE   // (v1316)
                 setPadding(dp(14), dp(6), dp(14), dp(6))
-                background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(16f)); setColor(MtGlass.pf(0xE61E2F4D.toInt())) }
+                background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(16f)); setColor(MtGlass.pf(th.card)) }   // (v1316)
             }
             stRef = st
 
@@ -365,7 +366,7 @@ object ControllerPad {
             // ── التبديل: أزرار الاتجاهات | لوحة اللمس ──
             val sw = android.widget.LinearLayout(act).apply {
                 orientation = android.widget.LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(dp(4), dp(4), dp(4), dp(4))
-                background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(20f)); setColor(MtGlass.pf(0xFF1E2F4D.toInt())); setStroke(dp(1), MtGlass.ps(0xFF34507A.toInt())) }
+                background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(20f)); setColor(MtGlass.pf(th.card)); setStroke(dp(1), MtGlass.ps(th.border)) }   // (v1316)
             }
             fun tab(txt: String) = TextView(act).apply {
                 text = txt; textSize = 13.5f; gravity = Gravity.CENTER; typeface = android.graphics.Typeface.DEFAULT_BOLD; maxLines = 1
@@ -379,26 +380,26 @@ object ControllerPad {
             val padBox = FrameLayout(act)
             padBox.clipChildren = false
             val dpad = FrameLayout(act).apply {
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(MtGlass.pf(0xFF0F3441.toInt())); setStroke(dp(2), MtGlass.ps(0xFF2CC4D2.toInt())) }
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(MtGlass.pf(th.surface)); setStroke(dp(2), MtGlass.ps(th.primary)) }   // (v1316)
             }
             fun dBtn(kind: String, tx: Int, ty: Int) {
                 val b = FrameLayout(act).apply {
                     contentDescription = kind
-                    background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(26f)); setColor(MtGlass.pf(0xFF0B2338.toInt())); setStroke(dp(1), MtGlass.ps(0xFF2F6A8C.toInt())) }
-                    translationX = dpf(tx.toFloat()); translationY = dpf(ty.toFloat())
+                    background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(26f)); setColor(MtGlass.pf(th.card)); setStroke(dp(1), MtGlass.ps(th.border)) }   // (v1316)
+                    translationX = dpf(tx.toFloat()); translationY = dpf(ty.toFloat()); elevation = dpf(5f)   // (v1316) زرار مرفوع
                 }
-                b.addView(PadIcon(act, kind, 0xFF8EEBFF.toInt()), FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER))
+                b.addView(PadIcon(act, kind, th.primary), FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER))   // (v1316)
                 bind(b, true) { sendKey(kind) }
                 dpad.addView(b, FrameLayout.LayoutParams(dp(69), dp(69), Gravity.CENTER))
             }
             dBtn("up", 0, -76); dBtn("down", 0, 76); dBtn("left", -76, 0); dBtn("right", 76, 0)
             val okB = android.widget.LinearLayout(act).apply {
                 orientation = android.widget.LinearLayout.VERTICAL; gravity = Gravity.CENTER; contentDescription = "موافق"; elevation = dpf(6f)
-                background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(26f)); setColor(MtGlass.pf(0xFF0C2A44.toInt())); setStroke(dp(1), MtGlass.ps(0xFF3B82F6.toInt())) }
+                background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(26f)); setColor(MtGlass.pf(th.primary)); setStroke(dp(1), MtGlass.ps(th.primary)) }   // (v1316)
             }
             okB.contentDescription = "موافق"
-            okB.addView(PadIcon(act, "check", 0xFF8EEBFF.toInt()), android.widget.LinearLayout.LayoutParams(dp(26), dp(26)))
-            okB.addView(TextView(act).apply { text = "موافق"; textSize = 20f; setTextColor(Color.WHITE); typeface = android.graphics.Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; includeFontPadding = false },
+            okB.addView(PadIcon(act, "check", th.onPrimary), android.widget.LinearLayout.LayoutParams(dp(26), dp(26)))   // (v1316)
+            okB.addView(TextView(act).apply { text = "موافق"; textSize = 20f; setTextColor(th.onPrimary); typeface = android.graphics.Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; includeFontPadding = false }   // (v1316),
                 android.widget.LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(2) })
             bind(okB, false) { sendKey("ok") }
             // (v807) دوسة = موافق · ضغطة طويلة = ضغطة طويلة على OK في التلفزيون نفسه (مش ميكروفون)
@@ -414,8 +415,8 @@ object ControllerPad {
                 dpad.visibility = if (dpadMode) View.VISIBLE else View.GONE
                 joy.visibility = if (dpadMode) View.GONE else View.VISIBLE
                 fun style(t: TextView, on: Boolean) {
-                    t.setTextColor(if (on) Color.WHITE else 0xFFB8C4DA.toInt())
-                    t.background = if (on) GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(15f)); setColor(MtGlass.pf(0xFF2563EB.toInt())) } else null
+                    t.setTextColor(if (on) th.onPrimary else th.muted)   // (v1316)
+                    t.background = if (on) GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(15f)); setColor(MtGlass.pf(th.primary)) } else null   // (v1316)
                 }
                 style(tabDpad, dpadMode); style(tabTouch, !dpadMode)
             }
@@ -439,7 +440,7 @@ object ControllerPad {
 
             // ── (v797) الدايرة في نص الشاشة + 4 أزرار في الأركان + صوت متماثل (شمال أزرار · يمين سلايدر) ──
             fun miniBtn(kind: String, c1: Int, c2: Int, desc: String, repeat: Boolean, fire: () -> Unit): View {
-                val bx = FrameLayout(act).apply { background = cardBg(false); contentDescription = desc }
+                val bx = FrameLayout(act).apply { background = cardBg(false); contentDescription = desc; elevation = dpf(5f) }   // (v1316) زرار مرفوع
                 bx.addView(iconBox(kind, c1, c2, false, 32), FrameLayout.LayoutParams(dp(32), dp(32), Gravity.CENTER))
                 bind(bx, repeat, fire)
                 return bx
@@ -490,12 +491,27 @@ object ControllerPad {
                 // ⛶ (تكبير الشاشة) آخر زرار في صف الترجمة: بعرض عمود الصوت بالظبط عشان السلايدر يكمّل تحته على نفس الخط
                 (P.tr as? android.view.ViewGroup)?.let { g -> if (g.childCount > 0) g.getChildAt(g.childCount - 1).layoutParams = android.widget.LinearLayout.LayoutParams(stripW, dp(46)).apply { marginStart = dp(6) } }
 
+                if (onNav != null) {   // (v1316) شريط أدوات البرنامج مرفوع فوق الريموت: نفس أزرار الشريط السفلي بنفس الثيم (دوسة تقفل الريموت وتفتح القسم)
+                    val barRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER
+                        background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(18f)); setColor(MtGlass.pf(th.card)); setStroke(dp(1), MtGlass.ps(th.border)) }
+                        elevation = dpf(4f) }
+                    val ids = (try { NavCustom.barIds() } catch (_: Throwable) { null } ?: BottomNav.BAR_ORDER).filter { it != BottomNav.REMOTE && it != BottomNav.MORE && it >= 0 && it < BottomNav.DEFS.size && BottomNav.DEFS[it].first.isNotEmpty() }
+                    ids.forEachIndexed { i, id ->
+                        val (em, lab) = BottomNav.DEFS[id]
+                        val cell = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+                            addView(TextView(act).apply { text = em; textSize = 15f; gravity = Gravity.CENTER })
+                            addView(TextView(act).apply { text = lab; textSize = 9f; setTextColor(th.muted); gravity = Gravity.CENTER; maxLines = 1; includeFontPadding = false }) }
+                        cell.setOnClickListener { v -> Haptic.tap(v); try { d.dismiss() } catch (_: Throwable) {}; onNav.invoke(id) }
+                        barRow.addView(cell, LinearLayout.LayoutParams(0, -1, 1f))
+                    }
+                    col.addView(barRow, LinearLayout.LayoutParams(-1, dp(52)).apply { bottomMargin = dp(6) })
+                }
                 col.addView(P.netTop, android.widget.LinearLayout.LayoutParams(-1, dp(16)).apply { bottomMargin = dp(2) })   // (v810) عدّاد النت: سطر صغير لوحده فوق كل حاجة
                 // (v821) ريموت واحد موحّد: صف حالة حي (Wi-Fi فعّال / IR فعّال / جاري الاتصال / الجهاز غير متاح / IR غير مدعوم) + ⏻ + ☰ قايمة + رئيسية التلفزيون.
                 // كل زرار = أمر منطقي واحد عبر RemoteRouter (واي فاي أساسي ← IR احتياطي تلقائي). دوسة على الحالة = تبديل الجهاز الهدف (تلفزيون/ريسيفر)؛ ضغطة طويلة = كتالوج ريموتات IR؛ المزيد في 📡 بالشريط السفلي.
                 run {
                     RemoteRouter.init(act)
-                    val statusT = TextView(act).apply { textSize = 11.5f; gravity = Gravity.CENTER_VERTICAL; setSingleLine(); setTextColor(0xFFB8C4DA.toInt()); setPadding(dp(10), 0, dp(10), 0) }
+                    val statusT = TextView(act).apply { textSize = 11.5f; gravity = Gravity.CENTER_VERTICAL; setSingleLine(); setTextColor(th.muted); setPadding(dp(10), 0, dp(10), 0) }   // (v1316)
                     fun paintSt() {
                         val s = RemoteRouter.status(act)
                         val dot = when (s) { IrStatus.WIFI_ACTIVE -> 0xFF66BB6A; IrStatus.IR_ACTIVE -> 0xFF42A5F5; IrStatus.CONNECTING -> 0xFFFFCA28; else -> 0xFFEF5350 }.toInt()
@@ -506,7 +522,7 @@ object ControllerPad {
                     }
                     val chip = android.widget.LinearLayout(act).apply {
                         orientation = android.widget.LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
-                        background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(18f)); setColor(MtGlass.pf(0xFF1E2F4D.toInt())); setStroke(dp(1), MtGlass.ps(0xFF34507A.toInt())) }
+                        background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(18f)); setColor(MtGlass.pf(th.card)); setStroke(dp(1), MtGlass.ps(th.border)) }   // (v1316)
                         contentDescription = "حالة الاتصال"
                     }
                     chip.addView(statusT, android.widget.LinearLayout.LayoutParams(0, -1, 1f))
@@ -524,7 +540,7 @@ object ControllerPad {
                     }
                     val warn: (String) -> Unit = { m -> say("⚠ $m", 0xFFFFB74D.toInt()) }
                     val pwr = irBtn("⏻", 0xFFC62828.toInt(), "Power") { RemoteRouter.press(act, Cmds.POWER, warn); paintSt() }
-                    val menuB = irBtn("☰", 0xFF1E2F4D.toInt(), "Menu") { RemoteRouter.press(act, Cmds.MENU, warn) }
+                    val menuB = irBtn("☰", th.card, "Menu") { RemoteRouter.press(act, Cmds.MENU, warn) }   // (v1316)
                     val sl: () -> Unit = { paintSt() }
                     // (v855) الواي فاي ما ردّش 3 مرات ورا بعض ومفيش ريموت IR محفوظ ← نقترح نظبط ريموت بالتجربة (من غير أكواد)
                     val needIr: () -> Unit = {
@@ -565,7 +581,7 @@ object ControllerPad {
                 // (v800) التزامن/الذكاء/الأدوات: الدوسة بتفتح صفحة منبثقة صغيرة فيها أدوات التاب — مفيش مساحة فاضية تحت التابات
                 run {
                     val sheetBox = FrameLayout(act).apply {
-                        background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadii = floatArrayOf(dpf(24f), dpf(24f), dpf(24f), dpf(24f), 0f, 0f, 0f, 0f); setColor(MtGlass.pf(0xFF0F1830.toInt())); setStroke(dp(1), MtGlass.ps(0xFF2B3C60.toInt())) }
+                        background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadii = floatArrayOf(dpf(24f), dpf(24f), dpf(24f), dpf(24f), 0f, 0f, 0f, 0f); setColor(MtGlass.pf(th.card)); setStroke(dp(1), MtGlass.ps(th.border)) }   // (v1316)
                         setPadding(dp(12), dp(14), dp(12), dp(12))
                     }
                     var sheet: Dialog? = null
@@ -667,8 +683,8 @@ object ControllerPad {
 /** (v672) سلايدر صوت أفقي رفيع — (v678) معكوس: اسحب شمال يعلّي ويمين يوطّي. onChange(0..100) متخفّفة أثناء السحب وعند الرفع */
 class VolumeBar(ctx: Context, private val onChange: (Int) -> Unit) : View(ctx) {
     private val den = resources.displayMetrics.density
-    private val pBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0xFF14203A.toInt() }
-    private val pStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = den; color = 0xFF2B3C60.toInt() }
+    private val pBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = Themes.current().card }   // (v1316)
+    private val pStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = den; color = Themes.current().border }   // (v1316)
     private val pTrack = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0x33FFFFFF }
     private val pFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0xFF2F80FF.toInt() }
     private val pKnob = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = Color.WHITE }
@@ -755,20 +771,21 @@ object RecentPicker {
             fun dp(v: Int) = (v * dm.density).toInt()
             fun dpf(v: Float) = v * dm.density
             val d = Dialog(act, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+            val th = Themes.current()   // (v1316)
             val root = LinearLayout(act).apply {
                 orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR
-                setBackgroundColor(0xFF0F1830.toInt()); setPadding(dp(12), dp(34), dp(12), dp(12))
+                setBackgroundColor(th.bg); setPadding(dp(12), dp(34), dp(12), dp(12))   // (v1316)
             }
             // ── الراس: العنوان + ✕ ──
             val head = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             val close = TextView(act).apply {
-                text = "✕"; textSize = 20f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; contentDescription = "إغلاق"
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(MtGlass.pf(0xFF1E2F4D.toInt())) }
+                text = "✕"; textSize = 20f; setTextColor(th.text); gravity = Gravity.CENTER; contentDescription = "إغلاق"   // (v1316)
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(MtGlass.pf(th.card)) }   // (v1316)
                 setOnClickListener { Haptic.tap(it); d.dismiss() }
             }
             head.addView(close, LinearLayout.LayoutParams(dp(40), dp(40)))
             head.addView(TextView(act).apply {
-                text = "🕘 آخر المشغّل"; textSize = 19f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+                text = "🕘 آخر المشغّل"; textSize = 19f; setTextColor(th.text); gravity = Gravity.CENTER   // (v1316)
                 typeface = android.graphics.Typeface.DEFAULT_BOLD; layoutDirection = View.LAYOUT_DIRECTION_RTL
             }, LinearLayout.LayoutParams(0, -2, 1f))
             head.addView(View(act), LinearLayout.LayoutParams(dp(40), dp(40)))   // توازن مع ✕
@@ -779,7 +796,7 @@ object RecentPicker {
             fun column(title: String, color: Int): Triple<LinearLayout, LinearLayout, TextView> {
                 val box = LinearLayout(act).apply {
                     orientation = LinearLayout.VERTICAL
-                    background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(18f)); setColor(MtGlass.pf(0xFF14203A.toInt())); setStroke(dp(1), MtGlass.ps(0xFF2B3C60.toInt())) }
+                    background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(18f)); setColor(MtGlass.pf(th.card)); setStroke(dp(1), MtGlass.ps(th.border)) }   // (v1316)
                     setPadding(dp(6), dp(8), dp(6), dp(6))
                 }
                 box.addView(TextView(act).apply {
@@ -794,7 +811,7 @@ object RecentPicker {
                 box.addView(sv, LinearLayout.LayoutParams(-1, 0, 1f))
                 return Triple(box, list, status)
             }
-            val (tvBox, tvList, tvStatus) = column("📺 على التلفزيون", 0xFF2563EB.toInt())
+            val (tvBox, tvList, tvStatus) = column("📺 على التلفزيون", th.primary)   // (v1316)
             val (phBox, phList, phStatus) = column("📱 على موبايلي", 0xFF0F766E.toInt())
             cols.addView(tvBox, LinearLayout.LayoutParams(0, -1, 1f).apply { rightMargin = dp(5) })
             cols.addView(phBox, LinearLayout.LayoutParams(0, -1, 1f).apply { leftMargin = dp(5) })
@@ -830,7 +847,7 @@ object RecentPicker {
             fun row(itm: Item, onTap: () -> Unit): View {
                 val r = LinearLayout(act).apply {
                     orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL
-                    background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(12f); setColor(MtGlass.pf(0xFF1B2C47.toInt())) }
+                    background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dpf(12f); setColor(MtGlass.pf(th.surface)) }   // (v1316)
                     setPadding(dp(6), dp(6), dp(8), dp(6))
                     setOnClickListener { Haptic.tap(this); try { onTap() } catch (e: Throwable) { LogStore.err("RecentPicker:tap", e) } }
                 }
@@ -845,7 +862,7 @@ object RecentPicker {
                 val ic = if (itm.yt) "▶ " else if (itm.local) "🎞 " else "🌐 "
                 tx.addView(TextView(act).apply { text = ic + itm.title; textSize = 12.5f; setTextColor(Color.WHITE); maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; typeface = android.graphics.Typeface.DEFAULT_BOLD })
                 val sub = if (itm.pos > 1.0) "وقف عند " + PlayerLogic.clock((itm.pos * 1000).toLong()) + (if (itm.dur > 1.0) " من " + PlayerLogic.clock((itm.dur * 1000).toLong()) else "") else ""
-                if (sub.isNotEmpty()) tx.addView(TextView(act).apply { text = sub; textSize = 10.5f; setTextColor(0xFF8FA0BC.toInt()) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(2) })
+                if (sub.isNotEmpty()) tx.addView(TextView(act).apply { text = sub; textSize = 10.5f; setTextColor(th.muted) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(2) })   // (v1316)
                 r.addView(tx, LinearLayout.LayoutParams(0, -2, 1f))
                 val lp = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(6) }
                 r.layoutParams = lp

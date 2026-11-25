@@ -100,7 +100,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         if (!tvDev) trl.add(MoreItem("📚", "مكتبة الترجمات", false) { try { TrLibUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:trlib", e) } })
         if (!tvDev) trl.add(MoreItem("🗂", "سجل اللوجات", false) { try { LogArchiveUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:logarc", e) } })
         val ctl = ArrayList<MoreItem>()
-        if (!tvDev && !lite) ctl.add(MoreItem("📱", "الريموت", false) { try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } })
+        if (!tvDev && !lite) ctl.add(MoreItem("📱", "الريموت", false) { try { ControllerPad.show(act, null) { navId -> set(navId); collapseMore(); onPick(navId) } } catch (e: Throwable) { LogStore.err("Nav:remote", e) } })
         if (!tvDev) ctl.add(MoreItem("📡", "ريموت IR", false) { try { IrCatalogUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:ir", e) } })
         if (!tvDev) ctl.add(MoreItem("📺", "وضع TV", PlayTarget.enabled(), {
             val labels = arrayOf(TvModeFab.alwaysLabel())
@@ -292,7 +292,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
                             else { try { labels[idx].text = NavCustom.pinLabel(pk) } catch (_: Throwable) {} }; try { Notice.show(act, (if (n == true) "✅ شغّال: " else "⛔ مقفول: ") + AdvRows.labelOf(pk), 1800L) } catch (_: Throwable) {}
                         }
                     }
-                } else if (idx == MORE) { set(idx); toggleMore(act) } else if (idx == REMOTE) { set(idx); try { ControllerPad.show(act) } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else if (idx == CARE) { set(idx); collapseMore(); try { CareUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:care", e) } } else if (idx == IR) { set(idx); collapseMore(); try { IrCatalogUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:ir", e) } } else if (idx == NET) { collapseMore(); try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } } else { collapseMore(); val leaves = act !is MainActivity || idx == 2 || idx == 3 || idx == 4   // (v911) كل اللي بيفتح شاشة تانية (متصفح/مخزن/يوتيوب)؛ التبويبات الداخلية في Main عندها أنيميشنها
+                } else if (idx == MORE) { set(idx); toggleMore(act) } else if (idx == REMOTE) { set(idx); try { ControllerPad.show(act, null) { navId -> set(navId); collapseMore(); onPick(navId) } } catch (e: Throwable) { LogStore.err("Nav:remote", e) } } else if (idx == CARE) { set(idx); collapseMore(); try { CareUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:care", e) } } else if (idx == IR) { set(idx); collapseMore(); try { IrCatalogUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:ir", e) } } else if (idx == NET) { collapseMore(); try { NetStatsUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:net", e) } } else { collapseMore(); val leaves = act !is MainActivity || idx == 2 || idx == 3 || idx == 4   // (v911) كل اللي بيفتح شاشة تانية (متصفح/مخزن/يوتيوب)؛ التبويبات الداخلية في Main عندها أنيميشنها
                     if (leaves && !rail && cellOf(idx) != cellOf(active) && !navPending) {   // (v911) الشاشات التانية Activity لوحدها: كانت بتتفتح/تتقفل لحظة الدوسة فمفيش عدسة ولا انزلاق ولا ضغطة، والفتح الثقيل كان بيتزامن مع الأنيميشن فيقطّع. دلوقتي الأنيميشن بيخلّص الأول وبعدها الانتقال
                         val prev = active; val inMain = act is MainActivity
                         navPending = true; set(idx)
