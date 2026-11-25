@@ -45,7 +45,7 @@ jobs:
           echo "app=$APP" >> "$GITHUB_OUTPUT"
           echo "plugin=$PLG" >> "$GITHUB_OUTPUT"
           echo "changed: app=$APP plugin=$PLG"
-      - name: Build Debug APKs (v1302: ABI splits + universal)
+      - name: "Build Debug APKs (v1302 - ABI splits + universal)"
         if: steps.chg.outputs.app == 'true'
         run: |
           set -o pipefail
