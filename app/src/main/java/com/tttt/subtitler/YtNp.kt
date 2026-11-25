@@ -753,6 +753,11 @@ object YtStore {
 
     private fun same(a: NpItem, b: NpItem) = if (a.kind == 1 || b.kind == 1) a.channelUrl == b.channelUrl else a.id == b.id && a.url == b.url
 
+    // (v1294) «مش مهتم»: v:<id> فيديو · c:<قناة> قناة — بتتخبّى من اقتراحات الرئيسية
+    private const val NOTINT = "ytp_notint"
+    fun notInt(): Set<String> = Cfg.str(NOTINT, "").split(',').filter { it.isNotBlank() }.toHashSet()
+    fun hide(tag: String) { val l = notInt().toMutableSet(); l.add(tag); Cfg.put(NOTINT, l.joinToString(",")) }
+
     fun contains(key: String, x: NpItem) = read(key).any { same(it, x) }
 
     fun addFront(key: String, x: NpItem, cap: Int) {
