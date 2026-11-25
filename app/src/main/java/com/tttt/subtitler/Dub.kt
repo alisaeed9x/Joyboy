@@ -33,19 +33,169 @@ import java.util.concurrent.TimeUnit
  * السرعة بتتظبط عشان الجملة تدخل في مكانها (حد أقصى +40%)، والكل بيتجمّع في ملف WAV واحد بنفس توقيت الفيديو.
  * الإعدادات: dub_voice (ar-EG-SalmaNeural | ar-EG-ShakirNeural) · dub_orig_vol (صوت الفيديو الأصلي وقت الدبلجة، 0–100، الافتراضي 12)
  */
+/**
+ * (v1285) توكن Sec-MS-GEC النسخة 2 لخدمة Edge TTS — منقول بالحرف من edge-tts 7.3.1 (drm.py) ومتأكد إنه بيطلع نفس الناتج.
+ * النسخة 1 (SHA-256 العادي) مايكروسوفت بطّلت تقبلها فالخدمة كانت بترفض كل طلب (403) والدبلجة بتفشل.
+ */
+object EdgeGec {
+    private val SH_INIT = longArrayOf(0x6A09E667L, 0xBB67AE85L, 0x3C6EF372L, 0xA54FF53AL, 0x510E527FL, 0x9B05688CL, 0x1F83D9ABL, 0x5BE0CD19L)
+    private val SH_STATE = longArrayOf(0xFD9FBEA2L, 0x91243CE7L, 0xBE499094L, 0xCD2E1E0AL, 0x6C006F49L, 0x04BD35ABL, 0xFEB0A7E4L, 0x03EFFBD2L)
+    private val SH_SCHED = longArrayOf(0xEB24BF9EL, 0x1558691FL, 0xA0C09EE2L, 0x0CFA32BAL, 0xA622EE8CL, 0xD1DD9491L, 0xC0DD25A0L, 0xF9E70AB6L, 0xF0C31573L, 0x7058CE4EL, 0x7188E606L, 0x00E5AB33L, 0xD258B060L, 0x72766564L)
+    private val SH_K = longArrayOf(0x428A2F98L, 0x71374491L, 0xB5C0FBCFL, 0xE9B5DBA5L, 0x3956C25BL, 0x59F111F1L, 0x923F82A4L, 0xAB1C5ED5L, 0xD807AA98L, 0x12835B01L, 0x243185BEL, 0x550C7DC3L, 0x72BE5D74L, 0x80DEB1FEL, 0x9BDC06A7L, 0xC19BF174L, 0xE49B69C1L, 0xEFBE4786L, 0x0FC19DC6L, 0x240CA1CCL, 0x2DE92C6FL, 0x4A7484AAL, 0x5CB0A9DCL, 0x76F988DAL, 0x983E5152L, 0xA831C66DL, 0xB00327C8L, 0xBF597FC7L, 0xC6E00BF3L, 0xD5A79147L, 0x06CA6351L, 0x14292967L, 0x27B70A85L, 0x2E1B2138L, 0x4D2C6DFCL, 0x53380D13L, 0x650A7354L, 0x766A0ABBL, 0x81C2C92EL, 0x92722C85L, 0xA2BFE8A1L, 0xA81A664BL, 0xC24B8B70L, 0xC76C51A3L, 0xD192E819L, 0xD6990624L, 0xF40E3585L, 0x106AA070L, 0x19A4C116L, 0x1E376C08L, 0x2748774CL, 0x34B0BCB5L, 0x391C0CB3L, 0x4ED8AA4AL, 0x5B9CCA4FL, 0x682E6FF3L, 0x748F82EEL, 0x78A5636FL, 0x84C87814L, 0x8CC70208L, 0x90BEFFFAL, 0xA4506CEBL, 0xBEF9A3F7L, 0xC67178F2L)
+    private val CS_COEF = longArrayOf(0xE82E91B1L, 0x44DE24C6L, 0x3BEB65BCL, 0xC89C5933L, 0x8D1EC211L, 0x314EF5D5L, 0xE92491B1L, 0xF0A5B9D5L, 0x06064CF3L, 0xDA79FA60L, 0xBED20560L, 0x89F9C9F8L, 0x35FA38C6L, 0xCB49E3C6L)
+    private val CS_OFF = longArrayOf(0xB32700D0L, 0x88DFF51DL, 0x29514038L, 0xB328CBDFL, 0xD405B4D5L, 0x26E55F3CL, 0x607801C6L, 0x82B2C1FBL, 0xFA51A3DAL, 0x207CC464L, 0x3C3C74F3L, 0xD2D14B61L, 0xBB04A2C1L, 0xC5626167L)
+    private const val SH_ADJ = 0xC9DC06A7L
+    private const val SIG0_ADJ = 0x059C0B80L
+    private const val SIG1_ADJ = 0x000B92C0L
+    private const val CS_FACTOR = 0x82893933L
+    private const val CS_ADJ0 = 0xF2F90B1AL
+    private const val CS_ADJ1 = 0x0B1A0000L
+
+    private const val M = 0xFFFFFFFFL
+    private fun rotr(x: Long, n: Int): Long = ((x ushr n) or (x shl (32 - n))) and M
+    private fun rol16(x: Long): Long { val v = x and M; return ((v shl 16) or (v ushr 16)) and M }
+    private fun sig0(v: Long): Long = ((v ushr 7) xor (v shl 25) xor (v ushr 18) xor (v shl 14) xor (v ushr 3)) and M
+    private fun sig1(v: Long): Long = ((v ushr 17) xor (v shl 15) xor (v ushr 19) xor (v shl 13) xor (v ushr 10)) and M
+
+    private fun expand(w: LongArray, from: Int) {
+        for (i in from until 64) {
+            val x = w[i - 2]; val y = w[i - 15]
+            val s1 = ((x ushr 17) xor (x shl 15) xor (x ushr 19) xor (x shl 13) xor (x ushr 10)) and M
+            val s0 = ((y ushr 7) xor (y shl 25) xor (y ushr 18) xor (y shl 14) xor (y ushr 3)) and M
+            w[i] = (s1 + w[i - 7] + s0 + w[i - 16]) and M
+        }
+    }
+
+    private fun rounds(st: LongArray, w: LongArray, first: Int): LongArray {
+        var a = st[0]; var b = st[1]; var c = st[2]; var d = st[3]; var e = st[4]; var f = st[5]; var g = st[6]; var h = st[7]
+        for (i in first until 64) {
+            val k = if (first == 14 && i == 14) SH_ADJ else SH_K[i]
+            val t1 = (h + (rotr(e, 6) xor rotr(e, 11) xor rotr(e, 25)) + (g xor (e and (f xor g))) + k + w[i]) and M
+            val t2 = ((rotr(a, 2) xor rotr(a, 13) xor rotr(a, 22)) + ((a and b) or (c and (a or b)))) and M
+            h = g; g = f; f = e; e = (d + t1) and M; d = c; c = b; b = a; a = (t1 + t2) and M
+        }
+        return longArrayOf(a, b, c, d, e, f, g, h)
+    }
+
+    private fun shaInit(d: ByteArray): LongArray {
+        val w = LongArray(64)
+        w[14] = ((d[0].toLong() and 255) shl 16) or ((d[1].toLong() and 255) shl 8) or (d[2].toLong() and 255)
+        w[15] = ((d[3].toLong() and 255) shl 24) or ((d[4].toLong() and 255) shl 16) or ((d[5].toLong() and 255) shl 8) or (d[6].toLong() and 255)
+        for (i in 16 until 30) {
+            var v = SH_SCHED[i - 16]
+            if (i - 2 >= 14) v += if (i == 16) (sig1(w[i - 2]) xor SIG1_ADJ) else sig1(w[i - 2])
+            if (i - 7 >= 14) v += w[i - 7]
+            if (i - 15 >= 14) v += if (i == 29) (sig0(w[i - 15]) xor SIG0_ADJ) else sig0(w[i - 15])
+            w[i] = v and M
+        }
+        w[30] = (sig1(w[28]) + w[23] + sig0(w[15]) + w[14] + SH_ADJ - SH_K[14]) and M
+        expand(w, 31)
+        val wk = rounds(SH_STATE, w, 14)
+        return LongArray(8) { (SH_INIT[it] + wk[it]) and M }
+    }
+
+    private fun shaDigest(data: ByteArray): ByteArray {
+        require(data.size >= 7)
+        val length = 57 + data.size
+        val padLen = Math.floorMod(55 - length, 64)
+        val tail = data.size - 7
+        val padded = ByteArray(tail + 1 + padLen + 8)
+        System.arraycopy(data, 7, padded, 0, tail)
+        padded[tail] = 0x80.toByte()
+        val bits = length.toLong() * 8
+        for (i in 0 until 8) padded[padded.size - 1 - i] = (bits ushr (8 * i)).toByte()
+        var state = shaInit(data.copyOfRange(0, 7))
+        var off = 0
+        while (off < padded.size) {
+            val w = LongArray(64)
+            for (i in 0 until 16) {
+                val p = off + i * 4
+                w[i] = ((padded[p].toLong() and 255) shl 24) or ((padded[p + 1].toLong() and 255) shl 16) or ((padded[p + 2].toLong() and 255) shl 8) or (padded[p + 3].toLong() and 255)
+            }
+            expand(w, 16)
+            val wk = rounds(state, w, 0)
+            state = LongArray(8) { (state[it] + wk[it]) and M }
+            off += 64
+        }
+        val out = ByteArray(32)
+        for (i in 0 until 8) for (j in 0 until 4) out[i * 4 + j] = (state[i] ushr (24 - 8 * j)).toByte()
+        return out
+    }
+
+    private fun le32(b: ByteArray, p: Int): Long =
+        (b[p].toLong() and 255) or ((b[p + 1].toLong() and 255) shl 8) or ((b[p + 2].toLong() and 255) shl 16) or ((b[p + 3].toLong() and 255) shl 24)
+
+    private fun cs64(data: ByteArray, digest: ByteArray): LongArray {
+        val ka = le32(digest, 0) or 1L
+        val kb = le32(digest, 4) or 1L
+        val factors = longArrayOf((ka * CS_FACTOR) and M, (kb * CS_FACTOR) and M)
+        val terms = ArrayList<Long>(); val offsets = ArrayList<Long>()
+        for (i in CS_COEF.indices) { terms.add((CS_COEF[i] * factors[i % 2]) and M); offsets.add(CS_OFF[i]) }
+        val src = ByteArray(1 + data.size); System.arraycopy(data, 0, src, 1, data.size)
+        val padN = (4 - src.size % 4) % 4
+        val padded = src.copyOf(src.size + padN)
+        val words = ArrayList<Long>()
+        for (i in 0 until padded.size / 4) words.add(le32(padded, i * 4))
+        if (words.size % 2 == 1) words.add(0L)
+        for ((idx, word) in words.withIndex()) {
+            var term = word * (if (idx % 2 == 0) ka else kb)
+            var off = rol16(word) * (if (idx % 2 == 0) 0xEF0569FBL else 0xC31713DBL)
+            if (idx == 0) { term += CS_ADJ0 * factors[0]; off += CS_ADJ1 }
+            terms.add(term and M); offsets.add(off and M)
+        }
+        var swapAcc = 0L; var swapLast = 0L; var state = 0L; var acc = 0L
+        var i = 0
+        while (i < terms.size) {
+            val x = terms[i]; val y = terms[i + 1]
+            var t = rol16((offsets[i] + x) and M)
+            var q = (t * 0x76F50F34L) and M
+            swapAcc = (swapAcc + ((rol16(q) * 0xC3EFEA97L + q) and M)) and M
+            t = rol16((offsets[i + 1] + y) and M)
+            q = (t * 0x1881CE3CL) and M
+            swapLast = (rol16(q) * 0x35BD1EC9L + q) and M
+            swapAcc = (swapAcc + swapLast) and M
+            state = (state * ka + x) and M
+            state = (rol16(state) * 0xCF98B111L) and M
+            state = (rol16(state) * 0x87085B9FL) and M
+            state = (rol16(state) * 0x12CEB96DL) and M
+            state = (rol16(state) * 0x257E1D83L) and M
+            acc = (acc + state) and M
+            t = (state * kb + y) and M
+            t = (rol16(t) * 0xA27416F5L) and M
+            t = (rol16(t) * 0xD38396FFL) and M
+            state = (rol16((rol16(t) * 0x7C932B89L) and M) * 0xBFA49F69L) and M
+            acc = (acc + state) and M
+            i += 2
+        }
+        return longArrayOf(swapLast xor state, swapAcc xor acc)
+    }
+
+    private fun hex(b: ByteArray): String { val sb = StringBuilder(); for (x in b) sb.append(String.format("%02X", x.toInt() and 255)); return sb.toString() }
+
+    /** Sec-MS-GEC v2: "<16 hex CS64>-<64 hex SHA256>" — unixSec = الوقت بالثواني (مصحّح بفرق الساعة) */
+    fun token(unixSec: Long, trustedToken: String): String {
+        var t = unixSec + 11644473600L
+        t -= t % 300
+        val s = (t * 10_000_000L).toString() + trustedToken
+        val data = s.toByteArray(Charsets.US_ASCII)
+        val dg = shaDigest(data)
+        val c = cs64(data, dg)
+        val cb = ByteArray(8)
+        for (j in 0 until 4) { cb[j] = (c[0] ushr (8 * j)).toByte(); cb[4 + j] = (c[1] ushr (8 * j)).toByte() }
+        return hex(cb) + "-" + hex(dg)
+    }
+}
+
 object EdgeTts {
     private const val TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
-    private const val VER = "130.0.2849.68"
+    private const val VER = "143.0.3650.75"
+    private const val MAJOR = "143"
+    @Volatile var lastErr: String = ""
     private const val WIN_EPOCH = 11644473600L
     @Volatile private var skewSec = 0L
     private val client: OkHttpClient by lazy { OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build() }
 
-    private fun gec(): String {
-        var t = System.currentTimeMillis() / 1000 + skewSec + WIN_EPOCH
-        t -= t % 300
-        val h = MessageDigest.getInstance("SHA-256").digest(("${t * 10_000_000L}$TOKEN").toByteArray(Charsets.US_ASCII))
-        return h.joinToString("") { String.format(Locale.US, "%02X", it) }
-    }
+    private fun gec(): String = EdgeGec.token(System.currentTimeMillis() / 1000 + skewSec, TOKEN)
 
     private fun stamp(): String {
         val f = SimpleDateFormat("EEE MMM dd yyyy HH:mm:ss", Locale.US); f.timeZone = TimeZone.getTimeZone("UTC")
@@ -68,18 +218,18 @@ object EdgeTts {
         val done = CountDownLatch(1)
         val failed = java.util.concurrent.atomic.AtomicBoolean(false)
         val url = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=$TOKEN" +
-            "&Sec-MS-GEC=${gec()}&Sec-MS-GEC-Version=1-$VER&ConnectionId=${UUID.randomUUID().toString().replace("-", "")}"
+            "&Sec-MS-GEC=${gec()}&Sec-MS-GEC-Version=2-$VER&ConnectionId=${UUID.randomUUID().toString().replace("-", "")}"
         val muid = UUID.randomUUID().toString().replace("-", "").uppercase(Locale.US)
         val req = Request.Builder().url(url)
             .header("Pragma", "no-cache").header("Cache-Control", "no-cache")
             .header("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0")
-            .header("Cookie", "muid=$muid;")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$MAJOR.0.0.0 Safari/537.36 Edg/$MAJOR.0.0.0")
+            .header("Accept-Language", "en-US,en;q=0.9").header("Cookie", "muid=$muid;")
             .build()
         val rate = (if (ratePct >= 0) "+" else "") + ratePct + "%"
         val pitch = (if (pitchHz >= 0) "+" else "") + pitchHz + "Hz"
         val vol = (if (volPct >= 0) "+" else "") + volPct + "%"
-        val ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='ar-EG'><voice name='$voice'>" +
+        val ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='$voice'>" +
             "<prosody pitch='$pitch' rate='$rate' volume='$vol'>${esc(text)}</prosody></voice></speak>"
         val ws = client.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -98,6 +248,7 @@ object EdgeTts {
                 if (head.contains("Path:audio")) out.write(b, 2 + hl, b.size - 2 - hl)
             }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                lastErr = "" + (response?.code ?: 0) + " " + (t.message ?: t.javaClass.simpleName)
                 try {   // ساعة الجهاز مختلفة عن السيرفر: بنظبط الفرق من هيدر Date ونعيد
                     val d = response?.header("Date")
                     if (d != null) { val sv = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US).parse(d); if (sv != null) skewSec = (sv.time - System.currentTimeMillis()) / 1000 }
@@ -320,7 +471,7 @@ object Dub {
             val base = s.rate
             val said = say.getOrNull(i) ?: s.text
             var clip = clipFor(tmp, said, sv, base, s.pitch, s.vol)
-            if (clip == null) { if (++fails >= 6 && i < 7) return null; continue }   // أول جمل كلها فاشلة = مفيش نت/الخدمة واقفة
+            if (clip == null) { if (fails == 0) DubLog.add("❌ Edge TTS ماردّش: " + EdgeTts.lastErr); if (++fails >= 6 && i < 7) return null; continue }   // أول جمل كلها فاشلة = مفيش نت/الخدمة واقفة
             var dur = clip.data.size.toDouble() / clip.rate
             if (dur > slot * 1.03) {
                 val pct = Math.ceil(((1.0 + base / 100.0) * (dur / slot) - 1.0) * 100.0).toInt().coerceIn(maxOf(5, base), MAX_FAST + maxOf(base, 0))
@@ -364,7 +515,7 @@ object Dub {
             val base = s.rate
             val said = say.getOrNull(i) ?: s.text
             var clip = clipFor(tmp, said, sv, base, s.pitch, s.vol)
-            if (clip == null) { fails++; if (fails >= 4 && ok == 0) return null; continue }
+            if (clip == null) { if (fails == 0) DubLog.add("❌ Edge TTS ماردّش: " + EdgeTts.lastErr); fails++; if (fails >= 4 && ok == 0) return null; continue }
             ok++
             var dur = clip.data.size.toDouble() / clip.rate
             if (dur > slot * 1.03) {
