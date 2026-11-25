@@ -55,7 +55,9 @@ android {
     testOptions { unitTests { isReturnDefaultValues = true } }   // (v589 T4) استدعاءات android.* في اختبارات JVM ترجّع قيم افتراضية بدل ما ترمي
     // (v1027) لغات المكتبات (material/appcompat/media3/…): كل واحدة جايبة ~80 لغة؛ واجهة التطبيق عربي + إنجليزي بس
     androidResources { localeFilters += listOf("ar", "en") }
-    packaging { jniLibs { useLegacyPackaging = true; if ("armeabi-v7a" !in joyAbis) excludes += "**/armeabi-v7a/**"; if ("arm64-v8a" !in joyAbis) excludes += "**/arm64-v8a/**"; excludes += listOf("**/x86/**", "**/x86_64/**") }; resources { excludes += listOf("/META-INF/{AL2.0,LGPL2.1}", "/META-INF/INDEX.LIST", "/META-INF/DEPENDENCIES", "/META-INF/*.version", "/kotlin/**", "/META-INF/*.kotlin_module", "/META-INF/**/*.kotlin_module", "/DebugProbesKt.bin", "/META-INF/maven/**", "/META-INF/proguard/**", "/META-INF/com/android/build/gradle/**") } }   // (v325) NewPipeExtractor
+    packaging { jniLibs { useLegacyPackaging = true
+        // (v1309) مكتبات yt-dlp المدمجة (libffmpeg.zip.so وأشباهها) ملفات zip مش ELF — من غير doNotStrip الـllvm-strip بيكسر البيلد
+        doNotStrip += "**/*.zip.so"; if ("armeabi-v7a" !in joyAbis) excludes += "**/armeabi-v7a/**"; if ("arm64-v8a" !in joyAbis) excludes += "**/arm64-v8a/**"; excludes += listOf("**/x86/**", "**/x86_64/**") }; resources { excludes += listOf("/META-INF/{AL2.0,LGPL2.1}", "/META-INF/INDEX.LIST", "/META-INF/DEPENDENCIES", "/META-INF/*.version", "/kotlin/**", "/META-INF/*.kotlin_module", "/META-INF/**/*.kotlin_module", "/DebugProbesKt.bin", "/META-INF/maven/**", "/META-INF/proguard/**", "/META-INF/com/android/build/gradle/**") } }   // (v325) NewPipeExtractor
 }
 dependencies {
     implementation(project(":sharedutils"))   // (v885) أنواع أب MainUIData (DataChangeBase…)

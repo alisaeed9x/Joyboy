@@ -198,6 +198,7 @@ object MusicEngine {
         if (!fromHistory && queue === q && idx in q.indices && idx != i) { history.add(idx); if (history.size > 50) history.removeAt(0) }
         if (queue !== q) history.clear()
         queue = q; idx = i; ready = false; wantPlay = true; pendingNext = -1; ytBroken = false
+        if (!stallOn) { stallOn = true; stallPos = -1; stallSince = 0L; stallResumes = 0; main.postDelayed(stallTick, 1000L) }   // (v1309)
         release()
         MusicService.start(ctx.applicationContext)
         gainFocus()
@@ -229,6 +230,38 @@ object MusicEngine {
      */
     @Volatile var ytStep: ((Int) -> Boolean)? = null
     @Volatile private var ytRetryId = Long.MIN_VALUE
+
+    // (v1309) رقيب تجمّد بث صوت يوتيوب: أحيانًا الرابط بيبعت شوية ثواني ويقف من غير خطأ (المشغّل بيفضل «شغّال» والموضع ثابت).
+    // لو الموضع ثابت 6 ثواني وإحنا المفروض بنشغّل = انقطاع بث → نجيب رابط جديد ونكمّل من نفس الثانية (ytStep(0) بيمرّر الموضع). بحد أقصى 4 مرات ورا بعض.
+    private var stallPos = -1
+    private var stallSince = 0L
+    private var stallResumes = 0
+    private var stallOn = false
+    private val stallTick = object : Runnable {
+        override fun run() {
+            try {
+                val t = current
+                if (t != null && wantPlay && ready && YtAudio.isRemote(t.uri)) {
+                    val p = posMs
+                    if (p == stallPos) {
+                        if (stallSince == 0L) stallSince = System.currentTimeMillis()
+                        else if (System.currentTimeMillis() - stallSince > 6000L) {
+                            stallSince = 0L; stallPos = -1
+                            if (stallResumes < 4) {
+                                stallResumes++
+                                if (ytStep?.invoke(0) == true) { main.postDelayed(this, 3000L); return }
+                            }
+                        }
+                    } else {
+                        // الموضع بيتحرك: البث سليم. نصفّر عدّاد الاستئنافات بعد ما نعدّي نقطة التجمّد السابقة
+                        if (stallResumes > 0 && p > stallPos + 4000) stallResumes = 0
+                        stallPos = p; stallSince = 0L
+                    }
+                } else { stallPos = -1; stallSince = 0L }
+            } catch (_: Throwable) {}
+            main.postDelayed(this, 1000L)
+        }
+    }
     private fun ytFailed(t: Track) {
         // أول فشل لنفس الفيديو: نجيب رابط جديد تلقائي. تاني فشل: نقف ونسيب الزرار ▶ يعيد المحاولة
         if (ytRetryId != t.id && ytStep?.invoke(0) == true) { ytRetryId = t.id; return }

@@ -200,6 +200,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     // (v294) زرار واحد بس جنب اسم الأغنية: «المعلومات غلط» ← يدوّر من الأول (الاسم والمغني والألبوم + الغلاف والكلمات). باقي الأزرار القديمة اتشالت.
     private val wrongInfoBtn: TextView = ui.text("⚠ المعلومات غلط", 11.5f, Color.WHITE, true).apply {
         gravity = Gravity.CENTER; setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4)); background = ui.box(0x33E5484D, 0x88E5484D.toInt(), 16)
+        visibility = View.GONE   // (v1309) بيظهر بس عند تعارض حقيقي
         setOnClickListener { editInfoDialog() }
     }
     // (v301) ✏️ جنب «المعلومات غلط»: نافذة بتختار منها إيه اللي غلط (الاسم / البوستر / الكلمات) بـ checkbox وبيتصلّح اللي اخترته
@@ -221,6 +222,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private lateinit var ytModeBtn: TextView   // (v459) زرار عريض «مشاهدة الفيديو» بدل الأيقونة الصغيرة اللي فوق بس
     var onYtPlay: ((NpItem) -> Unit)? = null     // (v340) اختيار فيديو من لوحة «التالي» = يشتغل كصوت
     var onFullClosed: (() -> Unit)? = null       // المشغّل الكامل اتقفل (رجوع/⌄/سحب) — Main بيرجّعك للصفحة اللي جيت منها
+    var onFullToggle: ((Boolean) -> Unit)? = null   // (v1309) المشغّل الكامل اتفتح/اتقفل — Main بيخفي كبسولة «فيديوهات/موسيقى» عشان متغطّيش شريط التقدّم
     var onLoadCancel: (() -> Unit)? = null       // قفلت المشغّل وإحنا لسه بنجيب الصوت
     private var ytLoading = false
     private lateinit var fullCol: LinearLayout
@@ -1161,7 +1163,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     }
     fun showFull() {
         if (MusicEngine.current == null) return
-        fullOn = true; full.visibility = View.VISIBLE; onNavTint(navCol(bgColor))
+        fullOn = true; full.visibility = View.VISIBLE; onNavTint(navCol(bgColor)); onFullToggle?.invoke(true)   // (v1309)
         if (!canEq() && Cfg.str("eq_asked", "") != "1") {
             Cfg.put("eq_asked", "1"); quiet("📊 المؤثر الموسيقي محتاج إذن «تسجيل الصوت» (للتحليل بس، مفيش تسجيل)", 3200L); askEq()
         }
@@ -1174,7 +1176,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         ytLoading = true
         ytLoadTitle.text = title; LoadUi.set(ytLoadSub, channel.ifBlank { "يوتيوب" } + " · ⏳ بجيب الصوت…")
         fullCol.visibility = View.INVISIBLE; ytLoadV.visibility = View.VISIBLE; ytSpin.start()
-        fullOn = true; full.visibility = View.VISIBLE; onNavTint(navCol(bgColor))
+        fullOn = true; full.visibility = View.VISIBLE; onNavTint(navCol(bgColor)); onFullToggle?.invoke(true)   // (v1309)
     }
     fun endYtLoading() {
         if (!ytLoading) return
@@ -1185,17 +1187,50 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun hideFull() {
         val wasLoading = ytLoading
         if (wasLoading) endYtLoading()
-        autoOpenFor = ""; snapLyrReset(); topHide(); eq.release(); fullOn = false; full.visibility = View.GONE; onNavTint(null)
+        autoOpenFor = ""; snapLyrReset(); topHide(); eq.release(); fullOn = false; full.visibility = View.GONE; onNavTint(null); onFullToggle?.invoke(false)   // (v1309)
         if (wasLoading) onLoadCancel?.invoke()
         onFullClosed?.invoke()
     }
     /** الاسم المعروض: الاسم اللي اتحفظ من التعرف لو موجود، وإلا بيانات الملف */
+    // (v1309) تنضيف تاجات ملفات التحميل: «- Vocal» وأشباهها + جملة/سطر كلمات متحطوط في خانة المغني
+    private fun cleanTagTitle(raw: String, uri: String): String {
+        var s = raw.trim()
+        s = s.replace(Regex("(?i)\s*[-–—_]\s*(vocal|vocals|karaoke|instrumental|audio|official)\s*$"), "").trim()
+        s = s.replace(Regex("(?i)^(vocal|vocals|karaoke|instrumental)\s*[-–—_]\s*"), "").trim()
+        if (s.length < 2 || s.all { it == '-' || it == '–' || it == '—' || it == '_' || it == ' ' }) {
+            val fn = try { Uri.parse(uri).lastPathSegment ?: "" } catch (_: Throwable) { "" }
+            s = fn.substringAfterLast('/').substringBeforeLast('.').trim()
+        }
+        return s
+    }
+    private fun cleanTagArtist(raw: String): String {
+        val s = raw.trim()
+        if (s.isEmpty()) return ""
+        if (s.length > 40) return ""   // جملة طويلة (سطر كلمات مثلًا) مش اسم مغني
+        if (s.contains('،') || s.contains('…') || s.count { it == ' ' } > 5) return ""
+        return s
+    }
+
+    /** (v1309) بادج «المعلومات غلط» بيظهر بس لما يكون فيه تعارض حقيقي: اسم متعرّف عليه مختلف فعلًا عن تاج الملف. مفيش تاج أو مفيش تعارض = مفيش بادج */
+    private fun hasRealConflict(t: Track): Boolean {
+        val ided = SongId.override(t.id) ?: FastId.partial[t.id] ?: return false
+        val tagT = cleanTagTitle(t.title, t.uri)
+        val tagA = cleanTagArtist(if (SongId.looksLikeSite(t.artist)) "" else t.artist)
+        fun diff(a: String, b: String): Boolean {
+            if (a.isBlank() || b.isBlank()) return false
+            val x = a.lowercase().replace(Regex("\s+"), " ").trim()
+            val y = b.lowercase().replace(Regex("\s+"), " ").trim()
+            return x != y && !x.contains(y) && !y.contains(x)
+        }
+        return diff(tagT, ided.first) || diff(tagA, ided.second)
+    }
+
     private fun nameOf(t: Track): Pair<String, String> {
         val o = SongId.override(t.id)
         // (v298) اسم الموقع في التاج (Albumaty.Com…) مش اسم مغني — لو مفيش مغني متعرّف عليه نسيب الخانة فاضية بدل ما نعرض الموقع
-        val tagArtist = if (SongId.looksLikeSite(t.artist)) "" else t.artist
+        val tagArtist = cleanTagArtist(if (SongId.looksLikeSite(t.artist)) "" else t.artist)   // (v1309) + تنضيف الجمل
         val pt = FastId.partial[t.id]   // (v314) اللي اتعرف لحد دلوقتي أثناء التعرّف السريع (المغني أول ما يوصل)
-        return (o?.first?.ifBlank { null } ?: pt?.first?.ifBlank { null } ?: t.title) to (o?.second?.ifBlank { null } ?: pt?.second?.ifBlank { null } ?: tagArtist)
+        return (o?.first?.ifBlank { null } ?: pt?.first?.ifBlank { null } ?: cleanTagTitle(t.title, t.uri)) to (o?.second?.ifBlank { null } ?: pt?.second?.ifBlank { null } ?: tagArtist)
     }
 
     // ===== الأغلفة =====
@@ -1314,6 +1349,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         nowTitle.text = nm?.first ?: ""; nowSub.text = nm?.second ?: ""
         fTitle.text = nm?.first ?: "مفيش حاجة شغّالة"; fArtist.text = nm?.second ?: ""
         orb.initial = (nm?.first ?: "♪").trim().take(1).ifEmpty { "♪" }
+        wrongInfoBtn.visibility = if (t != null && hasRealConflict(t)) View.VISIBLE else View.GONE   // (v1309)
         if (::ytDlBtn.isInitialized) ytDlBtn.visibility = if (YtAudio.itemOf(t) != null) View.VISIBLE else View.GONE
         if (::ytVidBtn.isInitialized) ytVidBtn.visibility = if (YtAudio.itemOf(t) != null) View.VISIBLE else View.GONE
         if (::ytModeBtn.isInitialized) ytModeBtn.visibility = if (YtAudio.itemOf(t) != null) View.VISIBLE else View.GONE   // (v459)

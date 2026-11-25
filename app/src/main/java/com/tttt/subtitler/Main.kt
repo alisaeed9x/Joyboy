@@ -97,6 +97,7 @@ class MainActivity : Activity() {
     private var tasksUiRef: TasksUi? = null
     private var showTabFn: (Int) -> Unit = {}
     private var mediaSw: MediaSwitch? = null   // (v654) زرارين فيديوهات/موسيقى فوق «ميديا»
+    private var fullPlayerOpen = false   // (v1309) مشغّل الموسيقى الكامل مفتوح: كبسولة «فيديوهات/موسيقى» بتتخفي عشان متغطّيش شريط التقدّم
     private var musicOpenFn: (() -> Unit)? = null   // (v337) يفتح صفحة الموسيقى ومشغّلها الكامل (لتشغيل صوت يوتيوب)
     private var tasksDlgRefresh: (() -> Unit)? = null
     /** (v324) صفحة المهام طلعت من الشريط السفلي (مكانها بقى يوتيوب): بتتفتح من الزرار العايم (TasksFab) أو ⚙️ أو الويدجت، وبتتخبّى بالرجوع. رقمها الداخلي 5 */
@@ -943,6 +944,7 @@ class MainActivity : Activity() {
             musicUi?.let { return it }
             val music = MusicUi(this, ui, th); musicUi = music; music.root.visibility = View.INVISIBLE
             music.onNavTint = { c -> setNavTint(c) }
+            music.onFullToggle = { open -> fullPlayerOpen = open; syncNav() }   // (v1309)
             music.onYtDownload = { n -> ytDownload(n, true) }
             music.onArt = { dockUi?.refresh() }
             music.lib.onYtPick = { n -> playYtAudio(n.id, n.title, n.channel, n.thumb) }   // (v344) بحث الموسيقى: اقتراح يوتيوب = صوت
@@ -1790,7 +1792,7 @@ class MainActivity : Activity() {
     /** (v341) d=1: التالي (قايمة التشغيل أو المقترحات) · d=0: نفس الفيديو برابط جديد. الأغنية الحالية بتفضل شغّالة لحد ما الجديدة تجهز */
     private fun ytAudioStep(d: Int): Boolean {
         val cur = YtAudio.itemOf(MusicEngine.current) ?: return false
-        if (d == 0) { playYtAudio(cur.id, cur.title, cur.channel, cur.thumb, true); return true }
+        if (d == 0) { playYtAudio(cur.id, cur.title, cur.channel, cur.thumb, true, MusicEngine.posMs); return true }   // (v1309) إعادة الجلب بتكمّل من نفس الثانية مش من الأول
         if (d < 0) return false
         if (ytStepBusy) return true
         ytStepBusy = true
@@ -1952,7 +1954,7 @@ class MainActivity : Activity() {
         val n = navUi ?: return
         val liteApp = packageName.endsWith(".lite")
         n.mode(curTab == 4)
-        mediaSw?.show(if (!liteApp && !fromPlayer && !tvShellOn && (curTab == 0 || curTab == 1)) curTab else -1)   // (v654)
+        mediaSw?.show(if (!fullPlayerOpen && !liteApp && !fromPlayer && !tvShellOn && (curTab == 0 || curTab == 1)) curTab else -1)   // (v654) + (v1309) مخفية والمشغّل الكامل مفتوح
         n.set(if (curTab == 4) BottomNav.YT_HOME + (ytUi?.currentTab ?: 0).coerceIn(0, 2) else if (liteApp && curTab == 7) BottomNav.YT_ME else curTab)   // (v1103 Y2)
     }
     fun openSettingsRoot() { try { settingsShow?.invoke(null) } catch (_: Throwable) {} }
