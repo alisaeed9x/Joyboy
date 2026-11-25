@@ -3053,28 +3053,6 @@ class BrowserActivity : Activity() {
         val gs = groupsOf(vis())
         statusTv?.let { LoadUi.set(it, if (gs.isEmpty()) "⏳ بدوّر على فيديوهات… شغّل الفيديو في الصفحة لو ما ظهرش" else "اختار الفيديو اللي عايزه (${gs.size})") }
         if (repairId == null) for (g in gs) for (q in g.qs) if (q.h <= 0 && q.audio == null && !q.f.kind.startsWith("YT")) probeHeight(q.f)   // (v533)
-        // (v1288) yt-dlp على صفحة التبويب الحالي (أي موقع بيدعمه yt-dlp)
-        try {
-            val pu = tabs.getOrNull(curIdx)?.let { it.wv?.url ?: it.url } ?: ""
-            if (pu.startsWith("http")) box.addView(TextView(this).apply {
-                text = "⬇ yt-dlp: نزّل الصفحة دي"; textSize = 15f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
-                background = ui.box(0xFF1E6FD9.toInt(), 0x66FFFFFF, 14); setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12))
-                layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(4), 0, ui.dp(6)) }
-                setOnClickListener { YtDlp.ask(this@BrowserActivity, pu) }   // (v1292) اختيار الجودة/mp3
-            })
-        } catch (_: Throwable) {}
-        // (v1291) اللينك المنسوخ ← yt-dlp على طول: اعمل كوبي لأي لينك فيديو وافتح القايمة دي وهتلاقي الزرار ← yt-dlp على طول: اعمل كوبي لأي لينك فيديو وافتح القايمة دي وهتلاقي الزرار
-        try {
-            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-            val clip = try { cm?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()?.trim() ?: "" } catch (_: Throwable) { "" }
-            val cu = Regex("https?://\\S+").find(clip)?.value ?: ""
-            if (cu.isNotEmpty()) box.addView(TextView(this).apply {
-                text = "📋 yt-dlp: نزّل اللينك المنسوخ"; textSize = 15f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
-                background = ui.box(0xFF1E6FD9.toInt(), 0x66FFFFFF, 14); setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12))
-                layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(4), 0, ui.dp(6)) }
-                setOnClickListener { YtDlp.ask(this@BrowserActivity, cu) }   // (v1292) اختيار الجودة/mp3
-            })
-        } catch (_: Throwable) {}
         for (g in gs) box.addView(groupCard(g))
     }
     // (v533) الجودة الحقيقية للينكات اللي مفيهاش رقم جودة: HLS ← أعلى RESOLUTION في الماستر · ملف عادي ← MediaMetadataRetriever (بالهيدرز). بيتحفظ والقايمة بتتحدّث

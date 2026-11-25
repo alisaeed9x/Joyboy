@@ -333,5 +333,4 @@ com/tttt/subtitler/LangPicker.kt
 com/tttt/subtitler/Changelog.kt
 com/tttt/subtitler/NavCustom.kt
 com/tttt/subtitler/BrSet.kt
-com/tttt/subtitler/YtDlp.kt
 com/tttt/subtitler/KeyStatus.kt

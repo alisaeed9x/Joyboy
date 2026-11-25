@@ -743,7 +743,7 @@ class YtPlayerKit(private val act: Activity, private val ui: Ui) : FrameLayout(a
         m.show()
     }
 
-    // (v1304) اقتصاص مقطع: تحميل جزء من الفيديو بـyt-dlp (من/إلى) أو نسخ لينك يبدأ من وقت معيّن
+    // (v1304) اقتصاص مقطع: نسخ لينك يبدأ من وقت معيّن · (v1323) زرار «تحميل المقطع» اتشال مع yt-dlp (مفيش ffmpeg يقص سيرفر-سايد)
     private fun clipDialog() {
         val vid = idOf?.invoke() ?: ""
         if (vid.isEmpty()) return
@@ -755,11 +755,6 @@ class YtPlayerKit(private val act: Activity, private val ui: Ui) : FrameLayout(a
         val from = ui.input("من (د:ث)", fmt(posS))
         val to = ui.input("إلى (د:ث)", fmt(defEnd))
         val btns = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-        btns.addView(ui.button("✂ تحميل المقطع", true) {
-            val a = parse(from.text.toString(), posS); val b = parse(to.text.toString(), defEnd)
-            if (b <= a) { Notice.show(act, "وقت النهاية لازم يبقى بعد البداية", 2500L); return@button }
-            try { YtDlp.start(act, "https://www.youtube.com/watch?v=" + vid, false, 0, a, b); Notice.show(act, "✂ المقطع بيتحمّل — هتلاقيه في صفحة التحميلات", 3000L) } catch (e: Throwable) { Notice.show(act, "فشل: " + (e.message ?: ""), 2500L) }
-        })
         btns.addView(ui.button("🔗 نسخ لينك يبدأ من «من»") {
             val a = parse(from.text.toString(), posS)
             try { (act.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("yt", "https://youtu.be/" + vid + "?t=" + a)); Notice.show(act, "✅ اللينك اتنسخ", 1800L) } catch (_: Throwable) {}

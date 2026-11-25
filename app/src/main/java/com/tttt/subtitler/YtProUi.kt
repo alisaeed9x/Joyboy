@@ -287,6 +287,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private val navIcons = ArrayList<YtIcon>()
     private val navLabs = ArrayList<TextView>()
     private val navBars = ArrayList<View>()   // (v472) خط التمييز تحت التبويب النشط
+    private val railLabs = ArrayList<TextView>()   // (v1323) ليبلات الريل الجانبي الشمال (الرئيسية · الاشتراكات · أنا)
+    private var ytRail: LinearLayout? = null
     private val chanRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE }
     private val chanName: TextView
     private val subBtn: TextView
@@ -617,6 +619,28 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         content.addView(watch, FrameLayout.LayoutParams(-1, -1))
         ytDock = YtDock(act, ui) { id, t, pos, pk -> val f = onPlayAt; if (f != null) f(id, t, false, pos, pk) else onPlay(id, t, false) }   // (v417)
         content.addView(ytDock, FrameLayout.LayoutParams(-1, ui.dp(58), Gravity.BOTTOM))
+
+        // (v1323) ريل جانبي شمال صغير لتبويبات يوتيوب (الرئيسية · الاشتراكات · أنا) بدل تبديل خلايا شريط البرنامج السفلي (بطلب علي) — على الشمال عشان ما يزحمش أدوات التلفزيون اللي على اليمين. التلفزيون عنده تبويباته فوق واللايت خلاياه تحت زي ما هما
+        if (!DeviceUi.isTv(act) && !act.packageName.endsWith(".lite")) {
+            val rr = LinearLayout(act).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+                background = GradientDrawable().apply { setColor(YtSkin.surface); cornerRadius = ui.dp(20).toFloat() }
+                alpha = 0.94f
+                setPadding(ui.dp(3), ui.dp(6), ui.dp(3), ui.dp(6))
+            }
+            val railNames = listOf("الرئيسية", "الاشتراكات", "أنا"); val railEmos = listOf("🏠", "📺", "👤")
+            for (i in 0..2) {
+                val cell = TextView(act).apply {
+                    text = railEmos[i] + "\n" + railNames[i]; textSize = 10.5f; gravity = Gravity.CENTER; setTextColor(YtSkin.sub); typeface = YtSkin.medium
+                    setPadding(ui.dp(6), ui.dp(7), ui.dp(6), ui.dp(7)); foreground = YtSkin.ripple(true)
+                    setOnClickListener { tapTab(i) }
+                }
+                railLabs.add(cell)
+                rr.addView(cell, LinearLayout.LayoutParams(ui.dp(54), -2).apply { setMargins(0, ui.dp(2), 0, ui.dp(2)) })
+            }
+            ytRail = rr
+            content.addView(rr, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_VERTICAL or Gravity.LEFT).apply { leftMargin = ui.dp(5) })
+        }
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         navBar = null; navLine = null   // (v472) الشريط السفلي الخاص بيوتيوب اتشال (التبويبات فوق)
         paintNav()
@@ -836,6 +860,14 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             if (on && b.visibility != View.VISIBLE) { b.visibility = View.VISIBLE; b.scaleX = 0.2f; b.animate().cancel(); b.animate().scaleX(1f).setDuration(Skins.dur(200L)).start() }
             else if (!on) { b.animate().cancel(); b.visibility = View.INVISIBLE }
         }
+        for (i in railLabs.indices) railLabs[i].setTextColor(if (i == navSel) YtSkin.accent else YtSkin.sub)   // (v1323) تفعيل التاب في الريل الجانبي
+        railSubsBadge()
+    }
+    /** (v1323) عدّاد «جديد» على زرار الاشتراكات في الريل الجانبي (موبايل) — نفس فكرة بادج التلفزيون */
+    private fun railSubsBadge() {
+        val lab = railLabs.getOrNull(1) ?: return
+        val n = if (navSel == 1) 0 else try { YtNotify.badgeCount() } catch (_: Throwable) { 0 }
+        lab.text = if (n <= 0) "📺\nالاشتراكات" else "📺\nالاشتراكات (" + (if (n > 99) "99+" else n.toString()) + ")"
     }
     // ───────── (v1291) «أنت»: زي صفحة You في يوتيوب الرسمي — كارت الحساب فوق، أرفف أفقية بالصور (السجل · أكمل · المحفوظات)، وتحتها قوايمك والتحميلات والإعدادات ─────────
     private fun yrow(title: String, sub: String, key: String) = NpItem("act", title, sub, "", "", -1L, -1L, "", 2, "yta:$key")
@@ -945,7 +977,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         }
     }
 
-    private fun setNavHidden(h: Boolean) { navBar?.visibility = if (h) View.GONE else View.VISIBLE; navLine?.visibility = if (h) View.GONE else View.VISIBLE }
+    private fun setNavHidden(h: Boolean) { navBar?.visibility = if (h) View.GONE else View.VISIBLE; navLine?.visibility = if (h) View.GONE else View.VISIBLE; ytRail?.visibility = if (h) View.GONE else View.VISIBLE }   // (v1323) الريل الجانبي بيختفي مع صفحة المشاهدة/القناة
 
     private fun watchVideo(v: NpItem, view: View?) {
         hideKb(); sugBox.visibility = View.GONE
@@ -1355,14 +1387,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     }
     /** (v472) ⬇ على أي صورة فيديو: صفحة اختيار الجودة مباشرة (من غير قايمة وسيطة) */
     private fun dlMenu(anchor: View, it: NpItem) {
-        if (it.id.length == 11) GAlert(act).setTitle("⬇ تحميل الفيديو").setItems(arrayOf("⬇ المحمّل العادي (اختار الجودة)", "⬇ yt-dlp — أعلى جودة (mp4)", "🎵 yt-dlp — صوت بس (mp3)")) { _, w ->
-            when (w) {
-                1 -> { YtDlp.start(act, YtNp.watchUrl(it.id)); Notice.show(act, "اتضاف لمركز المهام (yt-dlp)", 2200L) }
-                2 -> { YtDlp.start(act, YtNp.watchUrl(it.id), audioOnly = true); Notice.show(act, "اتضاف لمركز المهام (yt-dlp)", 2200L) }
-                else -> qualityDl(asWatch(it))
-            }
-        }.setNegativeButton("إلغاء", null).show() else qualityDl(asWatch(it))
-    }   // (v1292) yt-dlp متربط بأي فيديو: فيديو mp4 أو صوت mp3 من قايمة التحميل نفسها
+        qualityDl(asWatch(it))
+    }   // (v1323) yt-dlp اتشال من البرنامج: التحميل بقى كله من «المحمّل العادي» مباشرة (فيديو بكل الجودات + 🎧 صوت بس m4a زي ما هو من يوتيوب من غير تحويل)
     /** (v472) اختيار الجودة ← مهمة تحميل في «المهام» (دايرة التقدم العايمة + عدّاد الباقي). الروابط بتتجاب من نفس السباق السريع (YtFast) بدل NewPipe التقيل */
     // (v1113) حجم الملف بيتجاب بـ HEAD على نفس الرابط — لو فشل الحجم بيتساب من الصف من غير ما يظهر رقم غلط
     private fun headBytes(u: String, ua: String): Long {

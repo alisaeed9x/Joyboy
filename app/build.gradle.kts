@@ -82,8 +82,6 @@ dependencies {
     testImplementation("org.json:json:20240303")        // org.json الحقيقي بدل stub بتاع android.jar (اللي بيرمي "not mocked")
     implementation(project(":youtubeapi"))   // (v889) MtYt بيجيب روابط الفيديو/الصوت من MediaServiceCore بتاع MeeTube (بدل NewPipeExtractor اللي اتشال)
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")   // (v1103 Y2) رجوع يوتيوب القديم (YtNp: بحث/قنوات/قوايم/تعليقات) — نفس نسخة v887؛ jitpack.io موجود في settings
-    implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")   // (v1288) yt-dlp كمحرك تحميل
-    implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
     implementation("io.reactivex.rxjava3:rxjava:3.1.12")   // (v1103 Y1) signInObserve() (شاشة دخول الكود) — :mediaserviceinterfaces معرّفها implementation فمش بتتمرر لـ:app
     implementation("io.reactivex.rxjava3:rxandroid:3.0.2")
 }

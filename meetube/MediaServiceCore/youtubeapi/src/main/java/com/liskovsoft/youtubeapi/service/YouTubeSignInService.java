@@ -64,6 +64,15 @@ public class YouTubeSignInService implements SignInService {
                 e.printStackTrace();
             }
         });
+
+        // (v1323) Joyboy: GlobalPreferences may already be initialized when this service is first
+        // created (engine boots before anyone touches signInService). setOnInit then runs the
+        // callback on a background thread, so the first isSigned() right after a process start
+        // can return false before the restore lands and the app shows the sign-in screen even
+        // though the session is persisted. Restore the accounts synchronously here.
+        if (GlobalPreferences.isInitialized()) {
+            mAccountManager.init();
+        }
     }
 
     public static YouTubeSignInService instance() {

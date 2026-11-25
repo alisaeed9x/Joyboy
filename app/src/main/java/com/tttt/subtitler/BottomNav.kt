@@ -441,7 +441,8 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     }
     /** (v475) وانت في يوتيوب (نسخة كاملة) الشريط بيعرض الرئيسية/الاشتراكات/أنا بدل «يوتيوب»؛ اللايت ترتيبه ثابت */
     fun mode(inYoutube: Boolean) {
-        val o = if (lite) LITE_ORDER else if (inYoutube) ytOrder() else normalOrder()
+        // (v1323) موبايل/تابلت: الشريط مبقاش بيتحوّل لخلايا يوتيوب جوه يوتيوب (التبديل كان بيعمل ناتش/تداخل في كبسولة الفوكس وقت التنقل) — التبويبات بقت في ريل جانبي شمال جوه صفحة يوتيوب نفسها. التلفزيون واللايت زي ما هما
+        val o = if (lite) LITE_ORDER else if (inYoutube && !tvDev) normalOrder() else if (inYoutube) ytOrder() else normalOrder()
         if (o == order) return
         order = o; snap = true; indicator.animate().cancel(); moving = false; indicator.alpha = 0f
         fillRow(); paint(); rowLL.requestLayout()

@@ -48,7 +48,7 @@ object YtAccount {
     /** مسجّل دخول بالكود؟ (كاش 20 ثانية؛ أول مرة بتشغّل المحرك) */
     fun loggedIn(): Boolean {
         val now = System.currentTimeMillis()
-        if (now - sAt < 20_000L) return sVal
+        if (sVal && now - sAt < 20_000L) return true   // (v1323) من كاش الإيجابة بس: «لأ» المؤقتة (استرجاع الحساب بيحصل async بعد تشغيل العملية) كانت بتثبت 20 ثانية وتظهر شاشة الدخول والجلسة موجودة
         val v = try { MtYt.signedIn() } catch (_: Throwable) { false }
         sVal = v; sAt = now
         return v
