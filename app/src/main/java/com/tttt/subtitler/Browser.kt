@@ -587,7 +587,7 @@ class BrowserActivity : Activity() {
                         MotionEvent.ACTION_MOVE -> {
                             if (!drag && Math.abs(e.rawX - dx) + Math.abs(e.rawY - dy) > ui.dp(10)) {
                                 drag = true; v.parent?.requestDisallowInterceptTouchEvent(true); v.cancelLongPress(); v.isPressed = false
-                                (badgeTrash ?: DragTrash(this@BrowserActivityActivity, frame, ui).also { badgeTrash = it }).show()
+                                (badgeTrash ?: DragTrash(this@BrowserActivity, frame, ui).also { badgeTrash = it }).show()
                             }
                             if (drag) {
                                 val pw = (v.parent as? View)?.width ?: 0; val ph = (v.parent as? View)?.height ?: 0
@@ -616,7 +616,7 @@ class BrowserActivity : Activity() {
             background = ui.box(th.card, th.border, 12)
             setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8))
             addView(dlTxt, LinearLayout.LayoutParams(-1, -2))
-            addView(LinearLayout(this@BrowserActivityActivity).apply {
+            addView(LinearLayout(this@BrowserActivity).apply {
                 layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER; setPadding(0, ui.dp(6), 0, ui.dp(6))
                 addView(ui.button("⬇ تحميل", true) { val a = dlAct; hideDl(); a?.invoke() }, LinearLayout.LayoutParams(0, ui.dp(46), 1f).apply { marginEnd = ui.dp(6) })
                 addView(ui.button("✕ إلغاء") { hideDl() }, LinearLayout.LayoutParams(0, ui.dp(46), 1f))
@@ -630,10 +630,10 @@ class BrowserActivity : Activity() {
             background = ui.box(0xCCD32F2F.toInt(), 0x66FFFFFF, 22); elevation = ui.dp(4).toFloat()
             setOnClickListener {
                 val synced = CoSurf.on
-                panic(); PlayTarget.clearTvHistory(this@BrowserActivityActivity, "all"); PlayTarget.wipeWatchHistory(this@BrowserActivityActivity)   // (v558) الزرار الأحمر يمسح سجل التلفزيون · (v810) وبقى يمسح سجل المشاهدة كله (آخر المشغّلة + السجل + المصطادة حتى المخفي) على الموبايل والتلفزيون
+                panic(); PlayTarget.clearTvHistory(this@BrowserActivity, "all"); PlayTarget.wipeWatchHistory(this@BrowserActivity)   // (v558) الزرار الأحمر يمسح سجل التلفزيون · (v810) وبقى يمسح سجل المشاهدة كله (آخر المشغّلة + السجل + المصطادة حتى المخفي) على الموبايل والتلفزيون
                 if (synced) {   // (v649) المزامنة شغّالة: افصل، التلفزيون يمسح ويخرج للرئيسية، وإنت كمان تخرج من المتصفح
                     CoSurf.panic(); refreshCoBtns()
-                    if (isTaskRoot) try { startActivity(Intent(this@BrowserActivityActivity, MainActivity::class.java)) } catch (_: Throwable) {}
+                    if (isTaskRoot) try { startActivity(Intent(this@BrowserActivity, MainActivity::class.java)) } catch (_: Throwable) {}
                     finish()
                 }
             }
@@ -859,7 +859,7 @@ class BrowserActivity : Activity() {
             }
             override fun onReceivedTitle(v: WebView?, title: String?) {
                 if (title.isNullOrBlank()) return
-                t.title = title; v?.url?.let { if (!t.priv && t.hold == null) BrowserStore.setTitle(this@BrowserActivityActivity, it, title); pageTitles[it] = title }
+                t.title = title; v?.url?.let { if (!t.priv && t.hold == null) BrowserStore.setTitle(this@BrowserActivity, it, title); pageTitles[it] = title }
                 noteYt(v?.url, title)
                 if (tabsDlg?.isShowing == true) renderTabs()
             }
@@ -961,7 +961,7 @@ class BrowserActivity : Activity() {
                     t.url = if (BrowserSaver.isHomeArchive(url)) GOOGLE else url   // (v1016) النسخة الأوفلاين تتحسب جوجل
                     val ti = v.title?.takeIf { it.isNotBlank() } ?: ""
                     if (ti.isNotEmpty()) { t.title = ti; pageTitles[url] = ti }
-                    if (!t.priv && !BrowserSaver.isArchive(url) && !(t.id == panicClearId && SiteBlock.keyOf(url) == lastPurgeKey)) BrowserStore.recordVisit(this@BrowserActivityActivity, url, ti)   // (v412) صفحة جوجل بعد الطوارئ ماتتسجّلش لو هي نفسها اللي اتمسحت
+                    if (!t.priv && !BrowserSaver.isArchive(url) && !(t.id == panicClearId && SiteBlock.keyOf(url) == lastPurgeKey)) BrowserStore.recordVisit(this@BrowserActivity, url, ti)   // (v412) صفحة جوجل بعد الطوارئ ماتتسجّلش لو هي نفسها اللي اتمسحت
                     noteYt(url, ti)
                 }
                 if (t.id == panicClearId && ((url ?: "").contains("google.") || BrowserSaver.isArchive(url))) { try { v.clearHistory() } catch (_: Throwable) {}; endPanicCover(); updateNav() }   // (v231) الرجوع مايرجّعش الصفحة اللي اتمسحت
@@ -1236,7 +1236,7 @@ class BrowserActivity : Activity() {
         // (v1168) لاندسكيب: الغطا فيه سكرول عشان الأزرار ما تتقطعش
         val sv = android.widget.ScrollView(this).apply {
             isFillViewport = true; isVerticalScrollBarEnabled = false
-            addView(FrameLayout(this@BrowserActivityActivity).apply { addView(col, FrameLayout.LayoutParams(ui.dp(280), -2, Gravity.CENTER)) }, FrameLayout.LayoutParams(-1, -2))
+            addView(FrameLayout(this@BrowserActivity).apply { addView(col, FrameLayout.LayoutParams(ui.dp(280), -2, Gravity.CENTER)) }, FrameLayout.LayoutParams(-1, -2))
         }
         val v = FrameLayout(this).apply { setBackgroundColor(Color.BLACK); isClickable = true; isFocusable = true; addView(sv, FrameLayout.LayoutParams(-1, -1)) }
         privLockV = v
@@ -1303,10 +1303,10 @@ class BrowserActivity : Activity() {
                 override fun onAuthenticationError(code: Int, msg: CharSequence?) {
                     if (done) return
                     // 1 = الحساس مش متاح · 11 = مفيش بصمة متسجّلة · 12 = مفيش حساس أصلًا
-                    if (!allowCred && (code == 1 || code == 11 || code == 12)) { done = true; Notice.show(this@BrowserActivityActivity, "مفيش بصمة شغّالة — هدخّلك بقفل الجهاز", 2600L); privAuth(true, onCancel, then); return }
+                    if (!allowCred && (code == 1 || code == 11 || code == 12)) { done = true; Notice.show(this@BrowserActivity, "مفيش بصمة شغّالة — هدخّلك بقفل الجهاز", 2600L); privAuth(true, onCancel, then); return }
                     // 5 = اتلغت · 10 = المستخدم لغى · 13 = زرار الإلغاء
                     if (code == 5 || code == 10 || code == 13) { cancelOnce(); return }
-                    Notice.show(this@BrowserActivityActivity, "مقدرتش أتأكد من البصمة — جرّب تاني أو دوس «خروج»", 3200L)
+                    Notice.show(this@BrowserActivity, "مقدرتش أتأكد من البصمة — جرّب تاني أو دوس «خروج»", 3200L)
                     cancelOnce()
                 }
             })
@@ -1386,7 +1386,7 @@ class BrowserActivity : Activity() {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)); background = ui.box(th.card, th.border, 14); elevation = ui.dp(8).toFloat() }
         val sv = ScrollView(this).apply { addView(col); isVerticalScrollBarEnabled = false }
         val width = ui.dp(if (tvOn) 310 else 240)
-        val pw = TvFocus.pop(this@BrowserActivityActivity, sv, width, -2, true)
+        val pw = TvFocus.pop(this@BrowserActivity, sv, width, -2, true)
         pw.setBackgroundDrawable(ColorDrawable(0))
         if (quick.isNotEmpty()) {   // (v854) صف أيقونات الحاجات اللي بتتعمل كتير (تبويب · متخفي · مفضلة · نسخ · مشاركة · رئيسية)
             val qr = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(0, 0, 0, ui.dp(4)) }
@@ -3233,7 +3233,7 @@ class BrowserActivity : Activity() {
             setOnClickListener {
                 adOn = !adOn; try { prefs().edit().putBoolean("adblock", adOn).apply() } catch (e: Exception) { LogStore.err("Browser:ad", e) }
                 shield.text = if (adOn) "🛡 $blockedN" else "🛡✗"; shield.alpha = if (adOn) 1f else 0.5f
-                Notice.show(this@BrowserActivityActivity, if (adOn) "مانع الإعلانات شغال" else "مانع الإعلانات اتقفل", 2300L)
+                Notice.show(this@BrowserActivity, if (adOn) "مانع الإعلانات شغال" else "مانع الإعلانات اتقفل", 2300L)
                 try { wvOrNull?.reload() } catch (e: Throwable) { LogStore.err("Browser:reload", e) }
             }
         }
@@ -3280,7 +3280,7 @@ class BrowserActivity : Activity() {
             putExtra("url", openUrl); putExtra("ref", f.ref)
             try { (wvOrNull?.url ?: tabs.getOrNull(curIdx)?.url)?.takeIf { WebIdent.specific(it) }?.let { putExtra("page", it) } } catch (_: Throwable) { }   // (v750) صفحة الفيديو اللي اتصاد منها — بتتحفظ في السجل عشان تتفتح لوحدها لو اللينك بوظ
             putExtra("cookie", try { ckOf(f.url) ?: "" } catch (_: Throwable) { "" })
-            putExtra("ua", f.ua.ifEmpty { uaWeb }); putExtra("title", titleFor(f)); putExtra("nosub", noSub); putExtra("autotr", !noSub); putExtra("incognito", tabs.getOrNull(curIdx)?.let { it.priv && !it.auto } == true); putExtra("hsite", tabs.getOrNull(curIdx)?.let { SiteBlock.keyOf(it.url)?.let { k -> SiteBlock.has(this@BrowserActivityActivity, k) } } == true); putExtra("ret", "browser")
+            putExtra("ua", f.ua.ifEmpty { uaWeb }); putExtra("title", titleFor(f)); putExtra("nosub", noSub); putExtra("autotr", !noSub); putExtra("incognito", tabs.getOrNull(curIdx)?.let { it.priv && !it.auto } == true); putExtra("hsite", tabs.getOrNull(curIdx)?.let { SiteBlock.keyOf(it.url)?.let { k -> SiteBlock.has(this@BrowserActivity, k) } } == true); putExtra("ret", "browser")
         })
     }
 
