@@ -34,4 +34,9 @@ object YtStore {
         return if (l.removeAll { same(it, x) }) { write(key, l); false } else { l.add(0, x); write(key, l); true }
     }
     fun remove(key: String, x: NpItem) { val l = read(key); if (l.removeAll { same(it, x) }) write(key, l) }
+
+    // (v1291) «مش مهتم»: v:<id> فيديو · c:<قناة> قناة — بتتخبّى من اقتراحات الرئيسية
+    private const val NOTINT = "ytp_notint"
+    fun notInt(): Set<String> = Cfg.str(NOTINT, "").split(',').filter { it.isNotBlank() }.toHashSet()
+    fun hide(tag: String) { val l = notInt().toMutableSet(); l.add(tag); Cfg.put(NOTINT, l.joinToString(",")) }
 }

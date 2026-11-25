@@ -3028,10 +3028,10 @@ class BrowserActivity : Activity() {
                 text = "⬇ yt-dlp: نزّل الصفحة دي"; textSize = 15f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
                 background = ui.box(0xFF1E6FD9.toInt(), 0x66FFFFFF, 14); setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12))
                 layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(4), 0, ui.dp(6)) }
-                setOnClickListener { YtDlp.start(this@BrowserActivity, pu); Notice.show(this@BrowserActivity, "اتضاف لمركز المهام (yt-dlp)", 2200L) }
+                setOnClickListener { YtDlp.ask(this@BrowserActivity, pu) }   // (v1292) اختيار الجودة/mp3
             })
         } catch (_: Throwable) {}
-        // (v1291) اللينك المنسوخ ← yt-dlp على طول: اعمل كوبي لأي لينك فيديو وافتح القايمة دي وهتلاقي الزرار
+        // (v1291) اللينك المنسوخ ← yt-dlp على طول: اعمل كوبي لأي لينك فيديو وافتح القايمة دي وهتلاقي الزرار ← yt-dlp على طول: اعمل كوبي لأي لينك فيديو وافتح القايمة دي وهتلاقي الزرار
         try {
             val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
             val clip = try { cm?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()?.trim() ?: "" } catch (_: Throwable) { "" }
@@ -3040,7 +3040,7 @@ class BrowserActivity : Activity() {
                 text = "📋 yt-dlp: نزّل اللينك المنسوخ"; textSize = 15f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
                 background = ui.box(0xFF1E6FD9.toInt(), 0x66FFFFFF, 14); setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12))
                 layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(4), 0, ui.dp(6)) }
-                setOnClickListener { YtDlp.start(this@BrowserActivity, cu); Notice.show(this@BrowserActivity, "اتضاف لمركز المهام (yt-dlp): " + cu.take(50), 2600L) }
+                setOnClickListener { YtDlp.ask(this@BrowserActivity, cu) }   // (v1292) اختيار الجودة/mp3
             })
         } catch (_: Throwable) {}
         for (g in gs) box.addView(groupCard(g))

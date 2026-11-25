@@ -64,7 +64,9 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         var shelfOn = false   // (v865) الشورتس بتتجمّع 4-4 في «رف» (زي يوتيوب)
         fun list(): ArrayList<NpItem> {
             if (cMode) return ci
-            val base: ArrayList<NpItem> = if (typeF == 0) items else ArrayList(items.filter { typeOk(it, typeF) })
+            var src: List<NpItem> = items
+            if (tab == 0) { val hid = YtStore.notInt(); if (hid.isNotEmpty()) src = src.filter { it.kind != 0 || ("v:" + it.id !in hid && "c:" + it.channel !in hid) } }   // (v1291) مش مهتم بيخبّي من الرئيسية
+            val base: ArrayList<NpItem> = if (typeF == 0) ArrayList(src) else ArrayList(src.filter { typeOk(it, typeF) })
             return if (shelfOn && (typeF == 0 || typeF == 2)) shelfify(base) else base
         }
         fun nxt(): Page? = if (cMode) cn else next
@@ -1165,6 +1167,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         detailBox.visibility = if (det) View.VISIBLE else View.GONE
         chanRow.visibility = if (st.chUrl != null && !det) View.VISIBLE else View.GONE
         subsRow.visibility = View.GONE   // (v1107) صف «إشعارات الفيديوهات الجديدة + تحديث» اتشال
+        // (v1291) شريط أفاتار القنوات فوق الاشتراكات (زي يوتيوب الرسمي)
+        if (st.tab == 1 && st.chUrl == null && st.q == null && st.vid == null && !DeviceUi.isTv(act) && st.items.none { it.kind == 6 }) {
+            val subs0 = YtStore.read(YtStore.SUBS)
+            if (subs0.isNotEmpty()) { youShelves["subs"] = subs0.take(40); st.items.add(0, NpItem("act", "الاشتراكات", "", "", "", -1L, -1L, "", 6, "ythshelf:subs")) }
+        }
         if (st.chUrl != null) { chanName.text = st.chName ?: ""; paintSub(YtStore.contains(YtStore.SUBS, NpItem("", "", "", st.chUrl, "", -1L, 0L, "", 1, st.chUrl))) }
         filterRow.visibility = if (st.q != null && !det) View.VISIBLE else View.GONE
         filterViews.forEach { tv -> paintChip(tv, tv.tag == st.filter) }
@@ -1253,7 +1260,15 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         onAudio(it)
     }
     /** (v472) ⬇ على أي صورة فيديو: صفحة اختيار الجودة مباشرة (من غير قايمة وسيطة) */
-    private fun dlMenu(anchor: View, it: NpItem) { qualityDl(asWatch(it)) }
+    private fun dlMenu(anchor: View, it: NpItem) {
+        if (it.id.length == 11) GAlert(act).setTitle("⬇ تحميل الفيديو").setItems(arrayOf("⬇ المحمّل العادي (اختار الجودة)", "⬇ yt-dlp — أعلى جودة (mp4)", "🎵 yt-dlp — صوت بس (mp3)")) { _, w ->
+            when (w) {
+                1 -> { YtDlp.start(act, YtNp.watchUrl(it.id)); Notice.show(act, "اتضاف لمركز المهام (yt-dlp)", 2200L) }
+                2 -> { YtDlp.start(act, YtNp.watchUrl(it.id), audioOnly = true); Notice.show(act, "اتضاف لمركز المهام (yt-dlp)", 2200L) }
+                else -> qualityDl(asWatch(it))
+            }
+        }.setNegativeButton("إلغاء", null).show() else qualityDl(asWatch(it))
+    }   // (v1292) yt-dlp متربط بأي فيديو: فيديو mp4 أو صوت mp3 من قايمة التحميل نفسها
     /** (v472) اختيار الجودة ← مهمة تحميل في «المهام» (دايرة التقدم العايمة + عدّاد الباقي). الروابط بتتجاب من نفس السباق السريع (YtFast) بدل NewPipe التقيل */
     // (v1113) حجم الملف بيتجاب بـ HEAD على نفس الرابط — لو فشل الحجم بيتساب من الصف من غير ما يظهر رقم غلط
     private fun headBytes(u: String, ua: String): Long {
@@ -1652,6 +1667,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             m.menu.add(0, 5, 4, "📋 انسخ اللينك"); m.menu.add(0, 6, 5, "🌐 افتحه في المتصفح")
             m.menu.add(0, 15, 11, "⏭ شغّل بعده (قائمة الانتظار)"); m.menu.add(0, 16, 12, "↗ مشاركة")   // (v469) C9/C11
             m.menu.add(0, 17, 13, "➕ إضافة للليستة")   // (v694)
+            m.menu.add(0, 18, 14, "🚫 مش مهتم")   // (v1291)
+            if (it.channel.isNotBlank()) m.menu.add(0, 19, 15, "🚫 ماتقترحش قناة «" + it.channel.take(20) + "»")   // (v1291)
             if (cur?.tab == 2) m.menu.add(0, 7, 6, "🗑 شيل من السجل")
         } else {
             m.menu.add(0, 8, 0, "فتح"); m.menu.add(0, 5, 1, "📋 انسخ اللينك")
@@ -1674,6 +1691,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 15 -> { YtQueue.addNext(it); Notice.show(act, "⏭ اتضاف لقائمة الانتظار — هيتشغّل بعد الحالي", 2200L) }
                 16 -> shareItem(it)
                 17 -> PlayQueueUi.add(act, YtNp.watchUrl(it.id), it.title)   // (v694)
+                18 -> { YtStore.hide("v:" + it.id); Notice.show(act, "👌 هنقترح حاجات زي دي أقل", 1800L); cur?.let { st -> if (st.tab == 0) adapter.set(st.list()) } }   // (v1291)
+                19 -> { YtStore.hide("c:" + it.channel); Notice.show(act, ("👌 قناة «" + it.channel + "» مش هتتقترح تاني").toString(), 2000L); cur?.let { st -> if (st.tab == 0) adapter.set(st.list()) } }   // (v1291)
                 8 -> open(it)
                 14 -> { pendingPlayAll = true; open(it) }
                 9 -> { val on = YtStore.toggle(YtStore.SUBS, it); Notice.show(act, (if (on) "✅ اشتركت" else "اتشال الاشتراك").toString(), 1800L) }
@@ -1857,7 +1876,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 val head = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
                 head.addView(label, LinearLayout.LayoutParams(0, -2, 1f)); head.addView(all, LinearLayout.LayoutParams(-2, -2))
                 val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-                val scroll = HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(row, HorizontalScrollView.LayoutParams(-2, -2)) }
+                val scroll = HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(row, FrameLayout.LayoutParams(-2, -2))   // (v1292) Kotlin مابيشوفش LayoutParams من الكلاس الابن }
                 val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(4), ui.dp(12), ui.dp(10)) }
                 box.addView(head, LinearLayout.LayoutParams(-1, -2)); box.addView(scroll, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
                 hd = YShelfHold(label, all, row); box.tag = hd; v = box
@@ -1867,6 +1886,32 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             hd.label.text = it.title
             hd.all.setOnClickListener { when (key) { "hist" -> showLocal(2, true); "saved" -> showLocal(3, true); else -> showContinue() } }
             hd.row.removeAllViews()
+            if (key == "subs") {   // (v1291) شريط الاشتراكات: دواير قنوات بالصورة والاسم — دوسة تفتح القناة
+                hd.all.visibility = View.GONE
+                for (vi in youShelves[key].orEmpty()) {
+                    val letter = ui.text("", 18f, Color.WHITE, true).apply { gravity = Gravity.CENTER }
+                    val avImg = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+                    val avBox = FrameLayout(act)
+                    avBox.addView(letter, FrameLayout.LayoutParams(-1, -1)); avBox.addView(avImg, FrameLayout.LayoutParams(-1, -1))
+                    val nm = ui.text("", 10.5f, th.text, false).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER_HORIZONTAL }
+                    val cell = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; foreground = YtSkin.ripple(true) }
+                    cell.addView(avBox, LinearLayout.LayoutParams(ui.dp(56), ui.dp(56)))
+                    cell.addView(nm, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(4) })
+                    val cname = vi.title.trim()
+                    letter.text = if (cname.isEmpty()) "📺" else cname.substring(0, cname.offsetByCodePoints(0, 1)).uppercase(Locale.getDefault())
+                    letter.background = GradientDrawable().apply { setShape(GradientDrawable.OVAL); setColor(YtSkin.avatarColor(cname)) }
+                    nm.text = cname
+                    val av0 = if (vi.avatar.isNotBlank()) vi.avatar else vi.thumb
+                    avImg.tag = vi.channelUrl
+                    if (av0.isNotBlank()) { try { Glide.with(act).load(av0).circleCrop().override(ui.dp(112), ui.dp(112)).into(avImg) } catch (_: Throwable) {} }
+                    else YtMtFeed.avatarAsync(act, vi.channelUrl) { u -> vi.avatar = u; act.runOnUiThread { try { if (avImg.tag === vi.channelUrl || avImg.tag == vi.channelUrl) Glide.with(act).load(u).circleCrop().override(ui.dp(112), ui.dp(112)).into(avImg) } catch (_: Throwable) {} } }
+                    cell.setOnClickListener { openChannel(vi.channelUrl, vi.title, vi.avatar) }
+                    cell.setOnLongClickListener { x -> menu(x, vi); true }
+                    hd.row.addView(cell, LinearLayout.LayoutParams(ui.dp(64), -2).apply { marginEnd = ui.dp(6) })
+                }
+                return v
+            }
+            hd.all.visibility = View.VISIBLE
             val cw = ui.dp(150); val chh = cw * 9 / 16
             for (vi in youShelves[key].orEmpty()) {
                 val thumb = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP }

@@ -317,7 +317,7 @@ object YtNp {
         val tabs = ArrayList<NpChanTab>()
         for (t in ci.tabs) {
             val f = t.contentFilters.firstOrNull() ?: continue
-            val label = when (f) { "videos" -> "الفيديوهات"; "livestreams" -> "البث المباشر"; "playlists" -> "قوايم التشغيل"; else -> continue }   // الشورتس مخفية (v351)
+            val label = when (f) { "videos" -> "الفيديوهات"; "livestreams" -> "البث المباشر"; "playlists" -> "قوايم التشغيل"; "albums" -> "الألبومات"; "podcasts" -> "بودكاست"; "releases" -> "الإصدارات"; else -> continue }   // الشورتس مخفية (v351) · (v1291) ألبومات/بودكاست/إصدارات
             if (!byKey.containsKey(f)) { byKey[f] = t; tabs.add(NpChanTab(f, label)) }
         }
         if (tabs.isEmpty()) { val t = ci.tabs.firstOrNull(); if (t != null) { val f = t.contentFilters.firstOrNull() ?: "videos"; byKey[f] = t; tabs.add(NpChanTab(f, "الفيديوهات")) } }

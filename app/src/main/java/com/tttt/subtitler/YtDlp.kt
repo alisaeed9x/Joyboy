@@ -20,8 +20,22 @@ object YtDlp {
         ready = true
     }
 
-    /** بيدّي لينك (صفحة فيديو من أي موقع) لـyt-dlp. audioOnly = صوت mp3. */
-    fun start(ctx: Context, url: String, audioOnly: Boolean = false): TaskItem {
+    /** (v1292) قايمة اختيار قبل التحميل: جودة الفيديو أو صوت mp3 */
+    fun ask(act: android.app.Activity, url: String) {
+        val labels = arrayOf("⬇ فيديو — أعلى جودة (mp4)", "⬇ فيديو — 720p", "⬇ فيديو — 480p", "🎵 صوت بس (mp3)")
+        GAlert(act).setTitle("⬇ تحميل بـ yt-dlp").setItems(labels) { _, w ->
+            when (w) {
+                1 -> start(act, url, maxH = 720)
+                2 -> start(act, url, maxH = 480)
+                3 -> start(act, url, audioOnly = true)
+                else -> start(act, url)
+            }
+            Notice.show(act, "اتضاف لمركز المهام (yt-dlp)", 2200L)
+        }.setNegativeButton("إلغاء", null).show()
+    }
+
+    /** بيدّي لينك (صفحة فيديو من أي موقع) لـyt-dlp. audioOnly = صوت mp3. maxH = أقصى جودة (0 = أعلى جودة). */
+    fun start(ctx: Context, url: String, audioOnly: Boolean = false, maxH: Int = 0): TaskItem {
         val app = ctx.applicationContext
         val title = (if (audioOnly) "🎵 " else "⬇ ") + url.removePrefix("https://").removePrefix("http://").take(60)
         return TaskCenter.add(app, "download", title, "") { t ->
@@ -34,7 +48,7 @@ object YtDlp {
             req.addOption("--no-playlist")
             req.addOption("--no-mtime")
             if (audioOnly) { req.addOption("-x"); req.addOption("--audio-format", "mp3") }
-            else { req.addOption("-f", "bv*+ba/b"); req.addOption("--merge-output-format", "mp4") }
+            else { req.addOption("-f", if (maxH > 0) "bv*[height<=$maxH]+ba/b[height<=$maxH]/b" else "bv*+ba/b"); req.addOption("--merge-output-format", "mp4") }
             YoutubeDL.getInstance().execute(req, id) { p, _, line ->
                 t.pct = p.toInt().coerceIn(0, 99); t.msg = line.take(80); TaskCenter.changed()
             }
