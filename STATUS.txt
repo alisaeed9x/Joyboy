@@ -1,3 +1,4 @@
+v1296: إصلاح build — kit.seek بدل seek في YtWatchPage. التفاصيل: CHANGES_v1296.md
 v1295: فصول الفيديو على شريط التقدم + تحميلات yt-dlp في صفحة التحميلات
 v1294 (2026-11-25): إصلاح build — notInt/hide جوّه YtNp.kt (YtStore.kt ملف قديم بيتمسح). التفاصيل: CHANGES_v1294.md
 v1293 (2026-11-25): إصلاح compile YtProUi.kt بعد v1292. التفاصيل: CHANGES_v1293.md
