@@ -319,7 +319,7 @@ object ControllerPad {
                 }
                 cd.addView(iconBox(kind, c1, c2, dashed, ic), android.widget.LinearLayout.LayoutParams(dp(ic), dp(ic)))
                 val tv = TextView(act).apply {
-                    text = label; textSize = fs; setTextColor(if (dashed) th.muted else th.text)   // (v1316); gravity = Gravity.CENTER
+                    text = label; textSize = fs; setTextColor(if (dashed) th.muted else th.text); gravity = Gravity.CENTER   // (v1316)
                     typeface = android.graphics.Typeface.DEFAULT_BOLD; includeFontPadding = false; maxLines = if (ic < 40) 2 else 1
                     layoutDirection = View.LAYOUT_DIRECTION_RTL
                 }
@@ -399,8 +399,8 @@ object ControllerPad {
             }
             okB.contentDescription = "موافق"
             okB.addView(PadIcon(act, "check", th.onPrimary), android.widget.LinearLayout.LayoutParams(dp(26), dp(26)))   // (v1316)
-            okB.addView(TextView(act).apply { text = "موافق"; textSize = 20f; setTextColor(th.onPrimary); typeface = android.graphics.Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; includeFontPadding = false }   // (v1316),
-                android.widget.LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(2) })
+            okB.addView(TextView(act).apply { text = "موافق"; textSize = 20f; setTextColor(th.onPrimary); typeface = android.graphics.Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; includeFontPadding = false },
+                android.widget.LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(2) })   // (v1316)
             bind(okB, false) { sendKey("ok") }
             // (v807) دوسة = موافق · ضغطة طويلة = ضغطة طويلة على OK في التلفزيون نفسه (مش ميكروفون)
             okB.setOnLongClickListener { Haptic.tap(okB, true); sendKey("ok_long"); true }
