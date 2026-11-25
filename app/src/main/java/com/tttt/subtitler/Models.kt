@@ -22,13 +22,15 @@ object Models {
         if (avail != null || key.isBlank() || key == "off") return
         try { avail = Api.listModels(key).map { it.id } } catch (_: Throwable) {}
     }
+    /** (v1326) موديلات مش ليها لازمة في التفريغ/الترجمة (صور/فيديو/صوت/live/تضمين…): بتتستبعد من قايمة الاختيار ومن الاحتياطي */
+    val JUNK = Regex("image|imagen|veo|tts|live|audio|native|embed|robotics|computer|aqa")
     /** (v1241) الموديل الاحتياطي لما الأساسي 503: بيتختار من الموديلات الموجودة فعلًا لمفتاحك (GET /models) ومش من الميتة */
     fun alt(cur: String, key: String = ""): String {
         discover(key)
         val av = avail
         val pref = listOf("gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-3-flash-preview", "gemini-3-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite")
         for (c in pref) if (c != cur && c !in dead && (av.isNullOrEmpty() || c in av)) return c
-        if (!av.isNullOrEmpty()) for (c in av) if (c != cur && c !in dead && c.contains("flash") && !Regex("image|tts|live|audio|native|thinking|exp|embed|robotics|computer").containsMatchIn(c)) return c
+        if (!av.isNullOrEmpty()) for (c in av) if (c != cur && c !in dead && c.contains("flash") && !JUNK.containsMatchIn(c) && !Regex("thinking|exp").containsMatchIn(c)) return c
         return cur
     }
     const val QUOTA_DEFAULT = 500

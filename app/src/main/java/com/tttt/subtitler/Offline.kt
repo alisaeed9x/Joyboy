@@ -42,17 +42,16 @@ object Offline {
     @Volatile var dir: File? = null   // بيتظبط من Cfg.init
     /** (v271) مكان الموديلات القديم (filesDir) — بنقرا منه لو الموديل لسه مانتقلش، وبينتقل لوحده في الخلفية */
     @Volatile var legacy: File? = null
-    /** (v742) small هو الأساسي: الافتراضي والبديل لو الاختيار مجهول. مرة واحدة بس (علم off_small_primary) أي إعداد قديم على tiny/base بيتحوّل لـ small؛ بعدها اختيارك يتحترم */
+    /** (v1325) الافتراضي دايمًا يتحوّل لأحدث موديل متنزّل (الأعلى إصدارًا يكسب — ترتيب القايمة من الأقدم للأحدث، turbo في الآخر):
+     *  اختيار صريح (off_model) بيتحترم بس لو الموديل ده متنزّل فعلًا؛ لو مش متنزّل (أو مفيش اختيار) أحدث موديل موجود على الجهاز بياخد مكانه.
+     *  قبل كده الافتراضي كان base + ترحيل بيرجّع small ← base، فموديل زي turbo بعد ما يتنزّل مكانش بيتشاف: «التفريغ» كان بيرفض يتفعّل ويطلب تنزيل base.
+     *  لو مفيش أي موديل متنزّل: الاختيار الصريح (هدف التنزيل) أو base. */
     fun model(): Model {
-        var id = Cfg.str("off_model", "base")
-        // (v748) base هو الأساسي: مرة واحدة بس (علم off_base_primary) small بيتحوّل لـ base؛ بعدها اختيارك (حتى small) بيتحترم. (v742 كان العكس — العلم القديم بيتقفل هنا)
-        if (Cfg.str("off_base_primary", "") != "1") {
-            try {
-                Cfg.put("off_base_primary", "1"); Cfg.put("off_small_primary", "1")
-                if (id == "small") { Cfg.put("off_model", "base"); Cfg.put("tr_s_model", "base"); id = "base" }
-            } catch (_: Throwable) {}
-        }
-        return models.firstOrNull { it.id == id } ?: models.first { it.id == "base" }
+        val chosen = models.firstOrNull { it.id == Cfg.str("off_model", "") }
+        if (chosen != null && downloaded(chosen)) return chosen
+        val newest = models.lastOrNull { downloaded(it) }
+        if (newest != null) return newest
+        return chosen ?: models.first { it.id == "base" }
     }
     /** (v271) الملف الكامل لو موجود في أي مكان (الجديد الأول)، وإلا مساره في المكان الجديد (للتنزيل) */
     fun pick(rel: String, minBytes: Long): File? {

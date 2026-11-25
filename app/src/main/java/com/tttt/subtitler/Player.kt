@@ -2679,10 +2679,12 @@ class PlayerActivity : Activity(), Host {
     @Volatile private var trHere = false
     private fun trChoiceDialog() {
         val n = try { engine.subs.size } catch (_: Throwable) { 0 }
-        val labels = arrayOf("▶ كمّل الباقي (بيتخطّى المترجم)", "📍 كمّل من مكان التشغيل الحالي", "🔁 ترجم من الأول وجديد (القديمة تتحفظ في 🗂)")
-        GAlert(this).setTitle("فيه ترجمة محفوظة للفيديو ده ($n جملة) — تعمل إيه؟").setItems(labels) { _, w ->
-            when (w) { 0 -> { trAsked = true; beginTranslate() }; 1 -> { trAsked = true; trHere = true; beginTranslate() }; else -> trFresh() }
-        }.show()
+        shDialog(320) { col, close ->   // (v1326) نفس شيت قايمة «ترجم» بدل الدايلوج القديم (GAlert) — آخر مسار كان بيفتح الشكل القديم
+            col.addView(shHead("فيه ترجمة محفوظة للفيديو ده ($n جملة)", "اختار تكمّل إزاي"))
+            col.addView(shRow("▶ كمّل الباقي (بيتخطّى المترجم)", "") { close(); trAsked = true; beginTranslate() })
+            col.addView(shRow("📍 كمّل من مكان التشغيل الحالي", "") { close(); trAsked = true; trHere = true; beginTranslate() })
+            col.addView(shRow("🔁 ترجم من الأول وجديد", "القديمة تتحفظ في 🗂") { close(); trFresh() })
+        }
     }
     private fun studioAsk(vidNow: String) { studioAskOpen = false }   // (v1037) الاستوديو اتمسح — ما بقاش فيه مصدر ترجمة تاني يتسأل عليه
     /** (v1171) النوع المحفوظ (⚙ تفريغ/ترجمة) هو المرجع قبل أي «من الأول»: بيظبط علم التفريغ في المحركين لو اتلخبط (كان «من الأول وجديد» بيشغّل ترجمة والنوع تفريغ) وبيكتب النتيجة في اللوج */
@@ -2889,9 +2891,12 @@ class PlayerActivity : Activity(), Host {
         var trRef: TextView? = null
         val tr = b("▶ ترجم ▾", 0xFFE53935.toInt()) { trRef?.let { trMainClick(it) } }   // (v254) قبل البداية: الإعداد المحفوظ أو شاشة «طريقة الترجمة»
         trRef = tr
+        tr.setOnLongClickListener { v -> translateMenu(v); true }   // (v1326) ضغطة مطوّلة على «ترجم»: شيت اختيار النظام
         var gearRef: TextView? = null
         val gearB = b("⚙", 0xFF363636.toInt()) { gearRef?.let { trSettings(it) } }   // (v1097) T2: إعدادات الترجمة + سلايدر سريع↔دقيق
         gearRef = gearB
+        val dubBarB = b("🎙", 0xFF363636.toInt()) { dubToggle() }   // (v1326) زرار دبلجة مستقل جنب «ترجم» — الدبلجة خرجت من ⋮
+        dubBarB.setPadding(0, 0, 0, 0)
         // (v1138) CC إظهار/إخفاء الترجمة — اتنقل هنا جنب زراير الترجمة: منوّر = الترجمة ظاهرة · خط مايل = مخفية
         val ccV = CcToggleView(this).apply {
             background = ui.box(0xFF363636.toInt(), 0x33FFFFFF, if (compact) 8 else 10); isClickable = true; isFocusable = true
@@ -2937,6 +2942,7 @@ class PlayerActivity : Activity(), Host {
             var chipRef: TextView? = null
             val chipB = b("▶ ترجم ▾", 0xFFE53935.toInt()) { chipRef?.let { trMainClick(it) } }   // (v415) زرار واحد بقايمة منسدلة
             chipRef = chipB
+            chipB.setOnLongClickListener { v -> translateMenu(v); true }   // (v1326) ضغطة مطوّلة على «ترجم»: شيت اختيار النظام
             // (v1137) ⏸/▶ مرسوم باليد (PausePlayView) — الإيموجي/الأيقونة كانت بتظهر شفافة فاضية
             val pz = PausePlayView(this).apply { playing = true; background = ui.box(0xFF454545.toInt(), 0x33FFFFFF, 8); isClickable = true; isFocusable = true; contentDescription = "إيقاف مؤقت للترجمة"
                 setOnClickListener { if (::engine.isInitialized && engine.userPaused) beginTranslate() else pauseTranslate() } }   // (v438) إيقاف مؤقت / كمّل ظاهر جنب «ترجم» (كان جوه القايمة بس)
@@ -2945,6 +2951,7 @@ class PlayerActivity : Activity(), Host {
             // (v1097) T2: «ترجم/النسبة» و⚙ جوه حاوية واحدة — الصف بيلفّ (FlowRow) فمنع ⚙ إنه ينزل سطر لوحده لما نص الشريحة يطول وهي شغّالة
             val chipGear = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             chipGear.addView(chipB, lp(-2))   // (v415) زرار «ترجم» الواحد
+            chipGear.addView(dubBarB, sq())   // (v1326) 🎙 دبّلج جنب «ترجم»
             gearB.setPadding(0, 0, 0, 0); gearB.textSize = 17f; chipGear.addView(gearB, sq())
             chipGear.addView(ccV, sq()); chipGear.addView(plusB, sq()); chipGear.addView(subB, sq())   // (v1137) (v1138) CC
             row.addView(chipGear, LinearLayout.LayoutParams(-2, -2))
@@ -2981,6 +2988,7 @@ class PlayerActivity : Activity(), Host {
             val cx2 = stopBtn(10)   // (v741)
             tidy(tr); dlB.setPadding(0, 0, 0, 0)
             row.addView(tr, lp(0).apply { width = 0; weight = 3.6f })   // (v415) زرار «ترجم» الواحد
+            row.addView(dubBarB, sq())   // (v1326) 🎙 دبّلج جنب «ترجم»
             gearB.setPadding(0, 0, 0, 0); gearB.textSize = 19f; row.addView(gearB, sq())   // (v1097) T2
             row.addView(ccV, sq()); row.addView(plusB, sq()); row.addView(subB, sq())   // (v1137) (v1138) CC
             row.addView(pz2, sq())
@@ -3431,6 +3439,28 @@ class PlayerActivity : Activity(), Host {
         trMenuPop = showSheet(anchor, col, 320, "sfChoice") { pw -> if (trMenuPop === pw) trMenuPop = null }
     }
 
+    /** (v1326) قسم اختيار نظام الترجمة — نفس الصفوف في دايلوج «ترجم» (الشاشة الموحدة) وفي شيت المحرك (ضغطة مطوّلة على «ترجم») */
+    private fun trEngineRows(col: LinearLayout, closeSheet: () -> Unit, reopen: () -> Unit) {
+        val mk = curModeKey()
+        val whisperish = mk == "off" || mk == "txw"
+        val setVal = try { if (whisperish) TrWizard.langLabel(Offline.lang()) + " · " + Offline.model().id else "" } catch (_: Throwable) { "" }
+        // (v1137) لو فيه ملف ترجمة للفيديو: «ترجمة ملف الترجمة» فوق الخيارات الدقيقة (بيترجم النص الأصلي بس)
+        sfSidecar()?.let { sc -> col.addView(shRow("📄 ترجمة ملف الترجمة", sc.name) { closeSheet(); h.post { sfEngineChoice("ملف الترجمة") { e -> sfRun("soft", e) } } }) }
+        col.addView(shSection("🔤 نظام الترجمة"))
+        // (v1136) 4 محطات في سلايدر واحد (أسرع · سريع · متوازن · دقيق) بدل أربع صفوف — وصف الحالي في العنوان
+        val gemNow = mk == "gem"
+        trSliderSection(col)
+        col.addView(shRow("☁ ترجم بجيميناي", if (gemNow) "✓ الحالي" else TrSlider.title(TrSlider.pos())) { closeSheet(); h.post { geminiStart() } })
+        col.addView(shNote("لهجات + أسلوب + بصري · محتاج نت"))
+        col.addView(shRow("📴 ٢ · وشبر + ترجمة أوفلاين (HY-MT1.5)", if (mk == "off") "✓ الحالي" else setVal) { closeSheet(); whisperStart() })
+        col.addView(shRow("✍ تفريغ بس", if (mk == "txg" || mk == "txw") "✓ الحالي" else "من غير ترجمة") { closeSheet(); h.post { if (TrProfile.engine() == "off") askVideoLang { offlineQuick(true) } else startGeminiTranscribe() } })
+        col.addView(shSection("✍ التفريغ بـ:"))
+        val engRow = shFlow()
+        engRow.addView(shChip("☁ جيميناي", TrProfile.engine() != "off") { Cfg.put("tr_engine", "gem"); updateTr(); closeSheet(); h.post { reopen() } }, shChipLp())
+        engRow.addView(shChip("📴 وشبر", TrProfile.engine() == "off") { Cfg.put("tr_engine", "off"); updateTr(); closeSheet(); h.post { reopen() } }, shChipLp())
+        col.addView(engRow, LinearLayout.LayoutParams(-1, -2))
+    }
+
     fun translateMenu(anchor: View) {
         trMenuPop?.let { if (it.isShowing) { it.dismiss(); trMenuPop = null; return } }
         val started = engineStarted
@@ -3443,21 +3473,7 @@ class PlayerActivity : Activity(), Host {
         if (!started) {
             col.addView(shHead(if (sfBusy.isNotEmpty()) "⏳ ترجمة السوفت صب " + sfPct() + "% — " + sfBusy else "ترجمة الفيديو", "اختار النظام"))
             // (v667) السوفت صب والهارد صب بيتترجموا أوتوماتيك أول ما الفيديو يفتح — مفيش زراير ليهم هنا
-            // (v1137) لو فيه ملف ترجمة للفيديو: «ترجمة ملف الترجمة» فوق الخيارات الدقيقة (بيترجم النص الأصلي بس)
-            sfSidecar()?.let { sc -> col.addView(shRow("📄 ترجمة ملف الترجمة", sc.name) { close(); h.post { sfEngineChoice("ملف الترجمة") { e -> sfRun("soft", e) } } }) }
-            col.addView(shSection("🔤 ترجمة"))
-            // (v1136) 4 محطات في سلايدر واحد (أسرع · سريع · متوازن · دقيق) بدل أربع صفوف — وصف الحالي في العنوان
-            val gemNow = mk == "gem"
-            trSliderSection(col)
-            col.addView(shRow("☁ ترجم بجيميناي", if (gemNow) "✓ الحالي" else TrSlider.title(TrSlider.pos())) { close(); h.post { geminiStart() } })
-            col.addView(shNote("لهجات + أسلوب + بصري · محتاج نت"))
-            col.addView(shRow("📴 ٢ · وشبر + ترجمة أوفلاين (HY-MT1.5)", if (mk == "off") "✓ الحالي" else setVal) { close(); whisperStart() })
-            col.addView(shRow("✍ تفريغ بس", if (mk == "txg" || mk == "txw") "✓ الحالي" else "من غير ترجمة") { close(); h.post { if (TrProfile.engine() == "off") askVideoLang { offlineQuick(true) } else startGeminiTranscribe() } })
-            col.addView(shSection("✍ التفريغ بـ:"))
-            val engRow = shFlow()
-            engRow.addView(shChip("☁ جيميناي", TrProfile.engine() != "off") { Cfg.put("tr_engine", "gem"); updateTr(); close(); h.post { translateMenu(anchor) } }, shChipLp())
-            engRow.addView(shChip("📴 وشبر", TrProfile.engine() == "off") { Cfg.put("tr_engine", "off"); updateTr(); close(); h.post { translateMenu(anchor) } }, shChipLp())
-            col.addView(engRow, LinearLayout.LayoutParams(-1, -2))
+            trEngineRows(col, { close() }) { translateMenu(anchor) }   // (v1326) نفس قسم اختيار النظام الموحّد
         } else {
             col.addView(shHead(Offline.liveLine() ?: ("الترجمة: " + trPct + "% · " + subCountNow() + " جملة" + (if (paused) " (واقفة)" else "")), "الوضع: " + modeName() + (if (Strict.freeText() || Strict.freeGem()) " · 🆓 " + FreeLlm.liveName() else "")))
             col.addView(shDuo(
@@ -3528,6 +3544,15 @@ class PlayerActivity : Activity(), Host {
             if (started) col.addView(shDuo(
                 shBtn(if (paused) "▶ كمّل" else "⏸ إيقاف مؤقت", if (paused) SH_BLUE else SH_GRAY) { close(); if (paused) beginTranslate() else pauseTranslate() },
                 shBtn("⏹ إلغاء", SH_RED) { close(); h.post { cancelDialog() } }))
+            if (started) col.addView(shRow("📊 تقدم الباتشات", "", true) { close(); h.post { batchDialog() } })   // (v1326) أدوات الشيت اتلمّت هنا
+            if (started) col.addView(shRow("🌙 كمّل في الخلفية") { close(); translateInBackground() })   // (v1326)
+            if (started) col.addView(shRow("🔀 غيّر النظام", "", true) {   // (v1326)
+                close()
+                h.post { shConfirm("🔀 تغيير نظام الترجمة", "هوقف الترجمة الحالية (اللي اتترجم محفوظ) وتختار نظام تاني من القايمة.",
+                    listOf(ShBtn("أوقف واختار", SH_BLUE) { cancelTranslate { trOptionsDialog(anchor) } }, ShBtn("لأ، كمّل", SH_GRAY) { })) }
+            })
+            if (!started) trEngineRows(col, { close() }) { trOptionsDialog(anchor) }   // (v1326) شاشة ترجمة واحدة: اختيار النظام جوه نفس الدايلوج
+            col.addView(shRow("⚙ إعدادات الترجمة", "", true) { close(); h.post { trSettings(anchor) } })   // (v1326)
             col.addView(shRow("إغلاق") { close() })
         }
     }
@@ -3632,6 +3657,7 @@ class PlayerActivity : Activity(), Host {
             col.addView(mends, LinearLayout.LayoutParams(-1, -2))
             col.addView(diaBox, LinearLayout.LayoutParams(-1, -2))
             col.addView(dubNote)   // (v1229)
+            col.addView(shRow("🗣 صوت الدبلجة", Dub.voiceLabel()) { dubVoiceSwap(); again() })   // (v1326) اتنقلت من ⋮ — بتتبدّل سلمى ⇄ شاكر
             if (off) col.addView(shNote("الأوفلاين بيترجم فصحى بس — اللهجة والشدة محتاجين جيميناي"))
             trSliderSection(qBox) { paintSave() }
             col.addView(qBox, LinearLayout.LayoutParams(-1, -2))
@@ -5418,9 +5444,8 @@ class PlayerActivity : Activity(), Host {
             vs.forEachIndexed { i, v -> gVer.addView(pd("${v.name} — ${v.subs.size} جملة") { restoreVersion(i) }) }
         }
         if (!Design.isNew()) gTool.addView(pk("🗂 ترجمات الفيديو ›") { fillVer(); dismissPop(); togglePop(menuB, gVer, false) })
-        if (!Design.isNew()) gTool.addView(pd("🔄 إعادة ترجمة") { batchDialog() })
-        gTool.addView(pd("🎙 دبلجة عربي (تشغيل/إيقاف)") { dubToggle() })   // (v418)
-        gTool.addView(pd("🗣 صوت الدبلجة: سلمى ⇄ شاكر") { dubVoiceSwap() })   // (v418)
+        // (v1326) «إعادة ترجمة» المكررة في التصميم القديم اتشالت — مكانها دايلوج «ترجم» وشيت النظام
+        // (v1326) الدبلجة اتشالت من ⋮: زرار 🎙 مستقل جنب «ترجم» + الصوت في ⚙ إعدادات الترجمة
         gTool.addView(pd("👁 الوضع البصري") { visualDialog() })
         gTool.addView(pd("🌙 ترجمة بالخلفية") { translateInBackground() })
         if (!Design.isNew()) gTool.addView(pd("📶 استهلاك النت") { netDialog() })
@@ -6417,7 +6442,7 @@ class PlayerActivity : Activity(), Host {
         Notice.show(this, "⏳ بجيب الموديلات…", 2300L)
         Thread {
             try {
-                val rows = Api.listModels(k)
+                val rows = Api.listModels(k).filter { !Models.JUNK.containsMatchIn(it.id) }   // (v1326) موديلات التفريغ/النص بس — من غير صور/صوت/live/embed زي nano banana
                 val fresh = ModelWatch.candidates(rows.map { it.id }).toSet()
                 val sorted = rows.sortedWith(compareBy({ it.id !in fresh }, { !it.id.startsWith("gemini") }, { it.id }))
                 runOnUiThread {
@@ -7392,9 +7417,10 @@ class PlayerActivity : Activity(), Host {
         try { if (ytPage && !gone && !fullMode && !pipNow() && (ytPgActive || !ytDragOn || ytAnim?.isRunning == true) && ytPageTouch(ev)) return true } catch (_: Throwable) {}
         return super.dispatchTouchEvent(ev)
     }
-    /** نهاية التصغير: الصورة المصغّرة (PiP). لو ما دخلتش (إذن/جهاز) الفيديو يرجع مكانه بحركة ناعمة */
+    /** نهاية التصغير: دوك التطبيق السفلي من غير إذن PiP. لو الدوك مش متاح (صوت بس/الإعداد مقفول/خطأ) PiP النظام احتياطي، ولو ما دخلش الفيديو يرجع مكانه بحركة ناعمة */
     private fun ytCommitMini() {
-        // (v1191) النزول بالسحب = PiP بس (مفيش دوك/شريط سفلي)
+        // (v1326) النزول بالسحب = دوك التطبيق السفلي (مفيش إذن صورة-في-صورة) — زرار ⧉ في ملء الشاشة لسه بيدخل PiP عادي
+        if (ytTryDock()) return
         try { enterPip(true) } catch (e: Throwable) { LogStore.err("Player:ytCommitMini", e) }
         h.postDelayed({ try { if (!gone && !isFinishing && !pipNow()) ytAnimTo(0f) } catch (_: Throwable) {} }, 650L)
     }
@@ -8311,7 +8337,7 @@ class PlayerActivity : Activity(), Host {
         if (Offline.downloading()) { say("⬇ فيه تنزيل موديل شغّال — استنى يخلص وادوس تاني"); return }
         offBusy = true
         val lang = Offline.lang()   // (v411) "" = تلقائي: Whisper بيكتشف اللغة، وموديل ML Kit بيتنزّل أول ما اللغة تتأكد (مع إشعار تقدم)
-        val order = listOf(Offline.model()) + listOf("base", "small", "medium").mapNotNull { id -> Offline.models.firstOrNull { it.id == id } }
+        val order = listOf(Offline.model()) + Offline.models.asReversed()   // (v1325) الاحتياطي من الأحدث للأقدم (كان base/small/medium بس — turbo مكانش في القايمة خالص)
         val m = order.firstOrNull { Offline.downloaded(it) } ?: Offline.models.first { it.id == "base" }
         fun startIt() {
             if (!only && !LocalMt.ready()) { offBusy = false; askMtModel(only, free, m); return }   // (v743) موديل الترجمة الأوفلاين لازم يكون نازل

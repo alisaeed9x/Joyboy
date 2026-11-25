@@ -2037,6 +2037,7 @@ class BrowserActivity : Activity() {
             val r = try { YtExtract.fetch(id) } catch (e: Throwable) { LogStore.err("Browser:ytFetch", e); emptyList() }   // (v468) تسجيل بدل البلع الصامت
             // (v203) دايمًا بنجيب قايمة الجودات الكاملة (144p…1080p + الصوت) عشان تتجمّع في اصطياد واحد
             val pk = try { YtExtract.fetchPick(id, 0) } catch (e: Throwable) { LogStore.err("Browser:ytPick", e); null }   // (v468)
+            val bk = if (r.isEmpty() && pk == null) try { YtNp.sniffBackup(id) } catch (e: Throwable) { LogStore.err("Browser:npBackup", e); emptyList() } else emptyList<Found>()   // (v1324) مسار NewPipe الاحتياطي لما محرك MeeTube يرفض
             runOnUiThread {
                 if (dead) return@runOnUiThread
                 // لو المستخدم سابك الصفحة دي قبل ما النتيجة توصل: نتجاهلها (مش هتتحط على صفحة تانية)
@@ -2049,7 +2050,8 @@ class BrowserActivity : Activity() {
                     ytIds[Sniff.key(f.url)] = id
                     if (r.isEmpty()) addFound(f, tt, g) else refreshBadge()
                 }
-                if (r.isEmpty() && pk == null && vis().isEmpty()) hint.text = "يوتيوب ما رضيش يدّي لينك مباشر — شغّل الفيديو في الصفحة وأنا هحاول ألقطه\n" + YtExtract.lastWhy
+                bk.forEach { ytIds[Sniff.key(it.url)] = id; addFound(it, tt, g) }   // (v1324)
+                if (r.isEmpty() && pk == null && bk.isEmpty() && vis().isEmpty()) hint.text = "يوتيوب ما رضيش يدّي لينك مباشر — شغّل الفيديو في الصفحة وأنا هحاول ألقطه\n" + YtExtract.lastWhy
             }
         }.apply { isDaemon = true }.start()
     }

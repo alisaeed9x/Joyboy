@@ -412,6 +412,30 @@ object YtNp {
     /** (v326) استخراج رابط التشغيل بـ NewPipe (بديل لـ YtExtract): فيديو بس mp4 + صوت m4a لو أعلى جودة من المدمج، وإلا المدمج، وإلا HLS */
     fun pick(id: String, maxH: Int): YtPick? = MtYt.pick(id, maxH)   // (v1103 Y2) الروابط من محرك MeeTube (MtYt) بدل NewPipe — نفس القرار: جلب الروابط الحالي
 
+    /** (v1324) مسار احتياطي لصيّاد المتصفح: لما محرك MeeTube (YtExtract/MtYt) ما يرجّعش لينكات مباشرة لصفحة يوتيوب في المتصفح،
+     *  بنستخرجها بـ NewPipeExtractor (الجودات المدمجة صوت+صورة + HLS) ونرجّعها كـFound زي لقطات الصيّاد بالظبط عشان تظهر في نفس الدايرة */
+    fun sniffBackup(id: String): List<Found> {
+        val out = ArrayList<Found>()
+        try {
+            val i = info(id)
+            val t = i.name ?: ""
+            val ref = "https://www.youtube.com/"
+            for (st in i.videoStreams ?: emptyList()) {
+                try {
+                    if (st.isVideoOnly) continue
+                    val u = st.content
+                    if (u.isNullOrBlank()) continue
+                    out.add(Found(u, "YT " + (st.resolution ?: "").ifEmpty { st.format?.suffix ?: "MP4" }, t, ref, ""))
+                } catch (_: Throwable) {}
+            }
+            val hl = try { i.hlsUrl } catch (_: Throwable) { null }   // (v1324) v0.26.5: getHlsUrl (مش getHlsStreamUrl)
+            if (!hl.isNullOrBlank()) out.add(Found(hl, "HLS", t, ref, ""))
+            val dsh = try { i.dashMpdUrl } catch (_: Throwable) { null }
+            if (!dsh.isNullOrBlank()) out.add(Found(dsh, "DASH", t, ref, ""))
+        } catch (e: Throwable) { LogStore.err("YtNp:sniffBackup", e) }
+        return out
+    }
+
     /** (v388) مسارات الصوت مجمّعة باللغة (بنتخطى الوصف الصوتي)؛ لكل لغة أعلى جودة (m4a أولًا) */
     private fun audioTracks(aud: List<org.schabi.newpipe.extractor.stream.AudioStream>): List<YtLang.Tr> {
         val by = LinkedHashMap<String, MutableList<org.schabi.newpipe.extractor.stream.AudioStream>>()
