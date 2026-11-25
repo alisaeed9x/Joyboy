@@ -75,9 +75,8 @@ object Upd {
             c.setRequestProperty("Accept", "application/vnd.github+json"); c.setRequestProperty("User-Agent", "Joyboy")
             val j = Changelog.pickLatest(c.inputStream.bufferedReader().readText())
             val name = j.optString("name"); val tag = j.optString("tag_name")
-            var apk = ""; var size = 0L
-            val assets = j.optJSONArray("assets")
-            if (assets != null) for (i in 0 until assets.length()) { val o = assets.getJSONObject(i); if (o.optString("name").endsWith(".apk")) { apk = o.optString("browser_download_url"); size = o.optLong("size"); break } }
+            val pick = UpdateSheet.pickApkAsset(j.optJSONArray("assets"))   // (v1302) نسخة معمارية الجهاز بعد الـABI split
+            val apk = pick.first; val size = pick.second
             val ver = verName(a)
             val remote = UpdateSheet.verParts(name)
             if (apk.isNotBlank() && remote.isNotEmpty() && ver.isNotBlank() && UpdateSheet.isNewer(remote, UpdateSheet.verParts(ver))) {

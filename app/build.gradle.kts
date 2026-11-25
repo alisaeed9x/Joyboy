@@ -40,7 +40,15 @@ android {
     // (v460) تقسيم حسب المعمارية: الـ APK الواحد كان شايل مكتبات arm64 + armeabi-v7a مع بعض (~100MB).
     // دلوقتي كل معمارية ليها APK لوحده (اللي هتنزّله لجهازك هو اللي فيه arm64-v8a في اسمه — أصغر بكتير)،
     // واليونيفرسال لسه بيتبني كاحتياطي. armeabi-v7a من غير مكتبة Whisper الأوفلاين كالعادة (v253).
-    // (v878) splits (معطّل أصلًا من v474) اتشال — APK واحد universal
+    // (v1302) ABI split: APK منفصل لكل معمارية (arm64-v8a للموبايلات الحديثة · armeabi-v7a لأجهزة 32-bit زي بوكسات التلفزيون القديمة) + universal احتياطي — تحميل أصغر لكل جهاز. المنزّل الداخلي بيختار النسخة المناسبة تلقائي (UpdateSheet.pickApkAsset)
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            joyAbis.forEach { include(it) }
+            isUniversalApk = true
+        }
+    }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17; isCoreLibraryDesugaringEnabled = true }   // (v327) NewPipeExtractor بيستخدم List.of وغيره
     // (v878) jvmTarget 17 بييجي تلقائي من compileOptions (كوتلن مدمج في AGP 9)

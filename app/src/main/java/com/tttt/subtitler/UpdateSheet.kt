@@ -19,6 +19,23 @@ import java.net.URL
 object UpdateSheet {
     private const val API = "https://api.github.com/repos/alisaeed9x/Joyboy/releases?per_page=15"
 
+    /** (v1302) اختيار APK معمارية الجهاز من أصول الريليز: بعد الـABI split بقى فيه arm64-v8a / armeabi-v7a / universal في كل ريليز */
+    fun pickApkAsset(assets: org.json.JSONArray?): Pair<String, Long> {
+        if (assets == null) return "" to 0L
+        val names = ArrayList<String>(); val urls = ArrayList<String>(); val sizes = ArrayList<Long>()
+        for (i in 0 until assets.length()) {
+            val o = assets.getJSONObject(i)
+            val n = o.optString("name")
+            if (n.endsWith(".apk")) { names.add(n); urls.add(o.optString("browser_download_url")); sizes.add(o.optLong("size")) }
+        }
+        if (names.isEmpty()) return "" to 0L
+        val abis = try { android.os.Build.SUPPORTED_ABIS.toList() } catch (_: Throwable) { emptyList<String>() }
+        for (abi in abis) { val k = names.indexOfFirst { it.contains(abi) }; if (k >= 0) return urls[k] to sizes[k] }
+        val u = names.indexOfFirst { it.contains("universal") }
+        if (u >= 0) return urls[u] to sizes[u]
+        return urls[0] to sizes[0]
+    }
+
     fun show(a: Activity) {
         val th = Themes.current()
         val ui = Ui(a, th)
@@ -50,11 +67,7 @@ object UpdateSheet {
                 val j = Changelog.pickLatest(c.inputStream.bufferedReader().readText())
                 tName = j.optString("name"); body = j.optString("body")
                 page = j.optString("html_url", page)
-                val assets = j.optJSONArray("assets")
-                if (assets != null) for (i in 0 until assets.length()) {
-                    val o = assets.getJSONObject(i)
-                    if (o.optString("name").endsWith(".apk")) { apkUrl = o.optString("browser_download_url"); break }
-                }
+                apkUrl = pickApkAsset(j.optJSONArray("assets")).first   // (v1302) نسخة معمارية الجهاز
             } catch (e: Throwable) { body = "ما قدرتش أجيب التغييرات. دوس «تحميل» وهيفتح صفحة آخر نسخة في المتصفح." }
             val verNow = try { a.packageManager.getPackageInfo(a.packageName, 0).versionName ?: "" } catch (_: Throwable) { "" }
             val newer = tName.isNotBlank() && verNow.isNotBlank() && isNewer(verParts(tName), verParts(verNow))
@@ -105,9 +118,7 @@ object UpdateSheet {
                 if (remote.isEmpty() || !isNewer(remote, verParts(ver))) return@Thread
                 if (Cfg.str("upd_skip") == tag) return@Thread
                 val page = j.optString("html_url", "https://github.com/alisaeed9x/Joyboy/releases/latest")
-                var apk = ""
-                val assets = j.optJSONArray("assets")
-                if (assets != null) for (i in 0 until assets.length()) { val o = assets.getJSONObject(i); if (o.optString("name").endsWith(".apk")) { apk = o.optString("browser_download_url"); break } }
+                val apk = pickApkAsset(j.optJSONArray("assets")).first   // (v1302) نسخة معمارية الجهاز
                 val txt = cumulative(ver).ifBlank { clean(body) }.ifBlank { "مفيش ملاحظات للنسخة دي." }
                 a.runOnUiThread {
                     try {
