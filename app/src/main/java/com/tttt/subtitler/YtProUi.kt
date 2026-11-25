@@ -1876,7 +1876,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 val head = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
                 head.addView(label, LinearLayout.LayoutParams(0, -2, 1f)); head.addView(all, LinearLayout.LayoutParams(-2, -2))
                 val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-                val scroll = HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(row, FrameLayout.LayoutParams(-2, -2))   // (v1292) Kotlin مابيشوفش LayoutParams من الكلاس الابن }
+                // (v1292) FrameLayout.LayoutParams — كوتلن مابيشوفش الكلاسات المتداخلة من الكلاس الابن
+                val scroll = HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(row, FrameLayout.LayoutParams(-2, -2)) }
                 val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(4), ui.dp(12), ui.dp(10)) }
                 box.addView(head, LinearLayout.LayoutParams(-1, -2)); box.addView(scroll, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
                 hd = YShelfHold(label, all, row); box.tag = hd; v = box
