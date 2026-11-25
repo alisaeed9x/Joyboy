@@ -56,7 +56,7 @@ object HideBox {
         val dst = File(d, uniqueName(d, src.name))
         var ok = try { src.renameTo(dst) } catch (_: Exception) { false }
         if (!ok) {
-            ok = try { src.copyTo(dst, true) && src.delete() } catch (_: Exception) { false }
+            ok = try { src.copyTo(dst, true); src.delete() } catch (_: Exception) { false }   // copyTo بيرجّع File مش Boolean
             if (!ok && src.exists()) try { dst.delete() } catch (_: Exception) {}   // نسخة ناقصة تتشال، الأصل يفضل مكانه
         }
         if (!ok || !dst.exists()) return null
@@ -75,7 +75,7 @@ object HideBox {
         }
         if (target.exists()) return false
         var ok = try { hidden.renameTo(target) } catch (_: Exception) { false }
-        if (!ok) ok = try { hidden.copyTo(target, true) && hidden.delete() } catch (_: Exception) { false }
+        if (!ok) ok = try { hidden.copyTo(target, true); hidden.delete() } catch (_: Exception) { false }   // copyTo بيرجّع File مش Boolean
         if (!ok) return false
         forget(ctx, hidden.name)
         scan(ctx, target.path)   // يرجع يتفهرس تاني في نفس اللحظة
