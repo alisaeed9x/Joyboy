@@ -6402,10 +6402,7 @@ class PlayerActivity : Activity(), Host {
             runOnUiThread {
                 try {
                     GAlert(this).setTitle("🩺 حالة المسار البديل")
-                        .setMessage("🎙 وشبر (التفريغ على الجهاز): " + (if (wOk) "✅ جاهز" else "❌ موديل الوشبر مش متنزّل — نزّله من إعدادات الترجمة") + "
-🌐 جوجل ترانسليت: " + (if (g.first) "✅ شغال (" + g.second + ")" else "❌ مش بيرد: " + g.second) + "
-
-المحرك الحالي: " + (if (TrWizard.method() == "google") "🎙 المسار البديل مفعّل" else "☁ جيميناي"))
+                        .setMessage("🎙 وشبر (التفريغ على الجهاز): " + (if (wOk) "✅ جاهز" else "❌ موديل الوشبر مش متنزّل — نزّله من إعدادات الترجمة") + "\n🌐 جوجل ترانسليت: " + (if (g.first) "✅ شغال (" + g.second + ")" else "❌ مش بيرد: " + g.second) + "\n\nالمحرك الحالي: " + (if (TrWizard.method() == "google") "🎙 المسار البديل مفعّل" else "☁ جيميناي"))
                         .setPositiveButton("تمام", null)
                         .show()
                 } catch (t: Throwable) { LogStore.err("Player:altChk", t) }
@@ -6427,8 +6424,7 @@ class PlayerActivity : Activity(), Host {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     if (sorted.isEmpty()) { Notice.show(this, "مفيش موديلات رجعت", 3000L); return@runOnUiThread }
                     val cur = Cfg.str("model", Models.DEFAULT)
-                    val labels = sorted.map { (if (it.id == cur) "✓ " else if (it.id in fresh) "🆕 " else "") + it.id + (if (it.display.isNotEmpty() && it.display != it.id) "
-" + it.display else "") }.toTypedArray()
+                    val labels = sorted.map { (if (it.id == cur) "✓ " else if (it.id in fresh) "🆕 " else "") + it.id + (if (it.display.isNotEmpty() && it.display != it.id) "\n" + it.display else "") }.toTypedArray()
                     GAlert(this).setTitle("اختار الموديل (${sorted.size}) — بيتطبّق على كل المفاتيح")
                         .setItems(labels) { _, which ->
                             val id = sorted[which].id
