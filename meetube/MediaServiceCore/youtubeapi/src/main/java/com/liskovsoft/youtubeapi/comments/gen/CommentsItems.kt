@@ -30,6 +30,7 @@ internal data class CommentRenderer(
     val repliesCount: TextItem?,
     val actionButtons: ActionButtonsWrapper?,
     val pinnedCommentBadge: PinnedCommentBadge?, // NEWTUBE(comments-panel)
+    val authorBadges: List<AuthorBadge>? = null, // JOYBOY(v1308): علامة التوثيق ✔ على صاحب التعليق
     val imageAttachmentViewModel: ImageAttachmentViewModel? // MEETUBE(issue #190): a GIF posted in the comment
 ) {
     data class ImageAttachmentViewModel(
@@ -38,6 +39,13 @@ internal data class CommentRenderer(
         data class CommentImageAttachmentViewModel(
             val image: ThumbnailItem?, // sources[]: an animated webp, signed (bare URLs 404)
             val aspectRatio: Float?
+        )
+    }
+    data class AuthorBadge(
+        val metadataBadgeRenderer: MetadataBadgeRenderer?
+    ) {
+        data class MetadataBadgeRenderer(
+            val style: String? // BADGE_STYLE_TYPE_VERIFIED | BADGE_STYLE_TYPE_SIMPLE
         )
     }
     data class PinnedCommentBadge(

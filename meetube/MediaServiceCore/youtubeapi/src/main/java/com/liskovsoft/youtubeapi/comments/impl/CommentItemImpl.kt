@@ -37,6 +37,8 @@ internal data class CommentItemImpl(val commentItemWrapper: CommentItemWrapper):
 
     private val pinnedLabelItem by lazy { commentRenderer?.getPinnedLabel() }
 
+    private val isVerifiedItem by lazy { commentRenderer?.authorBadges?.any { it.metadataBadgeRenderer?.style == "BADGE_STYLE_TYPE_VERIFIED" } ?: false }
+
     private val messageSpansItem by lazy { commentRenderer?.contentText?.let { toSpans(it) } }
 
     private val imageUrlItem by lazy { commentRenderer?.getImageUrl() }
@@ -62,6 +64,8 @@ internal data class CommentItemImpl(val commentItemWrapper: CommentItemWrapper):
     override fun isEmpty(): Boolean = replyCountItem == null || nestedCommentKeyItem == null // empty replies fix
 
     override fun getPinnedLabel(): String? = pinnedLabelItem
+
+    override fun isVerified(): Boolean = isVerifiedItem
 
     override fun getMessageSpans(): List<CommentItem.Span>? = messageSpansItem
 

@@ -92,7 +92,7 @@ class NpChanFull(val url: String, val name: String, val avatar: String, val bann
 /** (v403) تعليق: مثبّت/قلب من صاحب القناة/صاحب القناة + عدد الردود (صفحة الردود في replies) */
 class NpComment(val text: String, val author: String, val avatar: String, val likes: Long, val age: String,
                 val pinned: Boolean, val hearted: Boolean, val owner: Boolean, val replyCount: Int, val replies: Page?,
-                val liked: Boolean = false, val mtKey: String? = null, val mtId: String? = null)   // (v1298) حقول MeeTube: لايك + مفتاح الردود/اللايك + معرّف التعليق
+                val liked: Boolean = false, val mtKey: String? = null, val mtId: String? = null, val verified: Boolean = false)   // (v1308) ✔ صاحب التعليق موثّق   // (v1298) حقول MeeTube: لايك + مفتاح الردود/اللايك + معرّف التعليق
 class NpComments(val total: Int, val items: List<NpComment>, val next: Page?)
 
 /** (v325) Downloader بتاع NewPipeExtractor على HttpURLConnection (من غير مكتبة إضافية) */
@@ -342,7 +342,8 @@ object YtNp {
         return NpComment(c.commentText?.content ?: "", c.uploaderName ?: "", if (av == null || av.isEmpty()) "" else av[0].url ?: "",
             c.likeCount.toLong(), c.textualUploadDate ?: "",
             (callAny(c, "isPinned") as? Boolean) ?: false, (callAny(c, "isHeartedByUploader") as? Boolean) ?: false, (callAny(c, "isChannelOwner") as? Boolean) ?: false,
-            (callAny(c, "getReplyCount") as? Int) ?: 0, callAny(c, "getReplies") as? Page)
+            (callAny(c, "getReplyCount") as? Int) ?: 0, callAny(c, "getReplies") as? Page,
+            verified = (callAny(c, "isUploaderVerified") as? Boolean) ?: false)
     }
     fun commentsX(id: String): Pair<NpComments, (Page) -> NpComments> {
         init()

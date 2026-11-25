@@ -1240,7 +1240,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         }
         tabRel.text = "📑 مقترحات"; tabCom.text = "💬 تعليقات"
         tabRel.setOnClickListener { setTab(false) }
-        tabCom.setOnClickListener { setTab(true) }
+        tabCom.setOnClickListener { if (tv) setTab(true) else openCommentsSheet() }   // (v1308) موبايل: شيت عايم قابل للسحب زي يوتيوب
 
         body.addView(titleTv, LinearLayout.LayoutParams(-1, -2))
         body.addView(metaTv, LinearLayout.LayoutParams(-1, -2))
@@ -1605,6 +1605,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     }
 
     fun close(animated: Boolean, dock: Boolean = true) {
+        closeCommentsSheet()   // (v1308)
         if (visibility != View.VISIBLE || closing) return
         closing = true; gen++
         hh2.removeCallbacks(pageTick); hh2.removeCallbacks(sbHide)   // (v469) C6: حفظ أخير قبل القفل
@@ -1691,7 +1692,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     }
 
     private fun status(t: String) {
-        val box = if (tv && !comments) rail else listBox   // (v479 م5) تلفزيون: حالة المقترحات بتظهر في صف المقترحات
+        val box = cSheetBox ?: if (tv && !comments) rail else listBox   // (v1308) الشيت العايم أولاً · (v479 م5) تلفزيون: حالة المقترحات بتظهر في صف المقترحات
         box.removeAllViews()
         box.addView(TextView(act).apply { textSize = if (tv) 16f else 13f; setTextColor(YtSkin.sub); LoadUi.set(this, t); gravity = Gravity.CENTER; setPadding(ui.dp(20), ui.dp(30), ui.dp(20), ui.dp(30)) }, if (box === rail) LinearLayout.LayoutParams(-2, -2) else LinearLayout.LayoutParams(-1, -2))
     }
@@ -1754,7 +1755,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
                     if (my != gen) return@runOnUiThread
                     cItems.clear(); cItems.addAll(r.items); cNextKey = r.nextKey; cLoaded = true
                     if (cCountStr.isNotBlank()) tabCom.text = "💬 تعليقات " + cCountStr
-                    if (comments) renderComments()
+                    if (comments || cSheetBox != null) renderComments()   // (v1308) الشيت العايم كمان
                 }
             } catch (e: Throwable) {
                 LogStore.err("YtWatch:comments", e)
@@ -1763,13 +1764,30 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         }.apply { isDaemon = true }.start()
     }
 
+    // (v1308) شيت التعليقات العايم: بيفتح فوق الفيديو وبيتقفل بالسحب لتحت (شيتات التطبيق كلها كده) — زي يوتيوب الرسمي
+    private var cSheetBox: LinearLayout? = null
+    private var cSheetDlg: android.app.Dialog? = null
+
+    fun openCommentsSheet() {
+        if (cSheetDlg != null) return
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        cSheetBox = box
+        val d = ui.sheet(act, "💬 التعليقات", listOf<View>(box), false, onClose = { cSheetBox = null; cSheetDlg = null })
+        cSheetDlg = d
+        d.show()
+        if (!cLoaded) loadComments() else renderComments()
+    }
+
+    fun closeCommentsSheet() { try { cSheetDlg?.dismiss() } catch (_: Throwable) {}; cSheetBox = null; cSheetDlg = null }
+
     private fun renderComments() {
-        listBox.removeAllViews()
+        val box = cSheetBox ?: listBox
+        box.removeAllViews()
         if (cItems.isEmpty()) { status(if (cLoaded) "مفيش تعليقات" else "⏳ …"); return }
-        if (cNewKey != null) listBox.addView(chip(if (cNewest) "⇅ الترتيب: الأحدث أولاً" else "⇅ الترتيب: الأعلى تقييمًا") { cNewest = !cNewest; cLoaded = false; cItems.clear(); loadComments() }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(14), ui.dp(4), ui.dp(14), ui.dp(4)) })   // (v1298)
-        for (c in cItems) listBox.addView(commentView(c, false), LinearLayout.LayoutParams(-1, -2))
+        if (cNewKey != null) box.addView(chip(if (cNewest) "⇅ الترتيب: الأحدث أولاً" else "⇅ الترتيب: الأعلى تقييمًا") { cNewest = !cNewest; cLoaded = false; cItems.clear(); loadComments() }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(14), ui.dp(4), ui.dp(14), ui.dp(4)) })   // (v1298)
+        for (c in cItems) box.addView(commentView(c, false), LinearLayout.LayoutParams(-1, -2))
         val nx = cNextKey
-        if (nx != null) listBox.addView(chip("عرض المزيد") { loadMoreComments(nx) }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(16)) })
+        if (nx != null) box.addView(chip("عرض المزيد") { loadMoreComments(nx) }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(16)) })
     }
 
     /** تعليق (أو رد): مثبّت 📌 · قلب ❤ من صاحب القناة · علامة صاحب القناة · وزرار «ردود» بيفتحها تحته */
@@ -1778,7 +1796,8 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         val tags = ArrayList<String>()
         if (c.pinned) tags.add("📌 مثبّت")
         if (c.owner) tags.add("✓ صاحب القناة")
-        val head = (tags.joinToString(" ") + " " + listOf(c.author, c.age).filter { it.isNotBlank() }.joinToString(" · ")).trim()
+        val authorT = if (c.verified) c.author + " ✔" else c.author   // (v1308) علامة التوثيق في التعليقات
+        val head = (tags.joinToString(" ") + " " + listOf(authorT, c.age).filter { it.isNotBlank() }.joinToString(" · ")).trim()
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         col.addView(TextView(act).apply { text = head; textSize = 12f; setTextColor(if (c.owner) YtSkin.text else YtSkin.sub); typeface = medium; setSingleLine(); ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(-1, -2))
         col.addView(TextView(act).apply { text = c.text; textSize = 14f; setTextColor(YtSkin.text) }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2) })
@@ -1861,7 +1880,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         Thread {
             try {
                 val r = YtAccount.mtComments(key)
-                act.runOnUiThread { if (my == gen) { cItems.addAll(r.items); cNextKey = r.nextKey; if (comments) renderComments() } }
+                act.runOnUiThread { if (my == gen) { cItems.addAll(r.items); cNextKey = r.nextKey; if (comments || cSheetBox != null) renderComments()   // (v1308) الشيت العايم كمان } }
             } catch (e: Throwable) {
                 act.runOnUiThread { if (my == gen) Notice.show(act, "ما قدرتش أجيب تعليقات أكتر", 2000L) }
             }
@@ -1883,7 +1902,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
                 act.runOnUiThread {
                     if (my != gen) return@runOnUiThread
                     cEdit.setText(""); cReplyTo = null; cEdit.hint = "اكتب تعليق…"
-                    if (rp == null) { cItems.add(0, NpComment(t, "أنت", "", 0L, "دلوقتي", false, false, false, 0, null)); cLoaded = true; if (comments) renderComments() }
+                    if (rp == null) { cItems.add(0, NpComment(t, "أنت", "", 0L, "دلوقتي", false, false, false, 0, null)); cLoaded = true; if (comments || cSheetBox != null) renderComments()   // (v1308) الشيت العايم كمان }
                     Notice.show(act, if (rp != null) "✅ الرد اتنشر" else "✅ التعليق اتنشر على حسابك", 2200L)
                 }
             } catch (e: Throwable) {

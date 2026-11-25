@@ -24,6 +24,11 @@ public interface CommentItem {
     String getReplyCount();
     boolean isEmpty();
 
+    /** JOYBOY(v1308): ✔ علامة التوثيق على اسم صاحب التعليق */
+    default boolean isVerified() {
+        return false;
+    }
+
     /** NEWTUBE(comments-panel): "Pinned by @handle" on the pinned comment, null on every other one. */
     @Nullable
     default String getPinnedLabel() {
