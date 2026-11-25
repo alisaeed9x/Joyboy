@@ -521,6 +521,43 @@ object AdvRows {
         if (r.kind == "int") return null
         val n = !isOn(r); setOn(r, n); return n
     }
+    // ═══════ (v1306) إدارة المخفي «مش مهتم»: شاشة تراجع (كانت ميزة يتيمة مالهاش وصول) ═══════
+    fun hiddenManagerButton(act: Activity, ui: Ui, th: Theme): View =
+        ui.button("🚫 المخفي من الرئيسية (مش مهتم) — إدارة وتراجع") { hiddenManager(act, ui, th) }
+
+    fun hiddenManager(act: Activity, ui: Ui, th: Theme) {
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        val dlg = ui.sheet(act, "🚫 المخفي (مش مهتم)", listOf(box), false)
+        fun fill() {
+            box.removeAllViews()
+            val tags = try { YtStore.notInt().toList().sorted() } catch (_: Throwable) { emptyList<String>() }
+            if (tags.isEmpty()) {
+                box.addView(ui.text("مفيش حاجة مخفية — لما تدوس «مش مهتم» أو «ماتقترحش القناة» من قائمة الفيديو بتتخبّى من الرئيسية وبتتلاقي هنا.", 13f, th.muted).apply { setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)) })
+                return
+            }
+            tags.forEach { tg ->
+                val isCh = tg.startsWith("c:")
+                val name = tg.substringAfter(':')
+                val rowL = LinearLayout(act).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    addView(ui.text((if (isCh) "📺 قناة: " else "🎞 فيديو: ") + name, 13.5f, th.text).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        setPadding(ui.dp(12), ui.dp(10), ui.dp(4), ui.dp(10))
+                    })
+                    addView(ui.button("↩ تراجع") {
+                        try { YtStore.unhide(tg) } catch (_: Throwable) {}
+                        Notice.show(act, "↩ رجع تاني في الرئيسية", 1600L)
+                        fill()
+                    })
+                }
+                box.addView(rowL)
+            }
+            box.addView(ui.text("التراجع بيرجّع العنصر لاقتراحات الرئيسية من أول تحديث.", 12f, th.muted).apply { setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6)) })
+        }
+        fill()
+        dlg.show()
+    }
+
     fun tabOf(key: String): String = rows.firstOrNull { it.key == key }?.tab ?: "general"
 
     fun forTab(ui: Ui, tab: String): List<View> {

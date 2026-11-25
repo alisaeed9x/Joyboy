@@ -398,6 +398,7 @@ class MainActivity : Activity() {
                 ui.button("👤 حساب جوجل: " + (if (YtAccount.loggedIn()) "مسجّل الدخول" else "مش مسجّل")) { settingsDlg0?.dialog?.dismiss(); ytUi?.openAccountTab() },
                 ui.button("🚪 تسجيل الخروج") { YtAccount.logout(); Notice.show(this, "اتسجّل الخروج", 1800L) },
                 ui.button("📥 التحميلات المسجّلة") { settingsDlg0?.dialog?.dismiss(); ytUi?.openDownloadsPage() },
+                AdvRows.hiddenManagerButton(this, ui, th),   // (v1306) إدارة المخفي «مش مهتم»
                 ui.noHint()),
             ui.section("🎬 لما تدوس على فيديو", true,
                 ui.switchRow("▶ تشغيل تلقائي في مشغّل صفحة المشاهدة", YtOpen.autoPlay()) { Cfg.put("yt_mini_auto", if (it) "1" else "0") },

@@ -258,6 +258,25 @@ class YtPlayerKit(private val act: Activity, private val ui: Ui) : FrameLayout(a
     private val playG = YtGlyph(act, 0)
     private val playB = FrameLayout(act).apply { background = GradientDrawable().apply { setShape(GradientDrawable.OVAL); setColor(0x99000000.toInt()) } }
     private val msgTv = TextView(act).apply { textSize = 13f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; visibility = View.GONE; setPadding(ui.dp(28), 0, ui.dp(28), 0) }
+    // (v1306) معاينة storyboard فوق شريط التقدم أثناء السحب
+    private val thumbV = android.widget.ImageView(act).apply { scaleType = android.widget.ImageView.ScaleType.CENTER_CROP }
+    private val thumbTime = TextView(act).apply { textSize = 12f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; includeFontPadding = false }
+    private val thumbBox = LinearLayout(act).apply {
+        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; visibility = View.GONE
+        background = GradientDrawable().apply { setColor(0xE6000000.toInt()); cornerRadius = ui.dp(8).toFloat() }
+        setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4))
+    }
+    @Volatile private var heatDone: String? = null
+    private val sbPool = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r).apply { isDaemon = true; priority = Thread.MIN_PRIORITY } }
+    @Volatile private var sbSeq = 0
+
+    // (v1306) شاشة النهاية: مقترحات فوق الفيديو قبل ما يخلص بـ20 ثانية (زي يوتيوب)
+    var endProvider: (() -> List<NpItem>)? = null
+    var onEndPick: ((NpItem) -> Unit)? = null
+    private val endRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; visibility = View.GONE }
+    private val endBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; background = GradientDrawable().apply { setColor(0xD9000000.toInt()); cornerRadius = ui.dp(10).toFloat() } }
+    private var endShownFor: String? = null
+    private var endDismissedFor: String? = null
     private val timeTv = TextView(act).apply { textSize = 11f; setTextColor(Color.WHITE); text = "0:00 / 0:00" }
     val seek = ChSeekBar(act).apply { if (Design.isNew()) layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR }   // (v1295) بيرسم علامات الفصول — non-private عشان YtWatchPage
     private val expandG = YtGlyph(act, 2)
@@ -288,12 +307,48 @@ class YtPlayerKit(private val act: Activity, private val ui: Ui) : FrameLayout(a
     }
 
     private val hideR = Runnable { if (exo?.isPlaying == true && !dragging) showCtl(false, false) }
+    /** (v1306) شاشة النهاية: بتظهر مرة واحدة لكل فيديو (أطول من دقيقة) في آخر 20 ثانية، وبتتخبّى لو المستخدم قفلها */
+    private fun maybeEndScreen(d: Long, pos: Long) {
+        try {
+            if (d < 60000L || pos < 0 || d - pos > 20000L || d - pos < 0L) return
+            val vid = idOf?.invoke() ?: return
+            if (endShownFor == vid || endDismissedFor == vid) return
+            val items = endProvider?.invoke()?.filter { it.kind == 0 }?.take(3) ?: return
+            if (items.isEmpty()) return
+            endShownFor = vid
+            endRow.removeAllViews()
+            for (v in items) {
+                val card = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+                val th = android.widget.ImageView(act).apply { scaleType = android.widget.ImageView.ScaleType.CENTER_CROP; setBackgroundColor(0xFF222222.toInt()) }
+                try { if (v.thumb.isNotBlank()) Glide.with(act).load(v.thumb).centerCrop().override(320, 180).into(th) } catch (_: Throwable) {}
+                card.addView(th, LinearLayout.LayoutParams(ui.dp(120), ui.dp(68)))
+                val ttl = TextView(act).apply {
+                    text = v.title; textSize = 10.5f; setTextColor(Color.WHITE); maxLines = 2; ellipsize = TextUtils.TruncateAt.END
+                    gravity = Gravity.CENTER; setPadding(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(6))
+                }
+                card.addView(ttl, LinearLayout.LayoutParams(ui.dp(120), -2))
+                card.setOnClickListener { endBox.visibility = View.GONE; try { onEndPick?.invoke(v) } catch (_: Throwable) {} }
+                endRow.addView(card, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(4), 0, ui.dp(4), 0) })
+            }
+            endBox.visibility = View.VISIBLE
+        } catch (_: Throwable) {}
+    }
+
+    /** (v1306) لما بيانات الفيديو توصل: ارسم منحنى «الأكثر إعادة» على الشريط مرة واحدة */
+    private fun applyHeat(vid: String) {
+        try {
+            val d = YtStoryboard.data(vid) ?: return
+            if (d.heat != null) { seek.heat = d.heat; heatDone = vid }
+        } catch (_: Throwable) {}
+    }
+
     private val ticker = object : Runnable {
         override fun run() {
             val p = exo ?: return
             val d = p.duration; val pos = p.currentPosition
             if (d > 0 && !dragging) seek.progress = (pos * 1000L / d).toInt()
             timeTv.text = fmt(pos) + " / " + fmt(if (d > 0) d else 0L)
+            if (d > 0) maybeEndScreen(d, pos)
             hh.postDelayed(this, 500L)
         }
     }
@@ -358,6 +413,16 @@ class YtPlayerKit(private val act: Activity, private val ui: Ui) : FrameLayout(a
         bar.addView(seek, LinearLayout.LayoutParams(0, ui.dp(36), 1f))
         if (tvMode) bar.addView(expandG, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         addView(bar, FrameLayout.LayoutParams(-1, ui.dp(44), Gravity.BOTTOM))
+        thumbBox.addView(thumbV, LinearLayout.LayoutParams(ui.dp(128), ui.dp(72)))
+        thumbBox.addView(thumbTime, LinearLayout.LayoutParams(-2, -2).apply { setMargins(0, ui.dp(2), 0, 0) })
+        addView(thumbBox, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { setMargins(0, 0, 0, ui.dp(52)) })   // (v1306)
+        val endTitle = TextView(act).apply { text = "🎬 الفيديو هيخلص — اللي بعده:"; textSize = 13f; setTextColor(Color.WHITE); includeFontPadding = false; setPadding(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(2)) }
+        val endClose = TextView(act).apply { text = "✕"; textSize = 15f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(6)) }
+        endClose.setOnClickListener { endDismissedFor = try { idOf?.invoke() } catch (_: Throwable) { null }; endBox.visibility = View.GONE }
+        val endHead = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        endHead.addView(endTitle, LinearLayout.LayoutParams(0, -2, 1f)); endHead.addView(endClose, LinearLayout.LayoutParams(-2, -2))
+        endBox.addView(endHead); endBox.addView(endRow)
+        addView(endBox, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER).apply { setMargins(ui.dp(12), 0, ui.dp(12), 0) })   // (v1306)
 
         setOnClickListener { showCtl(!ctlOn, true) }
         closeG.setOnClickListener {
@@ -400,11 +465,36 @@ class YtPlayerKit(private val act: Activity, private val ui: Ui) : FrameLayout(a
         }
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) { val d = exo?.duration ?: 0L; if (d > 0) timeTv.text = fmt(d * progress / 1000L) + " / " + fmt(d) }
+                if (fromUser) {
+                    val d = exo?.duration ?: 0L
+                    if (d > 0) {
+                        val ms = d * progress / 1000L
+                        timeTv.text = fmt(ms) + " / " + fmt(d)
+                        val vid = try { idOf?.invoke() } catch (_: Throwable) { null }
+                        if (!vid.isNullOrBlank()) {
+                            thumbTime.text = fmt(ms)
+                            thumbBox.visibility = View.VISIBLE
+                            val seq = ++sbSeq
+                            sbPool.execute {
+                                val bm = try { YtStoryboard.frame(vid, ms) } catch (_: Throwable) { null }
+                                hh.post {
+                                    if (seq == sbSeq && dragging) {
+                                        if (bm != null) { thumbV.setImageBitmap(bm); thumbV.visibility = View.VISIBLE } else thumbV.visibility = View.GONE
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            override fun onStartTrackingTouch(sb: SeekBar?) { dragging = true; hh.removeCallbacks(hideR) }
+            override fun onStartTrackingTouch(sb: SeekBar?) {
+                dragging = true; hh.removeCallbacks(hideR)
+                val vid = try { idOf?.invoke() } catch (_: Throwable) { null }
+                if (!vid.isNullOrBlank()) { thumbBox.visibility = View.VISIBLE; thumbV.visibility = View.GONE; thumbTime.text = timeTv.text }
+            }
             override fun onStopTrackingTouch(sb: SeekBar?) {
                 dragging = false
+                thumbBox.visibility = View.GONE
                 exo?.let { val d = it.duration; if (d > 0) it.seekTo(d * seek.progress / 1000L) }
                 scheduleHide()
             }
@@ -801,6 +891,11 @@ class YtPlayerKit(private val act: Activity, private val ui: Ui) : FrameLayout(a
             p.prepare(); p.playWhenReady = autoplay
             exo = p
             loading(true)
+            try { endBox.visibility = View.GONE } catch (_: Throwable) {}
+            try {
+                val vid = idOf?.invoke()
+                if (!vid.isNullOrBlank() && heatDone != vid) YtStoryboard.prefetch(vid) { hh.post { applyHeat(vid) } }
+            } catch (_: Throwable) {}
             hh.removeCallbacks(ticker); hh.post(ticker)
         } catch (e: Throwable) {
             LogStore.err("YtMini:start", e)
@@ -1180,6 +1275,8 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         kit.onDownload = { a -> val v = item; if (v != null) host.download(a, saveItem()) }   // (v1129)
         kit.onExpand = { pos, pk -> val v = item; if (v != null) host.expand(v.id, titleNow(), pos, false, pk) }
         kit.onEnded = { val nx = YtQueue.next(); if (nx != null) host.openVideo(nx) }   // (v469) C9: التالي من قائمة الانتظار تلقائيًا
+        kit.endProvider = { det?.related?.takeIf { it.isNotEmpty() } ?: liteRel }   // (v1306) شاشة النهاية
+        kit.onEndPick = { v -> host.openVideo(v) }
         // (v469) C1: شريط «اتخطى مقطع» + تراجع — تحت مشغّل الصفحة على طول
         val sb = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE; setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6)); setBackgroundColor(YtSkin.surface) }
         val st = TextView(act).apply { textSize = 12.5f; setTextColor(YtSkin.text); typeface = medium }
@@ -2030,13 +2127,34 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
 class ChSeekBar(ctx: Context) : SeekBar(ctx) {
     @Volatile var marks: FloatArray = FloatArray(0)
         set(v) { field = v; invalidate() }
+    /** (v1306) «الأكثر إعادة تشغيل»: 48 قيمة 0..1 — منحنى رفيع شفاف فوق الشريط زي يوتيوب */
+    @Volatile var heat: FloatArray? = null
+        set(v) { field = v; invalidate() }
     private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xCCFFFFFF.toInt(); strokeWidth = 3f }
+    private val hp = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x3DFFFFFF.toInt(); style = Paint.Style.FILL }
+    private val path = android.graphics.Path()
     override fun onDraw(c: Canvas) {
         super.onDraw(c)
-        val m = marks; if (m.isEmpty()) return
         val ltr = layoutDirection != View.LAYOUT_DIRECTION_RTL
         val x0 = paddingLeft.toFloat(); val w = (width - paddingLeft - paddingRight).toFloat()
-        val y = height / 2f; val hh = height * 0.22f
+        val y = height / 2f
+        val ht = heat
+        if (ht != null && ht.isNotEmpty() && w > 0) {
+            path.reset()
+            val base = y - height * 0.20f
+            val top = height * 0.06f
+            path.moveTo(x0, base)
+            for (i in ht.indices) {
+                val frac = i / (ht.size - 1).toFloat()
+                val x = if (ltr) x0 + frac * w else x0 + (1f - frac) * w
+                path.lineTo(x, base - ht[i] * (base - top))
+            }
+            val lastX = if (ltr) x0 + w else x0
+            path.lineTo(lastX, base); path.close()
+            c.drawPath(path, hp)
+        }
+        val m = marks; if (m.isEmpty()) return
+        val hh = height * 0.22f
         for (f in m) { val x = if (ltr) x0 + f * w else x0 + (1f - f) * w; c.drawLine(x, y - hh, x, y + hh, p) }
     }
 }

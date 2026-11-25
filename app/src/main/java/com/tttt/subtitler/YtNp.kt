@@ -761,6 +761,8 @@ object YtStore {
     private const val NOTINT = "ytp_notint"
     fun notInt(): Set<String> = Cfg.str(NOTINT, "").split(',').filter { it.isNotBlank() }.toHashSet()
     fun hide(tag: String) { val l = notInt().toMutableSet(); l.add(tag); Cfg.put(NOTINT, l.joinToString(",")) }
+    /** (v1306) تراجع عن إخفاء «مش مهتم» */
+    fun unhide(tag: String) { val l = notInt().toMutableSet(); l.remove(tag); Cfg.put(NOTINT, l.joinToString(",")) }
 
     fun contains(key: String, x: NpItem) = read(key).any { same(it, x) }
 
