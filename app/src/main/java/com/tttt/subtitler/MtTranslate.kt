@@ -889,7 +889,7 @@ object MtTranslate : JoyboyPlayerHost.Provider {
         if (dp != null && dp.active) { dp.stop(); Notice.show(a, "🎙 الدبلجة اتقفلت — صوت الفيديو الأصلي رجع", 2000L); return }
         if (dubBusy) { dubCancel = true; Notice.show(a, "⏹ بلغي الدبلجة…", 1600L); return }
         val subs = e?.subs ?: sideSubs
-        val segs = if (subs == null) emptyList() else Dub.segsOf(subs)
+        val segs = if (subs == null) emptyList() else Dub.segsOf(subs, Store.keyFor(if (engKey.isNotEmpty()) engKey else (curId() ?: "x")))
         val force = dubForce; dubForce = false
         val needFull = TrProfile.uiMode() == TrProfile.DUB && e != null && !(try { e.fullyDone() } catch (_: Throwable) { false })
         if (!force && (segs.isEmpty() || needFull)) {   // (v1229)

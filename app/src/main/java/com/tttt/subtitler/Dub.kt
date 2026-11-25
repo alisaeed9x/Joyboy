@@ -390,13 +390,21 @@ object Dub {
 
     fun live(): Boolean = Cfg.int("dub_live", 1) != 0
 
-    /** (v1232) صوت ثابت لكل شخصية في الفيديو: أول ما الشخصية تظهر بتاخد صوت من طابور جنسها والاختيار بيتخزّن ومابيتغيّرش أبدًا (بين الباتشات ولا بين الجلسات) */
+    /** (v1286) توحيد كتابة اسم الشخصية (تشكيل/ألف/ياء/تاء مربوطة/علامات) عشان نفس الشخصية ما تتحسبش اتنين لو الاسم اتكتب بشكل مختلف بين الباتشات */
+    private fun normName(s: String): String =
+        s.replace(Regex("[\\u064B-\\u0652\\u0670\\u0640]"), "").replace(Regex("[\u0623\u0625\u0622]"), "\u0627").replace('\u0649', '\u064A').replace('\u0629', '\u0647')
+            .replace(Regex("[\\s\\p{Punct}\u00AB\u00BB\u060C\u061B]+"), " ").trim().lowercase()
+
+    /** (v1232) صوت ثابت لكل شخصية في الفيديو: أول ما الشخصية تظهر بتاخد صوت من طابور جنسها والاختيار بيتخزّن ومابيتغيّرش أبدًا (بين الباتشات ولا بين الجلسات).
+     *  (v1286) لو الشخصية اتخزّن لها صوت قبل كده بيتستخدم حتى لو الجنس في الباتش ده اتغيّر أو بقى غير محدد؛ وبيرجّع null لو شخصية جديدة جنسها مش معروف (ماتتخزّنش لحد ما الجنس يتحدد) */
     @Synchronized
-    private fun fixedVoice(vk: String, k: String, g: String): Pair<String, Int> {
+    private fun fixedVoice(vk: String, k: String, g: String): Pair<String, Int>? {
         val cfgKey = "dubvm:" + vk
         val m = try { JSONObject(Cfg.str(cfgKey, "{}")) } catch (_: Throwable) { JSONObject() }
-        val nk = k.trim().lowercase()
-        m.optJSONObject(nk)?.let { o -> return Pair(o.optString("v"), o.optInt("p")) }
+        val nk = normName(k)
+        val legacy = k.trim().lowercase()
+        (m.optJSONObject(nk) ?: m.optJSONObject(legacy))?.let { o -> return Pair(o.optString("v"), o.optInt("p")) }
+        if (g != "female" && g != "male") return null
         val pool = if (g == "female") FEM else MAL
         var used = 0
         val it = m.keys()
@@ -425,8 +433,8 @@ object Dub {
             val txt = clean(s.translated); if (txt.isBlank()) continue
             val g = s.gender.lowercase(); val k = key(s)
             var voice = ""; var pitchBase = 0
-            if ((g == "female" || g == "male") && vk.isNotEmpty() && k.isNotEmpty()) {
-                val fv = fixedVoice(vk, k, g); voice = fv.first; pitchBase = fv.second
+            if (vk.isNotEmpty() && k.isNotEmpty()) {
+                val fv = fixedVoice(vk, k, g); if (fv != null) { voice = fv.first; pitchBase = fv.second }
             } else if (g == "female" || g == "male") {
                 val pool = if (g == "female") FEM else MAL
                 val idx = if (k.isEmpty()) 0 else (rank[g + "|" + k] ?: 0)
