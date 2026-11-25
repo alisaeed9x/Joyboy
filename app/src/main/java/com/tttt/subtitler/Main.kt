@@ -692,8 +692,8 @@ class MainActivity : Activity() {
     ui.noHint()),
                 ui.section("🎨 الشكل", true,
                     ui.noHint(),
-                    ui.slider("🪟 الشفافية والبلر (50 = الافتراضي · أكتر = أشفّ وأبلر)", MtGlass.level(), 0, 100, "%") { Cfg.put("glass_level", it.toString()) },
-                    ui.text("بيأثر على الشيتات والكروت الزجاجية؛ بيظهر في الشيتات الجاية أو بعد قفل وفتح الصفحة.", 12f, th.muted),
+                    ui.slider("🪟 الشفافية والبلر (50 = الافتراضي · أكتر = أشفّ وأبلر)", MtGlass.level(), 0, 100, "%") { Cfg.put("glass_level", it.toString()); MtGlass.fireLevel() },   // (v1312) تطبيق لحظي وقت التحريك
+                    ui.text("بيتطبق لحظيًا على الكروت والشيتات والنوافذ المنبثقة وقت تحريك السلايدر.", 12f, th.muted),
                     ui.slider("🖼 تعتيم خلفية الشاشة الرئيسية", Cfg.int("app_wall_scrim", 55).coerceIn(0, 95), 0, 95, "%") { Cfg.put("app_wall_scrim", it.toString()) },
                     ui.switchRow("🔍 عدسة الشريط السفلي (زجاج)", Cfg.bool("glass_lens", false)) { Cfg.put("glass_lens", if (it) "1" else "0") },
                     ui.switchRow("〰 اهتزاز عدسة الشريط", Cfg.bool("glass_jiggle", false)) { Cfg.put("glass_jiggle", if (it) "1" else "0") }),

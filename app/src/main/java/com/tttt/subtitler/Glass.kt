@@ -57,6 +57,14 @@ object Glass {
         v.background = drawable(th, r0, maxOf(1, d.toInt()), if (th.isLight) th.border else alpha(Color.WHITE, 0x2E), 0xF2)
     }
 
+    /** (v1312) تحديث لحظي لشيت مفتوح وقت تحريك سلايدر «الشفافية والبلر»: بلور النافذة بالدرجة الجديدة + خلفية الشيت + الفروست */
+    fun restyleLive(d: Dialog) {
+        styleWindow(d)
+        val root = (d.window?.decorView?.findViewById<View>(android.R.id.content) as? ViewGroup)?.getChildAt(0)
+        root?.let { restyle(it) }
+        (d as? GDialog)?.frostTarget?.let { t -> try { com.tttt.subtitler.mtui.SheetGlass.frost(t, hostWindowOf(d.context), (d as GDialog).frostCorner) } catch (_: Throwable) {} }
+    }
+
     /** تعتيم خفيف + بلور للخلفية (أندرويد 12+). على الأقدم: تعتيم بس */
     fun styleWindow(d: Dialog, windowBlur: Boolean = true) {   // (v910) windowBlur=false: الشيت بيبلّر نفسه بـSheetGlass فمش محتاجين بلور النافذة كلها
         val w = d.window ?: return
@@ -64,7 +72,7 @@ object Glass {
             w.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             if (MtGlass.on()) {   // (v893) MeeTube: تعتيم خفيف + بلور تقيل ورا الشيت
                 w.setDimAmount(0.32f)
-                if (windowBlur && (d !is GDialog || d.frostTarget == null)) { if (Build.VERSION.SDK_INT >= 31) { w.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND); val lp0 = w.attributes; lp0.blurBehindRadius = 30; w.attributes = lp0 } }   // (v905) الشيت المثلّج بيبلّر نفسه والصفحة تفضل حادّة؛ بلور النافذة كلها للدايلوجات التانية
+                if (windowBlur && (d !is GDialog || d.frostTarget == null)) { if (Build.VERSION.SDK_INT >= 31) { w.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND); val lp0 = w.attributes; lp0.blurBehindRadius = (30f * MtGlass.blurScale() + 0.5f).toInt().coerceIn(1, 80); w.attributes = lp0 } }   // (v905) الشيت المثلّج بيبلّر نفسه والصفحة تفضل حادّة؛ بلور النافذة كلها للدايلوجات التانية · (v1312) نصف القطر بيتبع سلايدر «الشفافية والبلر»
                 return
             }
             w.setDimAmount(0.40f)
@@ -143,6 +151,11 @@ object Glass {
  * onBack بترجّع true لو استهلكت الرجوع (مثلاً رجوع خطوة جوه الإعدادات) وإلا بتتقفل النافذة.
  */
 open class GDialog(ctx: Context, theme: Int = 0) : Dialog(ctx, theme) {
+    companion object {
+        // (v1312) الشيتات المفتوحة دلوقتي: سلايدر «الشفافية والبلر» بيحدّثها لحظيًا (خلفية + بلور نافذة + فروست)
+        private val showing = java.util.concurrent.CopyOnWriteArrayList<GDialog>()
+        init { MtGlass.onLevel { for (d in showing) try { Glass.restyleLive(d) } catch (_: Throwable) {} } }
+    }
     var onBack: (() -> Boolean)? = null
     var plain = false
     private var closing = false
@@ -176,6 +189,7 @@ open class GDialog(ctx: Context, theme: Int = 0) : Dialog(ctx, theme) {
         if (!plain) Glass.styleWindow(this)
         try { TvFocus.attachWindow(context, window, Glass.theme().primary) } catch (_: Throwable) {}   // (v477 م3)
         super.show()
+        showing.add(this)   // (v1312)
         try { Glass.enter(this) } catch (_: Throwable) {}
         frostTarget?.let { t -> try { com.tttt.subtitler.mtui.SheetGlass.frost(t, hostWindow(), frostCorner) } catch (_: Throwable) {} }   // (v909) SheetGlass.frost الأصلي من MeeTube (بدل SheetFrost)
     }
@@ -187,7 +201,7 @@ open class GDialog(ctx: Context, theme: Int = 0) : Dialog(ctx, theme) {
         return null
     }
 
-    private fun realDismiss() { try { super.dismiss() } catch (_: Throwable) {} }
+    private fun realDismiss() { showing.remove(this); try { super.dismiss() } catch (_: Throwable) {} }   // (v1312)
 
     override fun dismiss() {
         val v = window?.decorView
