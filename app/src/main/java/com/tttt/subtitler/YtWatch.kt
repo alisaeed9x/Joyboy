@@ -259,7 +259,7 @@ class YtPlayerKit(private val act: Activity, private val ui: Ui) : FrameLayout(a
     private val playB = FrameLayout(act).apply { background = GradientDrawable().apply { setShape(GradientDrawable.OVAL); setColor(0x99000000.toInt()) } }
     private val msgTv = TextView(act).apply { textSize = 13f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; visibility = View.GONE; setPadding(ui.dp(28), 0, ui.dp(28), 0) }
     private val timeTv = TextView(act).apply { textSize = 11f; setTextColor(Color.WHITE); text = "0:00 / 0:00" }
-    private val seek = SeekBar(act).apply { if (Design.isNew()) layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR }
+    private val seek = ChSeekBar(act).apply { if (Design.isNew()) layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR }   // (v1295) بيرسم علامات الفصول
     private val expandG = YtGlyph(act, 2)
     private val closeG = YtGlyph(act, 3)
     private val gearG = YtGlyph(act, 4)
@@ -1419,7 +1419,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         animate().cancel(); kit.animate().cancel(); tail.animate().cancel()
         gen++; val my = gen
         item = v; det = null; comments = false; cLoaded = false; cNext = null; cMore = null; cItems = ArrayList(); cTotal = -1; relShown = 20
-        liked = likedSet().contains(v.id); likeCount = -1L; dislikeN = -1L; metaBase = ""; lastSkipFrom = -1L; sbBar?.visibility = View.GONE; cEdit.setText(""); composer.visibility = View.GONE; tabCom.text = "💬 تعليقات"
+        liked = likedSet().contains(v.id); likeCount = -1L; dislikeN = -1L; metaBase = ""; lastSkipFrom = -1L; sbBar?.visibility = View.GONE; cEdit.setText(""); composer.visibility = View.GONE; tabCom.text = "💬 تعليقات"; seek.marks = FloatArray(0)   // (v1295)
         if (YtSponsor.on()) YtSponsor.fetch(v.id) {}   // (v469) C1
         hh2.removeCallbacks(pageTick); hh2.postDelayed(pageTick, 600L)
         if (!embedded) { kit.reset(); kit.setThumb(v.thumb); kit.loading(true) }
@@ -1546,6 +1546,9 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         chanName.text = nm
         chanAvHost.removeAllViews(); chanAvHost.addView(avatar(nm.ifBlank { "؟" }, 40, v.avatar, v.channelId.ifBlank { chanUrl() }), FrameLayout.LayoutParams(-1, -1))
         descTv.text = linkDesc(d.desc.trim().ifBlank { "(مفيش وصف)" })   // (v1288) روابط وتوقيتات قابلة للضغط
+        try {   // (v1295) علامات الفصول على شريط التقدم
+            seek.marks = if (d.chapters.isNotEmpty() && d.dur > 0) d.chapters.mapNotNull { val f = it.startMs / (d.dur * 1000f); if (f > 0.005f && f < 0.995f) f else null }.toFloatArray() else FloatArray(0)
+        } catch (_: Throwable) {}
         paintSub(); paintSave()
         renderList()
     }
@@ -1949,5 +1952,20 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
     override fun onVisibilityChanged(changedView: View, visibility: Int) {
         super.onVisibilityChanged(changedView, visibility)
         if (visibility != View.VISIBLE) { try { exo?.playWhenReady = false } catch (_: Throwable) {} }
+    }
+}
+
+/** (v1295) SeekBar بيرسم علامات بيضا صغيرة عند بداية كل فصل (marks = كسور 0..1 من المدة). بيحترم اتجاه الشريط (LTR في التصميم الجديد) */
+private class ChSeekBar(ctx: Context) : SeekBar(ctx) {
+    @Volatile var marks: FloatArray = FloatArray(0)
+        set(v) { field = v; invalidate() }
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xCCFFFFFF.toInt(); strokeWidth = 3f }
+    override fun onDraw(c: Canvas) {
+        super.onDraw(c)
+        val m = marks; if (m.isEmpty()) return
+        val ltr = layoutDirection != View.LAYOUT_DIRECTION_RTL
+        val x0 = paddingLeft.toFloat(); val w = (width - paddingLeft - paddingRight).toFloat()
+        val y = height / 2f; val hh = height * 0.22f
+        for (f in m) { val x = if (ltr) x0 + f * w else x0 + (1f - f) * w; c.drawLine(x, y - hh, x, y + hh, p) }
     }
 }

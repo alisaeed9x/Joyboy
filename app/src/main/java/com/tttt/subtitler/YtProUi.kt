@@ -897,6 +897,15 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         if (it.kind == 2 && it.url.startsWith("yta:")) { openAcc(it); return }
         if (it.url == "ytpl:all") { cur?.let { st -> playAll(st) }; return }   // (v469) C7
         if (it.url.startsWith("ytdm:")) { Notice.show(act, "ده تنزيل شغّال في مدير تنزيلات النظام — لما يخلص هيظهر تحت في القايمة والملف في التنزيلات/Subtitler", 3000L); return }   // (v469) C3
+        if (it.url.startsWith("ytdlp:")) {   // (v1295) مهمة yt-dlp: الخلصانة بتتفتح، الشغّالة رسالة
+            val t = TaskCenter.items.firstOrNull { x -> "ytdlp:" + x.id == it.url }
+            val u = t?.outUri
+            if (t != null && t.state == 2 && u != null) {
+                try { act.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(u, t.mime.ifBlank { "video/mp4" }).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }
+                catch (_: Throwable) { Notice.show(act, "الملف في التنزيلات/Subtitler", 2200L) }
+            } else Notice.show(act, "التحميل لسه شغّال — تابعه من مركز المهام", 2200L)
+            return
+        }
         when (it.kind) {
             0 -> if (YtOpen.mode() == YtOpen.PAGE && it.id.length == 11 && !DeviceUi.isTv(act) && !PlayTarget.enabled()) watchVideo(it, srcView) else play(it, false)   // (v560) وضع التلفزيون = play() ← PlayTarget يبعت للتلفزيون   // (v494) وضع التلفزيون: دايمًا المشغّل على طول   // (v337) دوسة على الفيديو = يتشغّل على طول (التفاصيل من الضغطة الطويلة ← ℹ)
             1 -> openChannel(it.channelUrl, it.title, it.thumb)
@@ -1416,6 +1425,15 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val prev = cur; val prevPos = lv.firstVisiblePosition
         Thread {
             val rows = ArrayList<NpItem>()
+            // (v1295) تحميلات yt-dlp الشغّالة/الخلصانة من مركز المهام فوق القايمة
+            try {
+                for (t in TaskCenter.items) {
+                    if (t.kind != "download") continue
+                    if (!(t.title.startsWith("⬇ yt-dlp: ") || t.title.startsWith("🎵 yt-dlp: "))) continue
+                    val st = when (t.state) { 0 -> "مستني"; 1 -> t.pct.toString() + "% · " + t.msg; 2 -> "✅ خلص · " + t.msg; 3 -> "⚠ فشل: " + t.msg; 4 -> "اتلغى"; 5 -> "اتوقف"; 6 -> "متوقف مؤقتًا"; else -> "" }
+                    rows.add(NpItem("act", t.title, st.take(90), "", "", -1L, -1L, "", 2, "ytdlp:" + t.id))
+                }
+            } catch (_: Throwable) {}
             try { for (r in YtDl.recs()) { val st = YtDl.status(act, r); rows.add(NpItem("act", (if (r.audio) "🎧 " else "🎬 ") + r.title, st.first + " · " + r.q, "", "", -1L, -1L, "", 2, "ytdm:" + r.dmId)) } } catch (_: Throwable) {}
             rows.addAll(YtStore.read(YtStore.DL))
             act.runOnUiThread {

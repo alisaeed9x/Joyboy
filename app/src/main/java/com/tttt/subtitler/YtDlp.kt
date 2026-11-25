@@ -37,7 +37,7 @@ object YtDlp {
     /** بيدّي لينك (صفحة فيديو من أي موقع) لـyt-dlp. audioOnly = صوت mp3. maxH = أقصى جودة (0 = أعلى جودة). */
     fun start(ctx: Context, url: String, audioOnly: Boolean = false, maxH: Int = 0): TaskItem {
         val app = ctx.applicationContext
-        val title = (if (audioOnly) "🎵 " else "⬇ ") + url.removePrefix("https://").removePrefix("http://").take(60)
+        val title = (if (audioOnly) "🎵 yt-dlp: " else "⬇ yt-dlp: ") + url.removePrefix("https://").removePrefix("http://").take(60)   // (v1295) البادئة بتميّزه في صفحة التحميلات
         return TaskCenter.add(app, "download", title, "") { t ->
             init(app)
             val id = "ytdlp-" + t.id

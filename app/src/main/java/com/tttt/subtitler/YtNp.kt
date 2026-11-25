@@ -30,8 +30,9 @@ import java.util.zip.GZIPInputStream
 // (v1103 Y2) NpItem اتنقل لـ YtModels.kt (نفس الشكل)
 
 class YtRes(val items: List<NpItem>, val next: Page?)
+class YtChapter(val title: String, val startMs: Long)   // (v1295) فصل على شريط التقدم
 class YtDetail(val id: String, val title: String, val channel: String, val channelUrl: String, val desc: String, val views: Long,
-               val likes: Long, val age: String, val thumb: String, val dur: Long, val related: List<NpItem>)
+               val likes: Long, val age: String, val thumb: String, val dur: Long, val related: List<NpItem>, val chapters: List<YtChapter> = emptyList())
 // (v1103 Y2) YtPick في YtModels.kt
 
 /** (v388) لغة صوت يوتيوب: التفضيل (yt_alang: ar افتراضي · orig = الأصلي · أو كود لغة) + اختيار المسار + اسمه بالعربي */
@@ -399,9 +400,10 @@ object YtNp {
     fun details(id: String): YtDetail {
         val i = info(id)
         val t = i.thumbnails
+        val segs = try { i.streamSegments?.mapNotNull { s -> val st = s?.startTimeSeconds ?: -1; if (st < 0) null else YtChapter(s?.title ?: "", st * 1000L) } ?: emptyList() } catch (_: Throwable) { emptyList<YtChapter>() }   // (v1295) فصول الفيديو
         return YtDetail(id, i.name ?: "", i.uploaderName ?: "", i.uploaderUrl ?: "", i.description?.content ?: "", i.viewCount, i.likeCount,
             i.textualUploadDate ?: "", if (t == null || t.isEmpty()) "" else t[t.size / 2].url ?: "", i.duration,
-            i.relatedItems.mapNotNull { conv(it) }.filter { it.kind == 0 })
+            i.relatedItems.mapNotNull { conv(it) }.filter { it.kind == 0 }, segs)
     }
 
     /** (v326) استخراج رابط التشغيل بـ NewPipe (بديل لـ YtExtract): فيديو بس mp4 + صوت m4a لو أعلى جودة من المدمج، وإلا المدمج، وإلا HLS */
