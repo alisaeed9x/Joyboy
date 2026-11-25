@@ -1020,7 +1020,7 @@ class MainActivity : Activity() {
                 lib.root.visibility = if (i == 0) View.VISIBLE else View.INVISIBLE   // (v940) كل التبويبات متقاسة ورا بعض: التبديل من غير layout تقيل
                 if (i == 1) ensureMusic()
                 if (i == 4) ensureYt()   // (v1103 Y2)
-                if (i == BottomNav.AI) ensureAi()
+                if (i == BottomNav.AI) { ensureAi().root.bringToFront(); window.decorView.postDelayed({ if (curTab == BottomNav.AI) { ytUi?.root?.visibility = View.INVISIBLE; musicUi?.root?.visibility = View.INVISIBLE; lib.root.visibility = View.INVISIBLE; aiUi?.root?.bringToFront() } }, 450L) }   // (v1286)
                 musicUi?.root?.visibility = if (i == 1) View.VISIBLE else View.INVISIBLE
                 ytUi?.root?.visibility = if (i == 4) View.VISIBLE else View.INVISIBLE
                 aiUi?.root?.visibility = if (i == BottomNav.AI) View.VISIBLE else View.INVISIBLE
@@ -1501,6 +1501,7 @@ class MainActivity : Activity() {
     override fun onActivityResult(r: Int, c: Int, d: Intent?) {
         super.onActivityResult(r, c, d)
         if (r == ModelsUi.REQ) { ModelsUi.onResult(this, c, d); return }
+        if (r == AiChatUi.REQ_FILE) { if (c == RESULT_OK) d?.data?.let { aiUi?.attachResult(it) }; return }   // (v1286)
         if (r == AiChatUi.REQ_VOICE) { if (c == RESULT_OK) d?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { aiUi?.voiceResult(it) }; return }   // (v1283)
         if (r == 78) { if (c == RESULT_OK) d?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { ytUi?.voiceResult(it) }; return }   // (v1103 Y2) بحث صوتي يوتيوب
         if (r == 47) { if (c == RESULT_OK) d?.data?.let { ytUi?.importUri(it) }; return }   // (v1103 Y2) ملف اشتراكات يوتيوب   // (v696) اختيار ملف موديل

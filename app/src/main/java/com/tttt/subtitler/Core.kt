@@ -689,6 +689,40 @@ object Api {
 
 
 
+    /** (v1286) شات متعدد الأدوار مع systemInstruction ومرفق اختياري (صورة/PDF/صوت) — بيرمي ApiErr بكود HTTP عشان الشات يبدّل المفتاح */
+    fun generateChat(model: String, key: String, system: String, turns: List<Pair<String, String>>, mime: String?, data: ByteArray?, maxTokens: Int = 2048, temp: Double = 0.7): Result {
+        if (key == LocalKey.ID) throw NoKey()
+        Quota.hit(model); Stats.req(model, key)
+        val contents = org.json.JSONArray()
+        for ((i, t) in turns.withIndex()) {
+            val parts = org.json.JSONArray()
+            if (data != null && mime != null && i == turns.size - 1 && t.first == "user")
+                parts.put(JSONObject().put("inline_data", JSONObject().put("mime_type", mime).put("data", java.util.Base64.getEncoder().encodeToString(data))))
+            parts.put(JSONObject().put("text", t.second))
+            contents.put(JSONObject().put("role", t.first).put("parts", parts))
+        }
+        val root = JSONObject().put("contents", contents)
+            .put("systemInstruction", JSONObject().put("parts", org.json.JSONArray().put(JSONObject().put("text", system))))
+            .put("generationConfig", JSONObject().put("maxOutputTokens", maxTokens).put("temperature", temp))
+            .put("safetySettings", org.json.JSONArray("[$SAFETY]"))
+        val bytes = root.toString().toByteArray(Charsets.UTF_8)
+        val c = URL("$base/models/$model:generateContent").openConnection() as HttpURLConnection
+        try {
+            c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 20000; c.readTimeout = 90000
+            c.setRequestProperty("Content-Type", "application/json"); c.setRequestProperty("x-goog-api-key", key); c.setFixedLengthStreamingMode(bytes.size)
+            c.outputStream.use { it.write(bytes) }
+            val code = c.responseCode
+            val txt = (if (code < 300) c.inputStream else c.errorStream)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+            NetUse.api(bytes.size.toLong(), txt)
+            if (code >= 300) throw ApiErr(code, errMsg(code, txt))
+            val cand = try { JSONObject(txt).optJSONArray("candidates")?.optJSONObject(0) } catch (_: Exception) { null } ?: return Result("", "")
+            val parts = cand.optJSONObject("content")?.optJSONArray("parts")
+            val sb = StringBuilder()
+            if (parts != null) for (i in 0 until parts.length()) sb.append(parts.optJSONObject(i)?.optString("text", "") ?: "")
+            return Result(sb.toString(), cand.optString("finishReason", ""))
+        } finally { try { c.disconnect() } catch (_: Throwable) {} }
+    }
+
     class ModelRow(val id: String, val display: String)
 
     /** كل الموديلات اللي المفتاح ده يقدر يستخدمها في generateContent (بيعدّي على كل الصفحات) */

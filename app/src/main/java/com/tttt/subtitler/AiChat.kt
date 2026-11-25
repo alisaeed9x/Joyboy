@@ -6,7 +6,9 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Handler
+import android.provider.OpenableColumns
 import android.os.Looper
 import android.speech.RecognizerIntent
 import android.text.InputType
@@ -54,7 +56,12 @@ object AiStore {
 class AiChatUi(private val act: Activity, private val ui: Ui, private val th: Theme) {
     companion object {
         const val REQ_VOICE = 7717
+        const val REQ_FILE = 7718
         @Volatile private var keyStart = 0
+        /** حالة كل مفتاح: -1 لسه ما اتجرّبش · 200 شغّال · غير كده كود الخطأ (0 = نت/مهلة) */
+        val kcode = IntArray(32) { -1 }
+        @Volatile private var autoTested = false
+        private val TEXT_EXT = setOf("txt", "md", "csv", "json", "srt", "vtt", "ass", "xml", "html", "htm", "log", "kt", "java", "py", "js", "ts", "css", "yml", "yaml", "ini", "sh", "sql", "c", "cpp", "h")
         private const val SYSTEM = "إنت مساعد ذكاء اصطناعي جوه تطبيق Joyboy (مشغّل فيديو وترجمة). رد بنفس لغة المستخدم، ولو كتب بالعربي رد بالمصري الواضح المختصر، ومتألفش معلومات مش متأكد منها."
     }
     private val h = Handler(Looper.getMainLooper())
@@ -69,6 +76,13 @@ class AiChatUi(private val act: Activity, private val ui: Ui, private val th: Th
     }
     private var cur: AiChat? = null
     private var busy = false
+    private var attName = ""
+    private var attMime = ""
+    private var attData: ByteArray? = null
+    private var attText: String? = null
+    private val statusTv = ui.text("", 11f, th.muted).apply { gravity = Gravity.CENTER; setPadding(ui.dp(10), ui.dp(3), ui.dp(10), ui.dp(3)); background = ui.box(th.card, th.border, 12) }
+    private val chipRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(2), ui.dp(12), 0); visibility = View.GONE }
+    private var barRef: LinearLayout? = null
 
     private fun pill(t: String, onClick: () -> Unit): View = ui.text(t, 13f, th.primary, true).apply {
         setPadding(ui.dp(12), ui.dp(7), ui.dp(12), ui.dp(7)); gravity = Gravity.CENTER
@@ -83,18 +97,30 @@ class AiChatUi(private val act: Activity, private val ui: Ui, private val th: Th
         val head = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(6)) }
         head.addView(pill("☰ المحادثات") { showHistory() })
         val ttl = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
-        ttl.addView(ui.text("✨ الذكاء الاصطناعي", 16f, th.text, true).apply { gravity = Gravity.CENTER })
-        ttl.addView(ui.text(model() + " · " + keys().size + " مفاتيح", 10.5f, th.muted).apply { gravity = Gravity.CENTER })
+        ttl.addView(ui.text("✨ شات الذكاء الاصطناعي", 16f, th.text, true).apply { gravity = Gravity.CENTER; maxLines = 1 })
+        statusTv.setOnClickListener { showKeys() }
+        ttl.addView(statusTv, LinearLayout.LayoutParams(-2, -2).apply { topMargin = ui.dp(3) })
         head.addView(ttl, LinearLayout.LayoutParams(0, -2, 1f))
         head.addView(pill("＋ جديدة") { newChat() })
         root.addView(head, LinearLayout.LayoutParams(-1, -2))
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(chipRow, LinearLayout.LayoutParams(-1, -2))
         val bar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(10)) }
         bar.addView(circle("➤", true) { send(input.text.toString()) })
         bar.addView(input, LinearLayout.LayoutParams(0, -2, 1f))
         bar.addView(circle("🎙", false) { startVoice() })
+        bar.addView(circle("📎", false) { pickFile() })
         root.addView(bar, LinearLayout.LayoutParams(-1, -2))
+        barRef = bar
+        // الشريط السفلي الزجاجي العايم بيغطي أسفل الصفحة: نرفع خانة الكتابة فوقه (0 لو مفيش شريط عايم)
+        root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            val ex = try { MtFloat.barTop(act) } catch (_: Throwable) { 0 }
+            val want = ui.dp(10) + ex
+            if (bar.paddingBottom != want) bar.setPadding(bar.paddingLeft, bar.paddingTop, bar.paddingRight, want)
+        }
         renderEmpty()
+        updateStatus()
+        if (!autoTested && keys().isNotEmpty()) { autoTested = true; testKeys(false) }
     }
 
     private fun model(): String = try { Cfg.str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT } } catch (_: Throwable) { Models.DEFAULT }
@@ -183,25 +209,142 @@ class AiChatUi(private val act: Activity, private val ui: Ui, private val th: Th
         val all = AiStore.load(act); all.removeAll { it.id == c.id }; all.add(c); AiStore.save(act, all)
     }
 
+    // ===== المرفقات =====
+    private fun pickFile() {
+        try { act.startActivityForResult(filePicker("*/*", "اختار صورة أو ملف", false), REQ_FILE) } catch (e: Throwable) { Notice.show(act, "مفيش تطبيق ملفات على الجهاز", 2200L) }
+    }
+
+    fun attachResult(u: Uri) {
+        Thread {
+            var err = ""
+            var name = "ملف"; var mime = ""; var data: ByteArray? = null; var text: String? = null
+            try {
+                val cr = act.contentResolver
+                mime = cr.getType(u) ?: ""
+                try { cr.query(u, null, null, null, null)?.use { c -> if (c.moveToFirst()) { val i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME); if (i >= 0) name = c.getString(i) ?: name } } } catch (_: Throwable) {}
+                val ext = name.substringAfterLast('.', "").lowercase()
+                val isText = mime.startsWith("text/") || ext in TEXT_EXT || mime == "application/json" || mime == "application/xml"
+                val inl = mime.startsWith("image/") || mime == "application/pdf" || mime.startsWith("audio/") || mime.startsWith("video/")
+                if (!isText && !inl) err = "النوع ده مش مدعوم. ابعت صورة أو PDF أو صوت أو ملف نصي (txt/csv/json/srt…)"
+                else {
+                    val bytes = cr.openInputStream(u)?.use { it.readBytes() } ?: ByteArray(0)
+                    if (bytes.isEmpty()) err = "الملف فاضي أو مش مقروء"
+                    else if (isText) text = String(bytes, Charsets.UTF_8).take(120_000)
+                    else if (bytes.size > 14 * 1024 * 1024) err = "الملف كبير (حد أقصى 14 ميجا)"
+                    else { data = bytes; if (mime.isBlank()) mime = "application/octet-stream" }
+                }
+            } catch (e: Throwable) { err = "مقدرتش أقرأ الملف: " + (e.message ?: "").take(60) }
+            h.post {
+                if (err.isNotEmpty()) { Notice.show(act, err, 3200L); return@post }
+                attName = name; attMime = mime; attData = data; attText = text
+                showChip()
+            }
+        }.start()
+    }
+
+    private fun clearAtt() { attName = ""; attMime = ""; attData = null; attText = null; chipRow.removeAllViews(); chipRow.visibility = View.GONE }
+
+    private fun showChip() {
+        chipRow.removeAllViews()
+        val kind = if (attMime.startsWith("image/")) "🖼 " else "📎 "
+        val c = ui.text(kind + attName.take(34) + "  ✕", 12.5f, th.text).apply {
+            setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6)); background = ui.box(th.card, th.border, 14)
+            setOnClickListener { clearAtt() }
+        }
+        chipRow.addView(c, LinearLayout.LayoutParams(-2, -2))
+        chipRow.visibility = View.VISIBLE
+    }
+
+    // ===== حالة المفاتيح =====
+    private fun updateStatus() {
+        val ks = keys()
+        val n = ks.size
+        var ok = 0; var bad = 0; var dead = 0
+        for (i in 0 until n) { val c = kcode[i.coerceAtMost(31)]; if (c == 200) ok++ else if (c != -1) { bad++; if (c in intArrayOf(400, 401, 403, 404)) dead++ } }
+        val dot: String; val msg: String
+        if (n == 0) { dot = "🔴"; msg = "مفيش مفاتيح" }
+        else if (ok == 0 && bad == 0) { dot = "⚪"; msg = "بيتجرّب…" }
+        else if (ok == 0) { dot = "🔴"; msg = "المفاتيح واقفة" }
+        else if (bad > 0) { dot = "🟡"; msg = "$ok من $n شغّالة" }
+        else { dot = "🟢"; msg = "$n مفاتيح شغّالة" }
+        statusTv.text = "$dot $msg · اضغط للتفاصيل"
+    }
+
+    private fun testKeys(reopen: Boolean) {
+        val ks = keys(); val mdl = model()
+        Thread {
+            for (i in ks.indices) {
+                val k = ks[i]
+                val code = try { Api.generate(mdl, k, "رد بكلمة ok فقط", null, 16, 0.0, false, false); 200 } catch (e: ApiErr) { e.code } catch (_: NoKey) { 401 } catch (_: Throwable) { 0 }
+                kcode[i.coerceAtMost(31)] = code
+                h.post { updateStatus() }
+            }
+            h.post { updateStatus(); if (reopen) showKeys() }
+        }.start()
+    }
+
+    private fun codeLabel(c: Int): String = when (c) {
+        -1 -> "⚪ لسه ما اتجرّبش"
+        200 -> "🟢 شغّال"
+        429 -> "🟡 وصل للحد دلوقتي (429)"
+        503, 500, 502, 504 -> "🟡 الموديل مضغوط (" + c + ")"
+        404 -> "🔴 الموديل مش متاح على المفتاح (404)"
+        400 -> "🔴 طلب مرفوض (400)"
+        401, 403 -> "🔴 المفتاح مرفوض أو مقفول (" + c + ")"
+        0 -> "🟡 مشكلة نت أو مهلة"
+        else -> "🟡 خطأ " + c
+    }
+
+    private var keysDlg: Dialog? = null
+    private fun showKeys() {
+        try { keysDlg?.dismiss() } catch (_: Throwable) {}
+        val ks = keys()
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        box.addView(ui.text("الموديل: " + model(), 12.5f, th.muted).apply { setPadding(ui.dp(4), 0, ui.dp(4), ui.dp(6)) })
+        if (ks.isEmpty()) box.addView(ui.text("🔴 مفيش مفاتيح. ضيف من الإعدادات ← المفاتيح.", 13.5f, th.text))
+        for (i in ks.indices) {
+            val k = ks[i]
+            val tail = if (k.length > 8) "…" + k.takeLast(4) else ""
+            val row = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)); background = ui.box(th.card, th.border, 12) }
+            row.addView(ui.text("مفتاح " + (i + 1) + " " + tail, 13.5f, th.text, true))
+            row.addView(ui.text(codeLabel(kcode[i.coerceAtMost(31)]), 12f, th.muted))
+            box.addView(row, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(4), 0, ui.dp(4)) })
+        }
+        lateinit var dlg: Dialog
+        if (ks.isNotEmpty()) box.addView(ui.button("🔍 اختبار كل المفاتيح", true) { for (i in ks.indices) kcode[i.coerceAtMost(31)] = -1; updateStatus(); dlg.dismiss(); testKeys(true); Notice.show(act, "بيتجرّب المفاتيح…", 1800L) })
+        dlg = ui.sheet(act, "🔑 حالة المفاتيح", listOf<View>(box), false)
+        keysDlg = dlg
+        dlg.show()
+    }
+
     // ===== الإرسال =====
     private fun send(textIn: String) {
-        val t = textIn.trim(); if (t.isEmpty()) return
+        var t = textIn.trim()
+        val hasAtt = attData != null || attText != null
+        if (t.isEmpty() && !hasAtt) return
         if (busy) { Notice.show(act, "استنى الرد يخلص", 1500L); return }
         if (keys().isEmpty()) { Notice.show(act, "ضيف مفتاح جيميناي من الإعدادات ← المفاتيح", 3000L); return }
+        if (t.isEmpty()) t = "حلّل المرفق ده وقولي أهم اللي فيه."
+        val shown = if (hasAtt) ("📎 " + attName + "\n" + t) else t
+        val effective = if (attText != null) (t + "\n\n--- محتوى الملف «" + attName + "» ---\n" + attText) else t
+        val mime = attMime; val data = attData
         val c = cur ?: AiChat("c" + System.currentTimeMillis(), "", System.currentTimeMillis(), ArrayList()).also { cur = it; col.removeAllViews() }
         if (c.title.isEmpty()) c.title = t.take(40)
-        c.msgs.add("u" to t); persist(c)
-        col.addView(bubble("u", t))
+        c.msgs.add("u" to shown); persist(c)
+        col.addView(bubble("u", shown))
         val wait = bubble("a", "⏳ بيفكّر…"); col.addView(wait)
-        input.setText(""); toBottom()
+        input.setText(""); clearAtt(); toBottom()
         try { (act.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(input.windowToken, 0) } catch (_: Throwable) {}
         busy = true
-        val prompt = buildPrompt(c)
+        val hist = ArrayList<Pair<String, String>>()
+        for (m in c.msgs.takeLast(14)) hist.add(m)
+        if (hist.isNotEmpty()) hist[hist.size - 1] = "u" to effective
         Thread {
             var reply: String? = null; var err = ""
-            try { reply = ask(prompt) } catch (e: Throwable) { err = friendly(e) }
+            try { reply = ask(hist, if (data != null) mime else null, data) } catch (e: Throwable) { err = friendly(e) }
             h.post {
                 busy = false
+                updateStatus()
                 col.removeView(wait)
                 if (reply != null) { c.msgs.add("a" to reply); persist(c); col.addView(bubble("a", reply)) }
                 else col.addView(bubble("a", "⚠ " + err))
@@ -210,34 +353,71 @@ class AiChatUi(private val act: Activity, private val ui: Ui, private val th: Th
         }.start()
     }
 
-    private fun buildPrompt(c: AiChat): String {
-        val sb = StringBuilder(SYSTEM).append("\n\n")
-        for (m in c.msgs.takeLast(14)) sb.append(if (m.first == "u") "المستخدم: " else "المساعد: ").append(m.second).append("\n")
-        sb.append("المساعد:")
-        return sb.toString()
+    private fun turnsOf(hist: List<Pair<String, String>>): List<Pair<String, String>> {
+        val out = ArrayList<Pair<String, String>>()
+        for (m in hist) {
+            val r = if (m.first == "u") "user" else "model"
+            if (out.isEmpty() && r == "model") continue
+            if (out.isNotEmpty() && out.last().first == r) out[out.size - 1] = r to (out.last().second + "\n" + m.second) else out.add(r to m.second)
+        }
+        return out
     }
 
-    /** بيلف على مفاتيح التطبيق: لو مفتاح فشل (429/503/أي خطأ) بيجرّب اللي بعده، وبعد دورة كاملة بيستنى ويعيد (3 دورات). نفس الموديل بس. */
-    private fun ask(prompt: String): String {
+    private class KeyFail(val msg: String) : Exception(msg)
+
+    /** بيلف على مفاتيح التطبيق: أي مفتاح يفشل (404/400/401/403/429/5xx/نت) بيعيد نفس الرسالة تلقائيًا على المفتاح اللي بعده. المفتاح المرفوض (4xx) بيتسيب لباقي الإرسال، والمضغوط/النت بيتعاد في دورات (3). نفس الموديل بس. */
+    private fun ask(hist: List<Pair<String, String>>, mime: String?, data: ByteArray?): String {
         val ks = keys(); if (ks.isEmpty()) throw NoKey()
-        val mdl = model(); var last: Throwable? = null
+        val mdl = model(); val turns = turnsOf(hist)
+        val dead = BooleanArray(ks.size); val why = arrayOfNulls<String>(ks.size)
+        var lastCode = -2
         for (round in 0 until 3) {
+            var tried = 0
             for (j in ks.indices) {
                 val idx = (keyStart + j) % ks.size
+                if (dead[idx]) continue
+                if (data != null && (FreeLlm.isWrapped(ks[idx]) || FreeLlm.isKey(ks[idx]))) { dead[idx] = true; why[idx] = "ما بيدعمش مرفقات"; continue }
+                tried++
                 try {
-                    val r = Api.generate(mdl, ks[idx], prompt, null, 2048, 0.7, false, false)
-                    if (r.text.isNotBlank()) { keyStart = idx + 1; return r.text.trim() }
-                } catch (e: NoKey) { throw e } catch (e: Throwable) { last = e }
+                    val r = if (data == null && (FreeLlm.isWrapped(ks[idx]) || FreeLlm.isKey(ks[idx])))
+                        Api.generate(mdl, ks[idx], flat(turns), null, 2048, 0.7, false, false)
+                    else Api.generateChat(mdl, ks[idx], SYSTEM, turns, mime, data, 2048, 0.7)
+                    if (r.text.isNotBlank()) { keyStart = idx + 1; kcode[idx.coerceAtMost(31)] = 200; return r.text.trim() }
+                    why[idx] = "رد فاضي" + (if (r.finish.isNotEmpty()) " (" + r.finish + ")" else ""); lastCode = -3
+                } catch (e: NoKey) { throw e } catch (e: ApiErr) {
+                    kcode[idx.coerceAtMost(31)] = e.code; lastCode = e.code
+                    why[idx] = "" + e.code + " " + e.raw.take(60)
+                    if (e.code in intArrayOf(400, 401, 403, 404)) dead[idx] = true
+                } catch (e: Throwable) {
+                    kcode[idx.coerceAtMost(31)] = 0; lastCode = 0
+                    why[idx] = (e.message ?: e.javaClass.simpleName).take(60)
+                }
             }
+            if (tried == 0) break
             if (round < 2) try { Thread.sleep(1500L * (round + 1)) } catch (_: Throwable) {}
         }
-        throw last ?: Exception("الرد فاضي")
+        val sb = StringBuilder()
+        for (i in ks.indices) if (why[i] != null) sb.append("\n• مفتاح ").append(i + 1).append(": ").append(why[i])
+        val head = when {
+            lastCode == 503 || lastCode == 500 || lastCode == 502 || lastCode == 504 -> "الموديل مضغوط من جوجل على كل المفاتيح. جرّب بعد شوية."
+            lastCode == 429 -> "كل المفاتيح وصلت للحد دلوقتي. جرّب بعد شوية."
+            lastCode == 404 -> "الموديل (" + mdl + ") رجّع 404 على كل المفاتيح."
+            else -> "كل المفاتيح فشلت."
+        }
+        throw KeyFail(head + sb.toString())
+    }
+
+    private fun flat(turns: List<Pair<String, String>>): String {
+        val sb = StringBuilder(SYSTEM).append("\n\n")
+        for (m in turns) sb.append(if (m.first == "user") "المستخدم: " else "المساعد: ").append(m.second).append("\n")
+        return sb.append("المساعد:").toString()
     }
 
     private fun friendly(e: Throwable): String = when {
         e is NoKey -> "مفيش مفتاح جيميناي. ضيف واحد من الإعدادات ← المفاتيح."
-        e is ApiErr && e.code == 503 -> "الموديل مضغوط من جوجل (503) على كل المفاتيح. جرّب تاني بعد شوية."
-        e is ApiErr && e.code == 429 -> "كل المفاتيح وصلت للحد دلوقتي (429). جرّب بعد شوية."
+        e is KeyFail -> e.msg
+        e is ApiErr && e.code == 503 -> "الموديل مضغوط من جوجل (503). جرّب تاني بعد شوية."
+        e is ApiErr && e.code == 429 -> "وصلت للحد دلوقتي (429). جرّب بعد شوية."
         else -> (e.message ?: "حصل خطأ").take(160)
     }
 
