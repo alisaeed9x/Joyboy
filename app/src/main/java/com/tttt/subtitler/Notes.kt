@@ -34,13 +34,13 @@ object Notes {
             val ln = raw0.trim().replace("**", "")
             if (ln.isEmpty() || ln.startsWith(">")) continue
             if (ln.startsWith("▌") || ln.startsWith("#")) { sec = ln.trimStart('▌', '#', ' '); out.add("▌" + sec); continue }
-            val m = Regex("^[-*•]\s+|^\d+[.)]\s+").find(ln)
+            val m = Regex("^[-*•]\\s+|^\\d+[.)]\\s+").find(ln)
             if (m != null) {
                 var body = ln.substring(m.range.last + 1).trim()
-                body = Regex("^[\p{So}\s]+").replace(body, "")   // شيل الإيموجي من أول البند
+                body = Regex("^[\\p{So}\\s]+").replace(body, "")   // شيل الإيموجي من أول البند
                 if (body.isEmpty()) continue
                 n += 1
-                val chip = if (Regex("^\[[^]]+]").containsMatchIn(body)) "" else chipOf(sec)
+                val chip = if (Regex("^\\[[^]]+]").containsMatchIn(body)) "" else chipOf(sec)
                 out.add(n.toString() + ". " + (if (chip.isNotEmpty()) "[$chip] " else "") + body)
                 continue
             }
