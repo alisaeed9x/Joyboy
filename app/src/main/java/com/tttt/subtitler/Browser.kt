@@ -320,6 +320,8 @@ class BrowserActivity : Activity() {
     private lateinit var vidMark: VidMark   // (v717) إطار أزرق حوالين مربع الفيديو في الصفحة + كبسولة «اتلقط · دوس للخيارات»
     private var badgeTrash: DragTrash? = null   // (v736) سلة ✕ لدايرة الاصطياد
     lateinit var badge: ClipOrb   // (v716) دايرة الاصطياد: نفس شكل دايرة الكليبورد (حلقة + نقطة بتلف)
+    private var badgePill: IconTextView? = null   // (v1301) كبسولة بالعرض تحت الدايرة فيها اسم الفيديو اللي اتلقط
+    private var stripBottom: FrameLayout? = null   // (v1301) صف الدايرة — بيطلع فوق الكبسولة لما تظهر
     // (v324) شريط «تحميل؟» اللي بيظهر تحت الصفحة (زي شريط «لقيت فيديو»): تحميل · إلغاء، بيختفي بعد 9 ثواني (كان 6) أو بلمسة برّاه = مش عايز أحمّل
     private lateinit var dlBar: LinearLayout
     private lateinit var dlTxt: IconTextView
@@ -2497,10 +2499,22 @@ class BrowserActivity : Activity() {
             addView(badge, FrameLayout.LayoutParams(ui.dp(60), ui.dp(60), Gravity.CENTER))   // (v975) 56→60 (الحلقة بقت جوه حدودها)
             addView(panicB, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply { rightMargin = ui.dp(6) })
         }
+        stripBottom = bottom
+        // (v1301) كبسولة اسم الفيديو الملقوط: بالعرض تحت زرار العدسة بالظبط — دوسة = لوحة الأزرار، ضغطة طويلة = القايمة (نفس الدايرة)
+        badgePill = IconTextView(this).apply {
+            textSize = 12.5f; setTextColor(th.text); maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+            gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(ui.dp(14), 0, ui.dp(14), 0)
+            background = ui.box(th.card, th.border, 19); elevation = ui.dp(4).toFloat()
+            visibility = View.GONE
+            setOnClickListener { badgeTap() }
+            setOnLongClickListener { showList(); true }
+        }
         actStrip = FrameLayout(this).apply {   // شفافة تمامًا وبتعدّي اللمس للصفحة إلا على الأزرار نفسها
             layoutDirection = View.LAYOUT_DIRECTION_LTR
             addView(toolsPanel, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.LEFT).apply { leftMargin = ui.dp(4); bottomMargin = ui.dp(60) })
             addView(bottom, FrameLayout.LayoutParams(-1, ui.dp(60), Gravity.BOTTOM))
+            addView(badgePill, FrameLayout.LayoutParams(-1, ui.dp(38), Gravity.BOTTOM).apply { leftMargin = ui.dp(12); rightMargin = ui.dp(12); bottomMargin = ui.dp(3) })
         }
         toolsHost = toolsPanel
     }
@@ -2700,6 +2714,24 @@ class BrowserActivity : Activity() {
         }
         if (dlg?.isShowing == true) renderList()
         updateMark()
+        paintPill()
+    }
+
+    /** (v1301) كبسولة اسم الفيديو اللي اتلقط تحت زرار العدسة (بالعرض) — بتظهر بس لما يكون فيه فيديو ملقوط، والصف بيطلع فوقها */
+    private fun paintPill() {
+        val p = badgePill ?: return
+        if (tvOn) { p.visibility = View.GONE; return }   // التلفزيون: الدايرة عايمة على الجنب — الكبسولة للموبايل بس
+        val gs = groupsOf(vis())
+        val t = gs.firstOrNull()?.title?.trim() ?: ""
+        val show = badge.found && badge.visibility == View.VISIBLE && gs.isNotEmpty() && t.isNotEmpty()
+        if (show) {
+            val txt = "🎬 " + t + (if (gs.size > 1) "  (+" + (gs.size - 1) + ")" else "")
+            if (p.text.toString() != txt) p.text = txt
+            if (p.visibility != View.VISIBLE) { p.visibility = View.VISIBLE; p.alpha = 0f; p.animate().alpha(1f).setDuration(180).start() }
+        } else if (p.visibility != View.GONE) p.visibility = View.GONE
+        val lp = stripBottom?.layoutParams as? FrameLayout.LayoutParams
+        val want = if (show) ui.dp(46) else 0
+        if (lp != null && lp.bottomMargin != want) { lp.bottomMargin = want; stripBottom?.requestLayout() }
     }
 
     // ===== (v717) علامة مربع الفيديو =====
