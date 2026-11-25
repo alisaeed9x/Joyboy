@@ -56,7 +56,7 @@ object YtDlp {
         val info = try { YoutubeDL.getInstance().getInfo(url) } catch (_: Throwable) { null } ?: return null
         val fmts = try { info.formats } catch (_: Throwable) { null } ?: return null
         fun sizeOf(f: com.yausername.youtubedl_android.mapper.VideoFormat): Long = try {
-            val s = f.filesize; if (s != null && s > 0) s else (f.filesizeApprox ?: -1L)
+            val s = f.fileSize; if (s > 0) s else f.fileSizeApproximate   // (v1304 fix: المكتبة بتسمّيهم fileSize/fileSizeApproximate)
         } catch (_: Throwable) { -1L }
         var aSize = -1L   // حجم أحسن مسار صوت (بيتحط على الفيديو عند الدمج)
         for (f in fmts) {
@@ -68,7 +68,7 @@ object YtDlp {
         for (f in fmts) {
             val vc: String? = try { f.vcodec } catch (_: Throwable) { null }
             if (vc == null || vc == "none") continue
-            val h = try { f.height?.toInt() ?: 0 } catch (_: Throwable) { 0 }
+            val h = try { f.height } catch (_: Throwable) { 0 }
             if (h <= 0) continue
             val s = sizeOf(f); if (s > (byH[h] ?: -1L)) byH[h] = s
         }
@@ -82,10 +82,10 @@ object YtDlp {
         return out
     }
 
-    /** بيدّي لينك (صفحة فيديو من أي موقع) لـyt-dlp. audioOnly = صوت mp3. maxH = أقصى جودة (0 = أعلى جودة). */
-    fun start(ctx: Context, url: String, audioOnly: Boolean = false, maxH: Int = 0): TaskItem {
+    /** بيدّي لينك (صفحة فيديو من أي موقع) لـyt-dlp. audioOnly = صوت mp3. maxH = أقصى جودة (0 = أعلى جودة). (v1304) clipStart/clipEnd بالثواني = اقتصاص مقطع بس */
+    fun start(ctx: Context, url: String, audioOnly: Boolean = false, maxH: Int = 0, clipStart: Long = -1, clipEnd: Long = -1): TaskItem {
         val app = ctx.applicationContext
-        val title = (if (audioOnly) "🎵 yt-dlp: " else "⬇ yt-dlp: ") + url.removePrefix("https://").removePrefix("http://").take(60)   // (v1295) البادئة بتميّزه في صفحة التحميلات
+        val title = (if (clipStart >= 0) "✂ yt-dlp: " else if (audioOnly) "🎵 yt-dlp: " else "⬇ yt-dlp: ") + url.removePrefix("https://").removePrefix("http://").take(60)   // (v1295) البادئة بتميّزه في صفحة التحميلات
         return TaskCenter.add(app, "download", title, "") { t ->
             init(app)
             val id = "ytdlp-" + t.id
@@ -97,6 +97,12 @@ object YtDlp {
             req.addOption("--no-mtime")
             if (audioOnly) { req.addOption("-x"); req.addOption("--audio-format", "mp3") }
             else { req.addOption("-f", if (maxH > 0) "bv*[height<=$maxH]+ba/b[height<=$maxH]/b" else "bv*+ba/b"); req.addOption("--merge-output-format", "mp4") }
+            if (clipStart >= 0) {   // (v1304) اقتصاص مقطع: قصّ بالثواني (keyframes مظبوطة عند القص)
+                fun tf(sec: Long): String = String.format("%02d:%02d:%02d", sec / 3600, (sec % 3600) / 60, sec % 60)
+                req.addOption("--download-sections", "*" + tf(clipStart) + "-" + (if (clipEnd > clipStart) tf(clipEnd) else "inf"))
+                req.addOption("--force-keyframes-at-cuts")
+                req.addOption("--merge-output-format", "mp4")
+            }
             YoutubeDL.getInstance().execute(req, id) { p, _, line ->
                 t.pct = p.toInt().coerceIn(0, 99); t.msg = line.take(80); TaskCenter.changed()
             }

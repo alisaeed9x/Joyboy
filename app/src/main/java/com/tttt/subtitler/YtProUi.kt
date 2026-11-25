@@ -86,7 +86,21 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         addView(spinView, LinearLayout.LayoutParams(ui.dp(64), ui.dp(64)))
         addView(ui.text("جاري التحميل…", 12f, th.muted).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(8), 0, 0) }, LinearLayout.LayoutParams(-2, -2))
     }
-    private fun spin(on: Boolean) { if (on) { spinBox.visibility = View.VISIBLE; spinDr.start() } else { spinBox.visibility = View.GONE; spinDr.stop() }; loadBusy = on; updateLine() }
+    // (v1304) Shimmer skeleton: كروت رمادية وامضة بشكل القايمة وقت التحميل (زي يوتيوب) ورا اللودر
+    private val skelBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; setBackgroundColor(YtSkin.bg); layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(8), ui.dp(12), 0) }
+    private val skelAnim = android.animation.ValueAnimator.ofFloat(0.45f, 1f).apply { duration = 750; repeatMode = android.animation.ValueAnimator.REVERSE; repeatCount = android.animation.ValueAnimator.INFINITE; addUpdateListener { skelBox.alpha = it.animatedValue as Float } }
+    private fun skelBuild() {
+        for (r in 0 until 6) {
+            val rowV = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            rowV.addView(View(act).apply { background = GradientDrawable().apply { setColor(YtSkin.surface); cornerRadius = ui.dp(10).toFloat() } }, LinearLayout.LayoutParams(ui.dp(150), ui.dp(86)))
+            val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(12), ui.dp(6), 0, 0) }
+            col.addView(View(act).apply { background = GradientDrawable().apply { setColor(YtSkin.surface); cornerRadius = ui.dp(7).toFloat() } }, LinearLayout.LayoutParams(-1, ui.dp(14)).apply { marginEnd = ui.dp(48) })
+            col.addView(View(act).apply { background = GradientDrawable().apply { setColor(YtSkin.surface); cornerRadius = ui.dp(6).toFloat() } }, LinearLayout.LayoutParams(-1, ui.dp(11)).apply { topMargin = ui.dp(10); marginEnd = ui.dp(130) })
+            rowV.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
+            skelBox.addView(rowV, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(6), 0, ui.dp(6)) })
+        }
+    }
+    private fun spin(on: Boolean) { if (on) { spinBox.visibility = View.VISIBLE; spinDr.start(); skelBox.visibility = View.VISIBLE; skelAnim.start() } else { spinBox.visibility = View.GONE; spinDr.stop(); skelBox.visibility = View.GONE; skelAnim.cancel() }; loadBusy = on; updateLine() }
 
     // (v407) الخط الأزرق الرفيع فوق (تحميل صفحة أو تحديث خلفي) + كبسولة «⬆ فيديوهات جديدة» لما التحديث الخلفي يجيب جديد وإنت نازل في القايمة
     private val topLine = YtTopLine(act)
@@ -262,6 +276,9 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private val page = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
     private var navSel = 0
     private lateinit var topTitle: TextView
+    private lateinit var bellBadge: TextView   // (v1304) عدّاد الإشعارات غير المقروءة على الجرس
+    private var inxDlg: android.app.Dialog? = null
+    private var expDlg: android.app.Dialog? = null
     private val lite = act.packageName.endsWith(".lite")
     /** (v475) تبويبات يوتيوب في شريط البرنامج السفلي: Main بيسمع هنا (onTab) وبيبعت الضغطات (tapTab) */
     var onTab: ((Int) -> Unit)? = null
@@ -364,6 +381,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         }
         if (DeviceUi.isRemote(act)) appBar.addView(micBtn(), LinearLayout.LayoutParams(ui.dp(48), ui.dp(44)))
         appBar.addView(iconBtn("search", "بحث") { enterSearch(true) }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
+        appBar.addView(TextView(act).apply { text = "🧭"; textSize = 19f; gravity = Gravity.CENTER; foreground = YtSkin.ripple(true); contentDescription = "استكشاف"; setOnClickListener { showExplore() } }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))   // (v1304) استكشاف
+        bellBadge = TextView(act).apply { textSize = 10.5f; setTextColor(Color.WHITE); gravity = Gravity.CENTER; typeface = YtSkin.medium; background = GradientDrawable().apply { setColor(0xFFFF3B30.toInt()); cornerRadius = ui.dp(8).toFloat() }; visibility = View.GONE; setPadding(ui.dp(4), 0, ui.dp(4), 0); minWidth = ui.dp(16) }
+        val bellCell = FrameLayout(act).apply { foreground = YtSkin.ripple(true); contentDescription = "الإشعارات"; setOnClickListener { showInbox() } }   // (v1304) صندوق الإشعارات
+        bellCell.addView(YtIcon(act, "bell"), FrameLayout.LayoutParams(-1, -1))
+        bellCell.addView(bellBadge, FrameLayout.LayoutParams(-2, ui.dp(16), Gravity.TOP or Gravity.END).apply { topMargin = ui.dp(3); marginEnd = ui.dp(1) })
+        appBar.addView(bellCell, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         appBar.addView(iconBtn("gear", "إعدادات يوتيوب") { settings() }, LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)))
         val backBtn = iconBtn("back", "رجوع") { exitSearch() }.apply { scaleX = -1f }
         val clearBtn = iconBtn("close", "مسح") { search.setText(""); search.requestFocus(); showKb() }
@@ -565,6 +588,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         // (v348) شريط يوتيوب السفلي: الرئيسية · الاشتراكات · الشورتس · أنت
         val content = FrameLayout(act)
         content.addView(page, FrameLayout.LayoutParams(-1, -1))
+        skelBuild()
+        content.addView(skelBox, FrameLayout.LayoutParams(-1, -1).apply { topMargin = ui.dp(92) })   // (v1304) تحت الشريط العلوي والشرائح تقريبًا
         content.addView(spinBox, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))   // (v389)
         content.addView(ptr, FrameLayout.LayoutParams(ui.dp(44), ui.dp(44), Gravity.TOP or Gravity.CENTER_HORIZONTAL))   // (v390)
         content.addView(topLine, FrameLayout.LayoutParams(-1, ui.dp(3), Gravity.TOP))   // (v407) الخط الأزرق
@@ -604,6 +629,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun landTab(): Int = try { if (YtNotify.badgeCount() > 0) 1 else 0 } catch (_: Throwable) { 0 }
     private var leftYt = false   // (v1107)
     fun refresh() {
+        bellRefresh()   // (v1304)
         if (cur == null) { recMemoAt = 0L; leftYt = false; openTab(landTab()) }   // (v1107) بيفتح على الرئيسية دايمًا (كان الاشتراكات)
         else if (leftYt && !watch.isOpen && !chan.isOpen && cur?.let { it.tab == 1 && it.vid == null && it.q == null && it.chUrl == null } == true) { leftYt = false; recMemoAt = 0L; openTab(landTab()) }   // (v1107) خرجت من يوتيوب وإنت في الاشتراكات ورجعت ← الرئيسية
         else { leftYt = false; h.removeCallbacks(softRefresh); h.postDelayed(softRefresh, 280L) }
@@ -1789,10 +1815,49 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         if (DeviceUi.isTv(act) && prevSel == 1 && navSel != 1) { try { YtNotify.markOpened(act) } catch (_: Throwable) {}; tvBadgeRefresh(true) }   // (v575) خرجت من الاشتراكات: العدّ يبدأ من دلوقتي
         paintNav()
         tvSubsBadge()
+        bellRefresh()   // (v1304)
         if (navSel != 1) tvBadgeRefresh(false)   // (v575) تحديث العدّاد (كل 5 دقايق بالكتير)
         if (::topTitle.isInitialized) topTitle.text = when (navSel) { 0 -> "الرئيسية"; 1 -> "الاشتراكات"; else -> "أنا" }
         try { onTab?.invoke(navSel) } catch (_: Throwable) {}
     }
+    /** (v1304) عدّاد الجرس: عدد إشعارات صندوق الإشعارات غير المقروءة */
+    fun bellRefresh() { try { if (!::bellBadge.isInitialized) return; val n = YtNotify.inboxUnread(); if (n <= 0) bellBadge.visibility = View.GONE else { bellBadge.visibility = View.VISIBLE; bellBadge.text = if (n > 99) "99+" else n.toString() } } catch (_: Throwable) {} }
+
+    /** (v1304) صندوق الإشعارات: آخر الفيديوهات الجديدة من الاشتراكات (زي يوتيوب) — فتحه بيصفّر العدّاد */
+    private fun showInbox() {
+        val items = try { YtNotify.inbox() } catch (_: Throwable) { emptyList<YtNotify.InboxItem>() }
+        try { YtNotify.inboxMarkRead() } catch (_: Throwable) {}
+        bellRefresh()
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        if (items.isEmpty()) box.addView(ui.text("مفيش إشعارات لسه — أول ما قناة مشترك فيها تنزل فيديو جديد هيظهر هنا.", 13.5f, YtSkin.sub).apply { setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)) })
+        for (it in items) {
+            val row = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)); foreground = YtSkin.ripple(); background = GradientDrawable().apply { setColor(YtSkin.surface); cornerRadius = ui.dp(12).toFloat() } }
+            row.addView(ui.text(it.title, 13.5f, YtSkin.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END })
+            row.addView(ui.text(it.channel + " · " + YtRss.ageOf(it.ts), 11.5f, YtSkin.sub).apply { setPadding(0, ui.dp(3), 0, 0) })
+            row.setOnClickListener { try { inxDlg?.dismiss() } catch (_: Throwable) {}; openVideo(it.id) }
+            box.addView(row, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(4)) })
+        }
+        inxDlg = ui.sheet(act, "🔔 الإشعارات", listOf<View>(box), false); inxDlg?.show()
+    }
+
+    /** (v1304) استكشاف: أقسام يوتيوب (الرائج/موسيقى/ألعاب/أخبار/رياضة/مباشر) في صفحة مستقلة — الدوسة بتحمّل القسم في الرئيسية */
+    private fun showExplore() {
+        val cats = listOf("🔥" to 1, "🎵" to 2, "🎮" to 3, "📰" to 4, "⚽" to 5, "🔴" to 6)
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(8)) }
+        var row: LinearLayout? = null
+        cats.forEachIndexed { i, (emoji, chip) ->
+            if (i % 2 == 0) { row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }; box.addView(row, LinearLayout.LayoutParams(-1, -2)) }
+            val tile = LinearLayout(act).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(0, ui.dp(16), 0, ui.dp(16)); foreground = YtSkin.ripple(); background = GradientDrawable().apply { setColor(YtSkin.surface); cornerRadius = ui.dp(14).toFloat() }
+                addView(ui.text(emoji, 26f, YtSkin.text))
+                addView(ui.text(HOME_CHIPS[chip].first, 13.5f, YtSkin.text, true).apply { setPadding(0, ui.dp(4), 0, 0) })
+                setOnClickListener { try { expDlg?.dismiss() } catch (_: Throwable) {}; if (navSel != 0) navTap(0); homeChip(chip, HOME_CHIPS[chip].second) }
+            }
+            row?.addView(tile, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) })
+        }
+        expDlg = ui.sheet(act, "🧭 استكشاف", listOf<View>(box), false); expDlg?.show()
+    }
+
     private fun paintChip(tv: TextView, on: Boolean) {
         tv.setTextColor(if (on) YtSkin.chipOnText else YtSkin.text)
         tv.background = GradientDrawable().apply { setColor(if (on) YtSkin.chipOnBg else YtSkin.chip); cornerRadius = ui.dp(8).toFloat() }

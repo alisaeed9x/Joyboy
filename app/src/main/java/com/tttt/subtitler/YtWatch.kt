@@ -641,13 +641,48 @@ class YtPlayerKit(private val act: Activity, private val ui: Ui) : FrameLayout(a
             av.forEachIndexed { i, v -> sm.add(0, 300 + i, i, (if (audOvr == v.second) "✓ " else "") + v.first) }
         }
         m.menu.add(0, 400, 9, if (isAudioOnly()) "🎬 إلغاء وضع الصوت بس" else "🎧 وضع الصوت بس (أخف صوت)")   // (v469) C4
+        m.menu.add(0, 500, 10, "✂ اقتصاص مقطع")   // (v1304)
+        m.menu.add(0, 501, 11, "🚩 إبلاغ عن الفيديو")   // (v1304)
         m.setOnMenuItemClickListener { mi ->
             val id = mi.itemId
             if (id == 400) toggleAudioOnly()
+            else if (id == 500) clipDialog() else if (id == 501) reportVideo()
             else if (id in 100..199) pickQuality(id - 100) else if (id in 200..299) pickLang(id - 200) else if (id in 300..399) pickAudioQ(id - 300)
             true
         }
         m.show()
+    }
+
+    // (v1304) اقتصاص مقطع: تحميل جزء من الفيديو بـyt-dlp (من/إلى) أو نسخ لينك يبدأ من وقت معيّن
+    private fun clipDialog() {
+        val vid = idOf?.invoke() ?: ""
+        if (vid.isEmpty()) return
+        val posS = (position() / 1000L).coerceAtLeast(0L)
+        val durS = ((exo?.duration ?: 0L) / 1000L).coerceAtLeast(0L)
+        val defEnd = if (durS > posS) minOf(posS + 30, durS) else posS + 30
+        fun fmt(t: Long) = String.format("%d:%02d", t / 60, t % 60)
+        fun parse(s: String, def: Long): Long { val p = s.trim().split(":"); return try { when (p.size) { 1 -> p[0].toLong(); 2 -> p[0].toLong() * 60 + p[1].toLong(); else -> p[0].toLong() * 3600 + p[1].toLong() * 60 + p[2].toLong() } } catch (_: Throwable) { def } }
+        val from = ui.input("من (د:ث)", fmt(posS))
+        val to = ui.input("إلى (د:ث)", fmt(defEnd))
+        val btns = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        btns.addView(ui.button("✂ تحميل المقطع", true) {
+            val a = parse(from.text.toString(), posS); val b = parse(to.text.toString(), defEnd)
+            if (b <= a) { Notice.show(act, "وقت النهاية لازم يبقى بعد البداية", 2500L); return@button }
+            try { YtDlp.start(act, "https://www.youtube.com/watch?v=" + vid, false, 0, a, b); Notice.show(act, "✂ المقطع بيتحمّل — هتلاقيه في صفحة التحميلات", 3000L) } catch (e: Throwable) { Notice.show(act, "فشل: " + (e.message ?: ""), 2500L) }
+        })
+        btns.addView(ui.button("🔗 نسخ لينك يبدأ من «من»") {
+            val a = parse(from.text.toString(), posS)
+            try { (act.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("yt", "https://youtu.be/" + vid + "?t=" + a)); Notice.show(act, "✅ اللينك اتنسخ", 1800L) } catch (_: Throwable) {}
+        })
+        ui.sheet(act, "✂ اقتصاص مقطع", listOf<View>(from, to, btns), false).show()
+    }
+
+    // (v1304) إبلاغ: بيفتح صفحة الفيديو على يوتيوب في المتصفح الداخلي (الإبلاغ نفسه بيحتاج حساب جوجل من هناك)
+    private fun reportVideo() {
+        val vid = idOf?.invoke() ?: ""
+        if (vid.isEmpty()) return
+        try { act.startActivity(TabNav.front(Intent(act, BrowserActivity::class.java).putExtra("url", "https://www.youtube.com/watch?v=" + vid))) } catch (_: Throwable) {}
+        Notice.show(act, "🚩 صفحة الفيديو اتفتحت — من ⋮ اختار «إبلاغ»", 3500L)
     }
 
     private fun langMenu(anchor: View) {
@@ -913,6 +948,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     private val body = LinearLayout(act)
     private var gen = 0
     private var item: NpItem? = null
+    init { kit.idOf = { item?.id } }   // (v1304) المشغّل يعرف معرّف الفيديو (اقتصاص/إبلاغ)
     private var det: YtDetail? = null
     private var from: Rect? = null
     private var closing = false

@@ -477,6 +477,7 @@ object YtNotify {
         for ((k, v) in newest) if (v > (seen[k] ?: 0L)) seen[k] = v
         writeSeen(seen)
         if (firstRun || fresh.isEmpty()) return 0
+        try { inboxAdd(fresh.sortedByDescending { it.ts }) } catch (_: Throwable) {}   // (v1304) صندوق الإشعارات بيتسجّل حتى لو إذن الإشعارات مقفول
         if (Build.VERSION.SDK_INT >= 33 && c.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return 0
         if (!nm.areNotificationsEnabled()) return 0
         if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(NotificationChannel(CH, "فيديوهات جديدة من اشتراكاتي", NotificationManager.IMPORTANCE_DEFAULT))
@@ -505,6 +506,29 @@ object YtNotify {
         }
         return n
     }
+
+    // ───────── (v1304) صندوق الإشعارات: كل فيديو جديد من الاشتراكات بيتسجّل هنا (آخر 60) ─────────
+    data class InboxItem(val ts: Long, val id: String, val channel: String, val channelUrl: String, val title: String)
+    private const val INBOX = "ytp_inbox"
+    private const val INBOX_SEEN = "ytp_inbox_seen"
+    private const val INBOX_MAX = 60
+    fun inbox(): List<InboxItem> {
+        val out = ArrayList<InboxItem>()
+        for (l in Cfg.str(INBOX, "").lineSequence()) {
+            val p = l.split("|")
+            if (p.size >= 5) { val t = p[0].toLongOrNull() ?: continue; out.add(InboxItem(t, p[1], p[2], p[3], p.subList(4, p.size).joinToString("|"))) }
+        }
+        return out
+    }
+    private fun inboxAdd(items: List<NpItem>) {
+        if (items.isEmpty()) return
+        val sb = StringBuilder()
+        for (it in items) sb.append(it.ts).append('|').append(it.id).append('|').append(it.channel.replace("|", " ").replace("\n", " ")).append('|').append(it.channelUrl.replace("|", " ")).append('|').append(it.title.replace("|", " ").replace("\n", " ")).append('\n')
+        val merged = (sb.toString() + Cfg.str(INBOX, "")).lineSequence().filter { it.isNotBlank() }.take(INBOX_MAX).joinToString("\n")
+        Cfg.put(INBOX, merged)
+    }
+    fun inboxUnread(): Int { val s = Cfg.str(INBOX_SEEN, "0").toLongOrNull() ?: 0L; return inbox().count { it.ts > s } }
+    fun inboxMarkRead() = Cfg.put(INBOX_SEEN, System.currentTimeMillis().toString())
 }
 
 class YtFeedJob : JobService() {
