@@ -248,9 +248,10 @@ class MainActivity : Activity() {
         modelDesc.text = descOf(modelSel)
         lateinit var applyModel: (String) -> Unit
         val modelChips = ui.chips(modelNames, { model.text.toString().trim() }) { applyModel(it) }
-        val fetchModelsBtn = ui.button("🔄 جلب كل الموديلات من جوجل واختيار واحد") {
+        // (v1320) اللوجيك اتفصل في فانكشن عشان نفس الزرار بقى موجود في قسم المفاتيح كمان (بطلب علي)
+        fun fetchModels() {
             val k = (keys.text.toString() + "\n" + extra.text.toString() + "\n" + backup.text.toString()).lines().map { it.trim() }.firstOrNull { it.length > 10 }
-            if (k == null) { Notice.show(this, ("ضيف مفتاح API الأول").toString(), 2300L); return@button }
+            if (k == null) { Notice.show(this, ("ضيف مفتاح API الأول").toString(), 2300L); return }
             Notice.show(this, ("⏳ بجيب الموديلات…").toString(), 2300L)
             Thread {
                 try {
@@ -272,6 +273,9 @@ class MainActivity : Activity() {
                 }
             }.start()
         }
+        val fetchModelsBtn = ui.button("🔄 جلب كل الموديلات من جوجل واختيار واحد") { fetchModels() }
+        // (v1320) نفس الزرار في قسم «كل المفاتيح»: الاختيار بيتحفظ في Cfg model فيتطبّق على كل المفاتيح وكل الميزات (مفيش fallback تلقائي)
+        val fetchModelsBtnKeys = ui.button("🔄 جلب الموديلات المتاحة واختيار واحد") { fetchModels() }
         var chunkSec = Cfg.int("chunk", 45).coerceIn(10, 600)
         // (v184) طول المقطع بقى أزرار ثابتة (30 / 60 / 90 / 120) بدل السلايدر — قيمة قديمة مش في الأزرار بتظهر على أقرب زرار ومابتتغيّرش إلا لو دوست
         val chunkOpts = listOf(30, 45, 60, 90, 120)
@@ -643,7 +647,7 @@ class MainActivity : Activity() {
                 },
                 ui.button("📊 إحصائية الاستهلاك والكوتة") { StatsUi(this, ui, th).show() },
                                 ui.section("🔑 كل المفاتيح", true,
-                    ui.noHint(), KeyStatus.row(this, ui, th), KeyStatus.audioTestButton(this, ui, th), keysUi, backupUi, extraUi)),   // (v1303) حالة المفاتيح هنا بعد حذف تبويب الشات
+                    ui.noHint(), KeyStatus.row(this, ui, th), KeyStatus.audioTestButton(this, ui, th), fetchModelsBtnKeys, keysUi, backupUi, extraUi)),   // (v1303) حالة المفاتيح هنا بعد حذف تبويب الشات + (v1320) زرار جلب الموديلات
                 ui.section("🔑 مفتاح الوضع البصري فقط", true,
                     ui.noHint(), visKeysUi)) }),   // (v1014) مفتاح الوضع البصري مع باقي المفاتيح
             // ===== 🎙 التفريغ والصوت: موديلات الجهاز + إعدادات الصوت =====
@@ -651,6 +655,13 @@ class MainActivity : Activity() {
                 ui.noHint(),
                 ui.section("🔊 الصوت", true, atrack, audioPresetTitle, audioPresetChips, audioPresetDesc, *fl("soundtags", "hitiming")),
                 ModelsUi.section(this, ui, th),
+                ui.section("🔀 محرك الترجمة", true,
+                    ui.text("لو جيميناي واقف (503): فعّل المسار البديل — وشبر بيفرّغ الصوت لنص على موبايلك، والنص بيتبعت لجوجل ترانسليت يترجمه من غير جيميناي خالص.", 12f, th.muted),
+                    ui.chips(listOf("☁ جيميناي — بيعمل كل حاجة", "🎙 وشبر + 🌐 جوجل ترانسليت"), { if (TrWizard.method() == "google") "🎙 وشبر + 🌐 جوجل ترانسليت" else "☁ جيميناي — بيعمل كل حاجة" }) { n ->
+                        val r = TrWizard.setEngineChoice(if (n.startsWith("🎙")) "whisper_google" else "gemini")
+                        Notice.show(this, r.second, 3200L)
+                    },
+                    ui.noHint()),
                 ui.section("📴 التفريغ على الجهاز (من غير مفتاح)", true,
                     ui.noHint(),
                     ui.text("حجم موديل Whisper:", 12f, th.muted), offModelChips, ui.text("⚡ خانات التفريغ المتوازي:", 12f, th.muted), parChips, parNote, offStatus, offDlBtn, offProg,

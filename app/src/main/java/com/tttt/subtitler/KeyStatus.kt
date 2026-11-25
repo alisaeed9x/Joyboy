@@ -135,14 +135,39 @@ object KeyStatus {
 
     /** شيت بيعرض فيديوهات مكتبة التطبيق وبيرجّع اللي يتختار */
     private fun pickVideo(act: Activity, ui: Ui, th: Theme, cb: (uri: String, name: String) -> Unit) {
+        // (v1320) إصلاح «البيكر ما بيفتحش»: الشيت كان بيتعرض فاضي والصفوف بتتضاف بعد سكان كامل للمكتبة، وعلى مكتبة كبيرة كان بيفضل واقف على «بنحمّل…» فيبان إنه مش شغال — دلوقتي بنستخدم الكاش الجاهز لو موجود، وبنبني كل الصفوف قبل ما الشيت يظهر
+        try {
+            val cached = LocalLibrary.cached()
+            if (cached != null) {
+                showVideoPicker(act, ui, th, cached, cb)
+                return
+            }
+            Notice.show(act, "⏳ بنحمّل مكتبة الفيديو…", 1800L)
+            LocalLibrary.load(act, false) { vids, _ ->
+                try {
+                    showVideoPicker(act, ui, th, vids ?: emptyList(), cb)
+                } catch (t: Throwable) {
+                    LogStore.err("audioTestPick", t)
+                    Notice.show(act, "⚠ تعذّر فتح قائمة الفيديوهات", 2600L)
+                }
+            }
+        } catch (t: Throwable) {
+            LogStore.err("audioTestPick", t)
+            Notice.show(act, "⚠ تعذّر فتح قائمة الفيديوهات", 2600L)
+        }
+    }
+
+    /** (v1320) بناء شيت اختيار الفيديو كاملًا قبل عرضه (fixedH عشان السكرول يبقى ثابت) */
+    private fun showVideoPicker(act: Activity, ui: Ui, th: Theme, vids: List<VideoItem>, cb: (uri: String, name: String) -> Unit) {
+        if (act.isFinishing || act.isDestroyed) return
         val list = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-        val loading = ui.text("⏳ بنحمّل مكتبة الفيديو…", 13f, th.muted)
-        list.addView(loading)
-        val dlg = ui.sheet(act, "🎞 اختار فيديو", listOf(list), false)
-        dlg.show()
-        LocalLibrary.load(act, false) { vids, _ ->
-            loading.text = if (vids.isNullOrEmpty()) "مفيش فيديوهات في المكتبة" else ""
-            (vids ?: emptyList()).take(150).forEach { v ->
+        val dlg = ui.sheet(act, "🎞 اختار فيديو", listOf(list), true)
+        if (vids.isEmpty()) {
+            val empty = ui.text("مفيش فيديوهات في المكتبة", 13f, th.muted)
+            empty.setPadding(ui.dp(4), ui.dp(10), ui.dp(4), ui.dp(10))
+            list.addView(empty)
+        } else {
+            vids.take(150).forEach { v ->
                 val dur = if (v.durMs > 0) " (${v.durMs / 60000}:${"%02d".format((v.durMs / 1000) % 60)})" else ""
                 val row = ui.text("${v.name}$dur", 14f, th.text)
                 row.setPadding(ui.dp(4), ui.dp(10), ui.dp(4), ui.dp(10))
@@ -150,6 +175,7 @@ object KeyStatus {
                 list.addView(row)
             }
         }
+        dlg.show()
     }
 
     private fun runAudioTest(act: Activity, ui: Ui, th: Theme, secs: Int, resBox: LinearLayout) {

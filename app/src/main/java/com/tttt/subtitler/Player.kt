@@ -3549,6 +3549,14 @@ class PlayerActivity : Activity(), Host {
             fun again() { close(); h.post { trSettings(anchor) } }
             fun engSync() { try { if (::engine.isInitialized) engine.convDialect = Cfg.str("conv_dialect", "") } catch (_: Throwable) {} }
             col.addView(shHead("⚙ إعدادات الترجمة", "زرار «ترجم» بيشتغل على طول بالإعدادات دي"))
+            // (v1320) المسار البديل + جلب الموديلات جوه المشغّل (بطلب علي) — نفس خيارات الإعدادات
+            col.addView(shSection("🔀 المسار البديل والموديل"))
+            col.addView(shRow("🔀 محرك الترجمة", if (TrWizard.method() == "google") "🎙 وشبر + 🌐 جوجل ترانسليت ✓" else "☁ جيميناي بيعمل كل حاجة ✓", true) {
+                val r = TrWizard.setEngineChoice(if (TrWizard.method() == "google") "gemini" else "whisper_google")
+                say(r.second); again()
+            })
+            col.addView(shRow("🩺 حالة المسار البديل", "وشبر + جوجل ترانسليت — فحص سريع") { close(); h.post { altPathCheck() } })
+            col.addView(shRow("🔄 جلب الموديلات واختيار واحد", "بيتطبّق على كل المفاتيح") { close(); h.post { modelsPick() } })
             // (v1098) T3: سلايدر النوع: شمال تفريغ بس · نص ترجمة فصحى · يمين ترجمة بلهجة (اللهجة تحتها وبتظهر/تختفي مع الموضع)
             col.addView(shSection("النوع"))
             val modeTitle = ui.text("", 14f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(2), 0, ui.dp(2)) }
@@ -5325,7 +5333,17 @@ class PlayerActivity : Activity(), Host {
                     for (q in hs) gQ.addView(pd((if (hlsH == q.first) "✓ " else "") + q.first + "p" + szOf(q)) { hlsPick(q.second, q.third, q.first) })
                 }
             }
-            return gQ.childCount > 0
+            // (v1320) تشيك بوكس «اجعله الافتراضي» تحت قايمة الجودات (بيظهر بس لما يكون فيه جودات للاختيار) — pk عشان القايمة متتقفلش عند التبديل
+            val hadQ = gQ.childCount > 0
+            if (hadQ) {
+                val defOn = Cfg.bool("qual_pick_default", false)
+                gQ.addView(pk((if (defOn) "☑ " else "⬜ ") + "اجعل الجودة المختارة الافتراضية لكل الفيديوهات") {
+                    Cfg.put("qual_pick_default", if (defOn) "0" else "1")
+                    fillQ()
+                    Notice.show(this, if (defOn) "التثبيت اتقفل — اختيار الجودة بقى للفيديو ده بس" else "✅ أي جودة تختارها من هنا هتتثبّت افتراضية لكل الفيديوهات (فيديوهات موبايلك بتفضل بجودتها الأصلية)", 3000L)
+                })
+            }
+            return hadQ
         }
         val qualB = mini("HD") { v -> if (fillQ()) togglePop(v, gQ, true) else Notice.show(this, "مفيش جودات تانية للفيديو ده", 2300L) }
         qualB.visibility = if (uri == null) View.VISIBLE else View.GONE
@@ -6307,6 +6325,7 @@ class PlayerActivity : Activity(), Host {
             // ساري للفيديو ده بس (qCur + المصدر اتبدّل فوق)؛ السقف العام بيتغيّر من
             // الإعدادات بس (شيب «الجودة الافتراضية» في Main.kt).
             if (!force) { Notice.show(this, "🎞 الجودة: " + o.label, 2000L) }
+            if (!force && o.h > 0) pinPickedQ(o.h)
         } catch (e: Exception) { LogStore.err("Player:switchYt", e); Notice.show(this, "ما قدرتش أغيّر الجودة", 2300L) }
     }
     /** (v459) رابط الصوت المنفصل الحالي (لغة الصوت المختارة أولًا، بعده الصوت الافتراضي، بعده أي جودة بصوت) */
@@ -6365,8 +6384,69 @@ class PlayerActivity : Activity(), Host {
         } catch (e: Exception) { LogStore.err("Player:ytMode", e); Notice.show(this, "ما قدرتش أبدّل الوضع", 2200L) }
     }
 
+    /** (v1320) تشيك بوكس «اجعله الافتراضي» في قايمة الجودة: لما يكون شغّال، الجودة اللي بتتختار من قايمة المشغّل بتتحفظ في yt_maxh — السقف العام لكل مصادر الإنترنت (يوتيوب/متصفح/HLS)، وفيديوهات اللوكال أصلًا ما بتقراهوش فبتفضل بجودتها الأصلية */
+    private fun pinPickedQ(h: Int) {
+        if (!Cfg.bool("qual_pick_default", false)) return
+        if (h < 0) return
+        if (Cfg.int("yt_maxh", 0) == h) return
+        Cfg.put("yt_maxh", h.toString())
+        Notice.show(this, ("📌 الجودة الافتراضية لكل الفيديوهات: " + (if (h == 0) "أعلى جودة" else h.toString() + "p")).toString(), 2400L)
+    }
+
+    /** (v1320) فحص سريع لحالة المسار البديل: موديل الوشبر متنزّل؟ وجوجل ترانسليت بيرد؟ */
+    private fun altPathCheck() {
+        Notice.show(this, "⏳ بفحص المسار البديل…", 1800L)
+        Thread {
+            val wOk = try { Offline.engine().ready() || Offload.wanted() } catch (_: Throwable) { false }
+            val g = try { TrWizard.probeGoogle() } catch (t: Throwable) { Pair(false, (t.message ?: t.javaClass.simpleName).take(80)) }
+            runOnUiThread {
+                try {
+                    GAlert(this).setTitle("🩺 حالة المسار البديل")
+                        .setMessage("🎙 وشبر (التفريغ على الجهاز): " + (if (wOk) "✅ جاهز" else "❌ موديل الوشبر مش متنزّل — نزّله من إعدادات الترجمة") + "
+🌐 جوجل ترانسليت: " + (if (g.first) "✅ شغال (" + g.second + ")" else "❌ مش بيرد: " + g.second) + "
+
+المحرك الحالي: " + (if (TrWizard.method() == "google") "🎙 المسار البديل مفعّل" else "☁ جيميناي"))
+                        .setPositiveButton("تمام", null)
+                        .show()
+                } catch (t: Throwable) { LogStore.err("Player:altChk", t) }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    /** (v1320) جلب موديلات المفتاح من جوجل واختيار واحد بيتطبّق على كل المفاتيح — نفس زرار الإعدادات (تغيير يدوي بس، مفيش fallback) */
+    private fun modelsPick() {
+        val k = try { Cfg.allMainKeys().filter { it != LocalKey.ID && it.isNotBlank() }.firstOrNull() } catch (_: Throwable) { null }
+        if (k == null) { Notice.show(this, "ضيف مفتاح API الأول", 2300L); return }
+        Notice.show(this, "⏳ بجيب الموديلات…", 2300L)
+        Thread {
+            try {
+                val rows = Api.listModels(k)
+                val fresh = ModelWatch.candidates(rows.map { it.id }).toSet()
+                val sorted = rows.sortedWith(compareBy({ it.id !in fresh }, { !it.id.startsWith("gemini") }, { it.id }))
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    if (sorted.isEmpty()) { Notice.show(this, "مفيش موديلات رجعت", 3000L); return@runOnUiThread }
+                    val cur = Cfg.str("model", Models.DEFAULT)
+                    val labels = sorted.map { (if (it.id == cur) "✓ " else if (it.id in fresh) "🆕 " else "") + it.id + (if (it.display.isNotEmpty() && it.display != it.id) "
+" + it.display else "") }.toTypedArray()
+                    GAlert(this).setTitle("اختار الموديل (${sorted.size}) — بيتطبّق على كل المفاتيح")
+                        .setItems(labels) { _, which ->
+                            val id = sorted[which].id
+                            Cfg.put("model", id)
+                            try { ModelWatch.refreshPending() } catch (_: Throwable) {}
+                            Notice.show(this, "🤖 الموديل: " + id + " — اتطبّق على كل المفاتيح", 2600L)
+                        }
+                        .setNegativeButton("إلغاء", null).show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread { Notice.show(this, "⚠ فشل جلب الموديلات: " + (e.message ?: "").take(120), 3200L) }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
     private fun hlsAuto() {
         hlsH = 0
+        pinPickedQ(0)
         try { player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().clearOverridesOfType(androidx.media3.common.C.TRACK_TYPE_VIDEO).build() } } catch (e: Exception) { LogStore.err("Player:hlsAuto", e) }
         setQualLabel(0); Notice.show(this, "🎞 الجودة: تلقائي", 1800L)
     }
@@ -6374,6 +6454,7 @@ class PlayerActivity : Activity(), Host {
         hlsH = h
         try { player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setOverrideForType(androidx.media3.common.TrackSelectionOverride(g.mediaTrackGroup, i)).build() } } catch (e: Exception) { LogStore.err("Player:hlsPick", e) }
         setQualLabel(h); Notice.show(this, "🎞 الجودة: " + h + "p", 1800L)
+        pinPickedQ(h)
     }
 
     private fun buildPlayer() {

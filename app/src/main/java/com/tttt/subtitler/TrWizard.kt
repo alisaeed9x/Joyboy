@@ -143,6 +143,21 @@ object TrWizard {
         } catch (e: Throwable) { false to (e.message ?: e.javaClass.simpleName).take(90) }
     }
 
+    /** (v1320) محرك الترجمة الحالي: «gemini» = جيميناي بيعمل كل حاجة (تفريغ + ترجمة) · «whisper_google» = وشبر بيفرّغ على الجهاز وجوجل ترانسليت بيترجم النص (بطلب علي — مسار بديل وقت ضغط جيميناي 503) */
+    fun engineChoice(): String = if (method() == "google") "whisper_google" else "gemini"
+
+    /** (v1320) تبديل محرك الترجمة. بيرجّع (نجح؟، رسالة للمستخدم) — لو موديل الوشبر مش متنزّل بيرفض التفعيل */
+    fun setEngineChoice(choice: String): Pair<Boolean, String> {
+        if (choice == "whisper_google") {
+            val ready = try { Offline.engine().ready() || Offload.wanted() } catch (_: Throwable) { false }
+            if (!ready) return false to "🎙 موديل الوشبر مش متنزّل — نزّله من الإعدادات ← «📴 التفريغ على الجهاز» الأول"
+            Cfg.put("tr_method", "google"); Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper")
+            return true to "🎙 وشبر + 🌐 جوجل ترانسليت — المسار البديل اتفعّل (جيميناي مش هيتستخدم في الترجمة)"
+        }
+        Cfg.put("tr_method", "gemini"); Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "gemini")
+        return true to "☁ جيميناي — بيعمل التفريغ والترجمة زي الأول"
+    }
+
     fun saved(): Boolean = Cfg.bool("tr_saved", false)
     /** (v281) اسم محوّل اللهجة: فاضي = جيميناي */
     fun convLabel(id: String): String = if (id.isBlank()) "جيميناي" else (ExtLlm.byId(id)?.label ?: id)
