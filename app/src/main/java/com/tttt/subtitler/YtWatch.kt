@@ -1956,7 +1956,7 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
 }
 
 /** (v1295) SeekBar بيرسم علامات بيضا صغيرة عند بداية كل فصل (marks = كسور 0..1 من المدة). بيحترم اتجاه الشريط (LTR في التصميم الجديد) */
-private class ChSeekBar(ctx: Context) : SeekBar(ctx) {
+class ChSeekBar(ctx: Context) : SeekBar(ctx) {
     @Volatile var marks: FloatArray = FloatArray(0)
         set(v) { field = v; invalidate() }
     private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xCCFFFFFF.toInt(); strokeWidth = 3f }
