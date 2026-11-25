@@ -45,11 +45,12 @@ jobs:
           echo "app=$APP" >> "$GITHUB_OUTPUT"
           echo "plugin=$PLG" >> "$GITHUB_OUTPUT"
           echo "changed: app=$APP plugin=$PLG"
-      - name: Build Universal Debug APK only
+      - name: Build Debug APKs (v1302: ABI splits + universal)
         if: steps.chg.outputs.app == 'true'
         run: |
           set -o pipefail
           gradle :app:assembleDebug --stacktrace --console=plain 2>&1 | tee build.log
+          ls -la app/build/outputs/apk/debug/
       - name: Report build errors (annotation)
         if: failure()
         run: |
@@ -76,9 +77,20 @@ jobs:
         run: |
           VER=$(ls CHANGES_v*.md | sed -E 's/CHANGES_v([0-9]+)\.md/\1/' | sort -n | tail -1)
           NAME="$((VER / 100)).$(printf '%02d' $((VER % 100)))"
-          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
-          OUT="Joyboy-v${NAME}-build${{ github.run_number }}.apk"
-          cp "$APK" "$OUT"
+          # (v1302) كل الـAPKs (arm64-v8a · armeabi-v7a · universal) بتترفع على الريليز باسم فيه المعمارية
+          OUTS=()
+          for APK in app/build/outputs/apk/debug/*.apk; do
+            B=$(basename "$APK")
+            SUF=""
+            case "$B" in
+              *arm64-v8a*) SUF="arm64-v8a";;
+              *armeabi-v7a*) SUF="armeabi-v7a";;
+              *universal*) SUF="universal";;
+            esac
+            OUT="Joyboy-v${NAME}-build${{ github.run_number }}${SUF:+-$SUF}.apk"
+            cp "$APK" "$OUT"
+            OUTS+=("$OUT")
+          done
           # (v1190) ملاحظات الريليز = كل الـChangelogs الأحدث من آخر ريليز (الأحدث فوق)
           PREVREL=$(gh release list --limit 30 --json name,tagName --jq '[.[] | select(.tagName | startswith("build-"))][0].name' 2>/dev/null | sed -nE 's/^Joyboy v([0-9]+)\.([0-9]+).*/\1\2/p')
           : > NOTES.md
@@ -89,7 +101,7 @@ jobs:
           head -c 100000 NOTES.md | iconv -c -f UTF-8 -t UTF-8 > NOTES_cut.md
           FLAGS="--latest"
           if [ "${{ github.ref_name }}" != "main" ]; then FLAGS="--prerelease"; fi
-          gh release create "build-${{ github.run_number }}" "$OUT" \
+          gh release create "build-${{ github.run_number }}" "${OUTS[@]}" \
             --target "${{ github.sha }}" \
             --title "Joyboy v${NAME} (build ${{ github.run_number }}) · ${{ github.ref_name }}" \
             --notes-file NOTES_cut.md $FLAGS
