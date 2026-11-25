@@ -14,13 +14,13 @@ object NavCustom {
     /** بلاطة «الإعدادات» ماتتخفّاش في «المزيد» (عشان ماتتقفلش على نفسك) */
     const val PROTECTED = "الإعدادات"
     const val BAR_MAX = 5
-    val BAR_OPTS = listOf(Triple("0", "🎞", "ميديا"), Triple("4", "▶", "يوتيوب"), Triple("2", "🌐", "المتصفح"), Triple("12", "📱", "الريموت"),
+    val BAR_OPTS = listOf(Triple("0", "🎞", "ميديا"), Triple("4", "▶", "يوتيوب"), Triple("17", "✨", "الذكاء"), Triple("2", "🌐", "المتصفح"), Triple("12", "📱", "الريموت"),
         Triple("14", "📶", "النت"), Triple("5", "⬇", "مركز التحميل"), Triple("7", "⚙️", "الإعدادات"))
 
     private fun csv(k: String): List<String> = try { Cfg.str(k, "").split(",").map { it.trim() }.filter { it.isNotEmpty() } } catch (_: Throwable) { emptyList() }
     private fun put(k: String, l: List<String>) { try { Cfg.put(k, l.joinToString(",")) } catch (_: Throwable) {} }
     private fun hasBar(): Boolean = csv(K_BAR).isNotEmpty()
-    fun barTokens(): List<String> = if (hasBar()) csv(K_BAR).filter { it != "-" } else listOf("0", "12", "4", "2", "14")
+    fun barTokens(): List<String> = if (hasBar()) csv(K_BAR).filter { it != "-" } else listOf("0", "12", "4", "17", "2", "14")
     fun customTabs(): List<String> = barTokens().filter { it.startsWith("s:") }.map { it.substring(2) }
     /** ids الخلايا للشريط الأساسي (آخرها المزيد) أو null = الافتراضي */
     fun barIds(): List<Int>? {
