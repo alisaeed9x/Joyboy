@@ -76,6 +76,7 @@ com/tttt/subtitler/GhCi.kt
 com/tttt/subtitler/GhCiUi.kt
 com/tttt/subtitler/Glass.kt
 com/tttt/subtitler/Haptic.kt
+com/tttt/subtitler/HideBox.kt
 com/tttt/subtitler/HtmlUi.kt
 com/tttt/subtitler/HybridVis.kt
 com/tttt/subtitler/IconDefs.kt

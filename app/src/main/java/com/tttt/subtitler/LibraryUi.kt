@@ -255,10 +255,15 @@ class LibraryUi(
     /** فتح المجلد المخفي بيعدّي على البوابة دي (المرحلة 3 هتحط فيها النمط/البصمة) */
     var gate: (open: () -> Unit) -> Unit = { it() }
     fun hideVideo(v: VideoItem) {
-        hidden.add(v.videoId); saveHidden(); render()
-        toastMsg("🙈 اتخفى — اسحب لتحت وكمّل السحب لحد 🔒 وسيب عشان تفتح المخفي")
+        if (HideBox.hide(act, File(v.folderKey, v.name)) != null) { hidden.remove(v.videoId); saveHidden(); render(); toastMsg("🙈 اتخفى واتنقل لمجلد الإخفاء الخارجي — اسحب لتحت وكمّل السحب لحد 🔒 وسيب عشان تفتح المخفي") }   // (v1314)
+        else { hidden.add(v.videoId); saveHidden(); render(); toastMsg("🙈 اتخفى — اسحب لتحت وكمّل السحب لحد 🔒 وسيب عشان تفتح المخفي") }
     }
-    fun unhideVideo(v: VideoItem) { hidden.remove(v.videoId); saveHidden(); render(); toastMsg("👁 رجع للقايمة") }
+    fun unhideVideo(v: VideoItem) {
+        val f = File(v.folderKey, v.name)
+        if (HideBox.isHiddenPath(f.path) && f.exists()) { if (HideBox.unhide(act, f)) toastMsg("👁 رجع مكانه الأصلي") else toastMsg("⚠ ماقدرتش أرجّع الملف") }   // (v1314)
+        else { hidden.remove(v.videoId); saveHidden(); toastMsg("👁 رجع للقايمة") }
+        render()
+    }
     fun openHidden() { inHidden = true; inRecents = false; secure(true); if (query.isNotEmpty()) searchEt.setText(""); render(); listV.setSelection(0) }
     /** قفل المخفي تاني (لما التطبيق يقعد في الخلفية فترة) */
     fun relock() { if (webSrc == 4) { webSrc = 0; secure(false); if (!inHidden) render() }; if (inHidden) { inHidden = false; secure(false); render() } }
@@ -481,7 +486,7 @@ class LibraryUi(
         })
         listV.setOnTouchListener { v, e ->
             when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { y0 = e.rawY; pulling = false; wasLock = false; startedAtTop = listV.firstVisiblePosition == 0 && (listV.childCount == 0 || listV.getChildAt(0).top >= listV.paddingTop); heroGesture = Design.isNew() && !heroExpanded && dashBox.visibility == View.VISIBLE; false }
+                MotionEvent.ACTION_DOWN -> { y0 = e.rawY; pulling = false; wasLock = false; startedAtTop = listV.firstVisiblePosition == 0 && (listV.childCount == 0 || listV.getChildAt(0).top >= listV.paddingTop); heroGesture = false; false }   // (v1314) بطّلنا تكبير كارت كمّل المشاهدة مع السحب لتحت — يفضل صغير زي ما هو
                 MotionEvent.ACTION_MOVE -> {
                     if (refreshing) return@setOnTouchListener false
                     val dy = e.rawY - y0
@@ -497,7 +502,6 @@ class LibraryUi(
                             if (pd > ui.dp(30)) { heroExpand(true); ptr.alpha = 0f; listV.translationY = 0f; return@setOnTouchListener true }
                             return@setOnTouchListener true
                         }
-                        if (pd > ui.dp(30) && Design.isNew()) heroExpand(true)   // (v1224) السحب لتحت بيكبّر كارت كمّل المشاهدة
                         listV.translationY = pd; ptr.translationY = pd - ui.dp(50)
                         ptr.alpha = (pd / ui.dp(40)).coerceIn(0f, 1f)
                         val lock = !inHidden && pd >= lockThr
@@ -647,7 +651,7 @@ class LibraryUi(
             "perm" -> { setState(false, if (audio) "محتاج إذن الوصول لملفات الصوت عشان أعرض الموسيقى اللي على الجهاز." else "محتاج إذن الوصول للفيديوهات عشان أعرض فولدرات الجهاز.", "السماح بالوصول"); return }
         }
         if (all.isEmpty()) { emptyTv.visibility = View.GONE; setState(false, if (audio) "مفيش ملفات صوت اتلاقت على الجهاز.\nلو أغانيك موجودة دوس 🔄 للفحص من جديد." else "مفيش فيديوهات اتلاقت على الجهاز.\nلو فيديوهاتك موجودة دوس 🔄 للفحص من جديد، أو افتح فيديو من 📂.", null); return }
-        val src = if (inHidden) all.filter { isHidden(it) } else visible()
+        val src = if (inHidden) all.filter { isHidden(it) } + HideBox.items(act).filter { hb -> all.none { it.videoId == hb.videoId } } else visible()   // (v1314) المخفي = المنطقي (القديم) + المنقولين فعليًا لفولدر الإخفاء
         val cf = curFolder
         val inWeb = !inHidden && query.isEmpty() && cf == WEB_KEY
         srcRow?.visibility = if (inWeb) View.VISIBLE else View.GONE
@@ -1130,15 +1134,18 @@ class LibraryUi(
         if (withSel) { items += "☑ تحديد" to { toggleSel(f.key) }; items += "☑ تحديد الكل" to { selectAll() } }
         if (audio) { items += "▶ تشغيل الفولدر (${f.videos.size})" to { onPlayFolder(f) }; items += (if (artRows()) "🖼 صور الأغاني: شغّالة (قفل)" else "🖼 صور الأغاني: مقفولة (تشغيل)") to { toggleArtRows() } }
         else items += "🌙 ترجمة كل فيديوهات الفولدر في الخلفية (${f.videos.size})" to { onBgFolder(f) }
-        items += "🙈 إخفاء الفولدر" to { hideFolder(f) }
+        items += "🙈 إخفاء الفولدر" to { gate { hideFolder(f) } }   // (v1314) قفل بالنمط/البصمة
         if (!f.virtual) items += "✏ إعادة تسمية الفولدر" to { onRenameFolder(f) }
         items += "ℹ تفاصيل الفولدر" to { folderDetails(f) }
         items += "🗑 مسح الفولدر بكل اللي فيه" to { onDeleteFolder(f) }
         popup(anchor, items)
     }
     private fun hideFolder(f: FolderItem) {
-        f.videos.forEach { hidden.add(it.videoId) }; saveHidden(); render()
-        toastMsg("🙈 اتخفى الفولدر (${f.videos.size} $noun) — اسحب لتحت وكمّل السحب لحد 🔒 وسيب عشان تفتح المخفي")
+        var moved = 0; var logical = 0   // (v1314) نقل فعلي لكل ملفات الفولدر لمجلد الإخفاء الخارجي
+        f.videos.forEach { v -> if (HideBox.hide(act, File(v.folderKey, v.name)) != null) moved++ else { hidden.add(v.videoId); logical++ } }
+        saveHidden(); render()
+        val extra = if (logical > 0) " · $logical اتخفّوا من القايمة بس" else ""
+        toastMsg("🙈 اتخفى الفولدر ($moved $noun اتنقلوا لمجلد الإخفاء$extra) — اسحب لتحت وكمّل السحب لحد 🔒 وسيب عشان تفتح المخفي")
     }
     private fun folderDetails(f: FolderItem) {
         val tr = f.videos.count { recMap[it.videoId]?.let { r -> r.subs > 0 } == true }
@@ -1202,9 +1209,9 @@ class LibraryUi(
         items += "🌟 قيّم: ★★★★" to { rates[vi.videoId] = 4; saveRates(); render() }
         items += "🌟 قيّم: ★★★" to { rates[vi.videoId] = 3; saveRates(); render() }
         if ((rates[vi.videoId] ?: 0) > 0) items += "🚫 شيل التقييم" to { rates.remove(vi.videoId); saveRates(); render() }
-        if (inHidden) items += "👁 إظهار الفيديو (يرجع للقايمة)" to { unhideVideo(vi) }
+        if (inHidden) items += "👁 إظهار الفيديو (يرجع للقايمة)" to { gate { unhideVideo(vi) } }   // (v1314) قفل بالنمط/البصمة
         else {
-            items += "🙈 إخفاء الفيديو" to { hideVideo(vi) }
+            items += "🙈 إخفاء الفيديو" to { gate { hideVideo(vi) } }   // (v1314) قفل بالنمط/البصمة
             items += "✏ إعادة تسمية" to { onRename(vi) }
             items += "📁 نقل" to { onMove(vi) }
         }
@@ -1410,10 +1417,18 @@ class LibraryUi(
         add("🗑", "حذف", th.danger) { clearSel(); onDeleteFolder(synth) }
     }
     private fun hideMany(vs: List<VideoItem>) {
-        vs.forEach { hidden.add(it.videoId) }; saveHidden(); sel.clear(); render()
-        toastMsg("🙈 اتخفى ${vs.size} $noun — اسحب لتحت وكمّل السحب لحد 🔒 وسيب عشان تفتح المخفي")
+        var moved = 0   // (v1314) نقل فعلي
+        vs.forEach { v -> if (HideBox.hide(act, File(v.folderKey, v.name)) != null) moved++ else hidden.add(v.videoId) }
+        saveHidden(); sel.clear(); render()
+        toastMsg("🙈 اتخفى ${vs.size} $noun ($moved اتنقلوا لمجلد الإخفاء) — اسحب لتحت وكمّل السحب لحد 🔒 وسيب عشان تفتح المخفي")
     }
-    private fun unhideMany(vs: List<VideoItem>) { vs.forEach { hidden.remove(it.videoId) }; saveHidden(); sel.clear(); render(); toastMsg("👁 رجع ${vs.size} $noun للقايمة") }
+    private fun unhideMany(vs: List<VideoItem>) {
+        vs.forEach { v ->
+            val f = File(v.folderKey, v.name)   // (v1314) المنقول فعليًا يرجع مكانه الأصلي
+            if (HideBox.isHiddenPath(f.path) && f.exists()) HideBox.unhide(act, f) else hidden.remove(v.videoId)
+        }
+        saveHidden(); sel.clear(); render(); toastMsg("👁 رجع ${vs.size} $noun للقايمة")
+    }
     private fun selDetails(vids: List<VideoItem>, folders: Int) {
         val tr = vids.count { recMap[it.videoId]?.let { r -> r.subs > 0 } == true }
         val dur = vids.sumOf { it.durMs }
@@ -1435,8 +1450,8 @@ class LibraryUi(
         val items = ArrayList<Pair<String, () -> Unit>>()
         if (audio) items += "▶ تشغيل المحدد (${vids.size})" to { clearSel(); onPlayFolder(synth) }
         else items += "🌙 ترجمة المحدد في الخلفية (${vids.size})" to { clearSel(); onBgFolder(synth) }
-        if (inHidden) items += "👁 إظهار المحدد (يرجع للقايمة)" to { unhideMany(vids) }
-        else items += "🙈 إخفاء المحدد" to { hideMany(vids) }
+        if (inHidden) items += "👁 إظهار المحدد (يرجع للقايمة)" to { gate { unhideMany(vids) } }   // (v1314)
+        else items += "🙈 إخفاء المحدد" to { gate { hideMany(vids) } }   // (v1314)
         if (fs.size == 1 && vs.isEmpty() && !fs[0].virtual) items += "✏ إعادة تسمية الفولدر" to { clearSel(); onRenameFolder(fs[0]) }
         if (fs.isEmpty() && vs.size == 1 && !inHidden) {
             items += "✏ إعادة تسمية" to { clearSel(); onRename(vs[0]) }

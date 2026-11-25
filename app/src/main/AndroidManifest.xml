@@ -58,7 +58,7 @@
         <intent><action android:name="android.intent.action.VIEW"/><data android:scheme="content" android:host="android.media.tv"/></intent>   <!-- (v582) زرار الريسيفر: فتح مدخل HDMI -->
         <intent><action android:name="android.intent.action.SEND"/><data android:mimeType="*/*"/></intent>   <!-- (v831) نلاقي شاشة Quick Share ونفتحها مباشرة -->
     </queries>
-    <application android:name=".JoyApp" android:allowAudioPlaybackCapture="true" android:largeHeap="true" android:supportsRtl="true" android:label="${appLabel}" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
+    <application android:name=".JoyApp" android:allowAudioPlaybackCapture="true" android:largeHeap="true" android:supportsRtl="true" android:label="Joyboy" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true" android:banner="@mipmap/ic_launcher" android:theme="@style/Theme.NewTube">
         <!-- (v985) LaunchSplashActivity اتشالت: كانت ميتة من v920 (اللانشر بقى SplashActivity بتاع MeeTube، ومحدش بيبدأها) — واللانشر دلوقتي MainActivity نفسها -->
         <activity android:name=".MainActivity" android:exported="true" android:theme="@style/AppMainPlain" android:launchMode="singleTask"
@@ -66,7 +66,6 @@
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><data android:scheme="http"/><data android:scheme="https"/><data android:mimeType="video/*"/><data android:mimeType="application/x-mpegURL"/><data android:mimeType="application/vnd.apple.mpegurl"/></intent-filter>   <!-- (v1176) Joyboy يظهر في «افتح بـ» للفيديوهات/HLS -->
-            <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><data android:scheme="content"/><data android:scheme="file"/><data android:mimeType="video/*"/><data android:mimeType="audio/*"/></intent-filter>   <!-- (v1313) التطبيقات اللي بتفرض مشغّل خارجي (زي AW Player) بتبعت content/file -->
             <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="https"/><data android:host="www.youtube.com"/><data android:host="m.youtube.com"/><data android:host="youtu.be"/><data android:host="music.youtube.com"/></intent-filter>   <!-- (v345) لينكات يوتيوب تتفتح في Subtitler -->
         </activity>
         <!-- (v593) أيقونتين إضافيتين في اللانشر: متصفح + يوتيوب (شاشات شفافة بتفتح الوجهة وتقفل) -->
