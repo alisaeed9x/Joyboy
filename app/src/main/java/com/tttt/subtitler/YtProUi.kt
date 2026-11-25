@@ -789,19 +789,33 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             else if (!on) { b.animate().cancel(); b.visibility = View.INVISIBLE }
         }
     }
-    // ───────── (v348) «أنت»: سجل الجهاز + المحفوظات + التحميلات + حساب جوجل في صفحة واحدة ─────────
+    // ───────── (v1291) «أنت»: زي صفحة You في يوتيوب الرسمي — كارت الحساب فوق، أرفف أفقية بالصور (السجل · أكمل · المحفوظات)، وتحتها قوايمك والتحميلات والإعدادات ─────────
     private fun yrow(title: String, sub: String, key: String) = NpItem("act", title, sub, "", "", -1L, -1L, "", 2, "yta:$key")
+    private val youShelves = LinkedHashMap<String, List<NpItem>>()   // (v1291) بيانات الأرفف الأفقية في «أنت» — kind 6 بتقرا منها بالمفتاح اللي في url
     private fun openYou() {
         val rows = ArrayList<NpItem>()
-        // (v475) أول سطر: لو مش مسجّل ← تسجيل الدخول · لو مسجّل ولسه مفيش قنوات متزامنة ← مزامنة
-        if (!YtAccount.loggedIn()) rows.add(yrow("🔐 سجّل الدخول بالكود (youtube.com/activate)", "اشتراكاتك وسجلك وقوايمك وفيديوهات الإعجاب", "!login"))
-        else if (YtStore.read(YtStore.SUBS).isEmpty()) rows.add(yrow("🔄 زامن اشتراكاتك دلوقتي", "لسه مفيش قنوات متزامنة من حسابك", "!sync"))
-        rows.add(yrow("🕘 سجل المشاهدة", "اللي فتحته من يوتيوب على الجهاز (" + YtStore.read(YtStore.HIST).size + ")", "!hist"))
-        rows.add(yrow("⏩ أكمل المشاهدة", "فيديوهات بدأتها ومكملتهاش — بتكمل من نفس المكان", "!cont"))   // (v469) C6
-        rows.add(yrow("🕘 السجل العام", "فيديوهات وصوتيات من كل المصادر — بالمسح", "!pub"))
-        rows.add(yrow("🔖 المحفوظات", "(" + YtStore.read(YtStore.SAVED).size + ")", "!saved"))
+        youShelves.clear()
+        val logged = YtAccount.loggedIn()
+        if (logged) {
+            val nm = try { MtYt.accountName() } catch (_: Throwable) { "" }
+            val em = try { MtYt.accountEmail() } catch (_: Throwable) { "" }
+            val av = try { MtYt.accountAvatar() } catch (_: Throwable) { "" }
+            rows.add(NpItem("act", if (nm.isBlank()) "حساب يوتيوب" else nm, em, "", "", -1L, -1L, "", 7, "ythdr:", 0L, av))
+        } else {
+            rows.add(NpItem("act", "سجّل دخولك ليوتيوب", "اشتراكاتك وقوايمك وسجلك وفيديوهات الإعجاب بتظهر هنا", "", "", -1L, -1L, "", 7, "ythdr:"))
+        }
+        val hist = YtStore.read(YtStore.HIST)
+        if (hist.isNotEmpty()) { youShelves["hist"] = hist.take(20); rows.add(NpItem("act", "سجل المشاهدة", "", "", "", -1L, -1L, "", 6, "ythshelf:hist")) }
+        val cont = try { YtProg.continueItems(recs()) } catch (_: Throwable) { emptyList<NpItem>() }
+        if (cont.isNotEmpty()) { youShelves["cont"] = cont.take(20); rows.add(NpItem("act", "أكمل المشاهدة", "", "", "", -1L, -1L, "", 6, "ythshelf:cont")) }
+        val saved = YtStore.read(YtStore.SAVED)
+        if (saved.isNotEmpty()) { youShelves["saved"] = saved.take(20); rows.add(NpItem("act", "المحفوظات", "", "", "", -1L, -1L, "", 6, "ythshelf:saved")) }
+        if (logged) {
+            rows.addAll(YtAccount.menuItems().dropLast(2))   // المزامنة والخروج بقوا زراير في كارت الحساب فوق
+            if (YtStore.read(YtStore.SUBS).isEmpty()) rows.add(yrow("🔄 زامن اشتراكاتك دلوقتي", "لسه مفيش قنوات متزامنة من حسابك", "!sync"))
+        }
         rows.add(yrow("📥 التحميلات", "الفيديوهات والصوتيات اللي نزّلتها من يوتيوب", "!dl"))
-        if (YtAccount.loggedIn()) rows.addAll(YtAccount.menuItems())
+        rows.add(yrow("🕘 السجل العام", "فيديوهات وصوتيات من كل المصادر — بالمسح", "!pub"))
         rows.add(yrow("⚙ إعدادات يوتيوب", "الجودة · حفظ السجل · المسح", "!set"))
         if (lite) rows.add(yrow("⚙ إعدادات المشغّل والتطبيق", "الترجمة · شكل الترجمة · المظهر · الخلفية · الأمان", "!setall"))   // (v475) اللايت: «أنا» و«الإعدادات» مدموجين
         bind(St("👤 أنت", 4, rows, null, null, null, null, null, ""))
@@ -1783,8 +1797,100 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         override fun getCount() = if (grid) (items.size + 1) / 2 else items.size
         override fun getItem(p: Int) = if (grid) items[p * 2] else items[p]
         override fun getItemId(p: Int) = p.toLong()
-        override fun getViewTypeCount() = 4
-        override fun getItemViewType(p: Int): Int = if (grid) 1 else if (items[p].kind == 5) 3 else if (cards && items[p].kind == 0 && items[p].id != "act") 2 else 0
+        override fun getViewTypeCount() = 6
+        override fun getItemViewType(p: Int): Int = if (grid) 1 else when (items[p].kind) { 5 -> 3; 6 -> 4; 7 -> 5; else -> if (cards && items[p].kind == 0 && items[p].id != "act") 2 else 0 }
+        /** (v1291) كارت الحساب في صفحة «أنت» (kind 7): أفاتار + اسم + إيميل + زراير (مزامنة/خروج أو دخول) */
+        private inner class YHdrHold(val av: android.widget.TextView, val avImg: ImageView, val name: android.widget.TextView, val sub: android.widget.TextView, val chip1: android.widget.TextView, val chip2: android.widget.TextView)
+        private fun youHeaderView(p: Int, cv: View?): View {
+            val hd: YHdrHold; val v: View
+            if (cv == null) {
+                val av = ui.text("", 22f, Color.WHITE, true).apply { gravity = Gravity.CENTER }
+                val avImg = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+                val avBox = FrameLayout(act)
+                avBox.addView(av, FrameLayout.LayoutParams(-1, -1)); avBox.addView(avImg, FrameLayout.LayoutParams(-1, -1))
+                val name = ui.text("", 17f, th.text, true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+                val sub = ui.text("", 12f, th.muted).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+                val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
+                col.addView(name, LinearLayout.LayoutParams(-1, -2)); col.addView(sub, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2) })
+                val top = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+                top.addView(avBox, LinearLayout.LayoutParams(ui.dp(56), ui.dp(56)).apply { marginEnd = ui.dp(14) })
+                top.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
+                fun chip() = ui.text("", 13f, YtSkin.accent, true).apply {
+                    setPadding(ui.dp(12), ui.dp(7), ui.dp(12), ui.dp(7))
+                    background = GradientDrawable().apply { cornerRadius = ui.dp(18).toFloat(); setStroke(ui.dp(1), YtSkin.accent) }
+                    foreground = YtSkin.ripple(true)
+                }
+                val chip1 = chip(); val chip2 = chip()
+                val chips = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+                chips.addView(chip1, LinearLayout.LayoutParams(-2, -2)); chips.addView(chip2, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(8) })
+                val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12)) }
+                box.addView(top, LinearLayout.LayoutParams(-1, -2)); box.addView(chips, LinearLayout.LayoutParams(-2, -2).apply { topMargin = ui.dp(10) })
+                hd = YHdrHold(av, avImg, name, sub, chip1, chip2); box.tag = hd; v = box
+            } else { v = cv; hd = cv.tag as YHdrHold }
+            val it = items[p]
+            val logged = YtAccount.loggedIn()
+            hd.name.text = it.title
+            hd.sub.text = it.channel
+            hd.sub.visibility = if (it.channel.isBlank()) View.GONE else View.VISIBLE
+            hd.av.text = if (logged) it.title.trim().take(1).uppercase(Locale.getDefault()) else "👤"
+            hd.av.background = GradientDrawable().apply { setShape(GradientDrawable.OVAL); setColor(YtSkin.avatarColor(it.title)) }
+            if (logged && it.avatar.isNotBlank()) {
+                hd.avImg.visibility = View.VISIBLE
+                try { Glide.with(act).load(it.avatar).circleCrop().override(ui.dp(112), ui.dp(112)).into(hd.avImg) } catch (_: Throwable) {}
+            } else { hd.avImg.visibility = View.GONE; try { Glide.with(act).clear(hd.avImg) } catch (_: Throwable) {} }
+            if (logged) {
+                hd.chip1.text = "🔄 مزامنة الاشتراكات"; hd.chip1.setOnClickListener { openAcc(yrow("", "", "!sync")) }
+                hd.chip2.text = "🚪 تسجيل الخروج"; hd.chip2.visibility = View.VISIBLE; hd.chip2.setOnClickListener { openAcc(yrow("", "", "!out")) }
+            } else {
+                hd.chip1.text = "🔐 تسجيل الدخول بالكود"; hd.chip1.setOnClickListener { openAcc(yrow("", "", "!login")) }
+                hd.chip2.visibility = View.GONE; hd.chip2.setOnClickListener(null)
+            }
+            return v
+        }
+        /** (v1291) رف أفقي في صفحة «أنت» (kind 6): عنوان + «عرض الكل» + كروت 16:9 بتتسكرول بالعرض — url = ythshelf:hist|cont|saved */
+        private inner class YShelfHold(val label: android.widget.TextView, val all: android.widget.TextView, val row: LinearLayout)
+        private fun youShelfView(p: Int, cv: View?): View {
+            val hd: YShelfHold; val v: View
+            if (cv == null) {
+                val label = ui.text("", 15f, th.text, true)
+                val all = ui.text("عرض الكل", 13f, YtSkin.accent, true).apply { setPadding(ui.dp(8), ui.dp(4), ui.dp(2), ui.dp(4)); foreground = YtSkin.ripple(true) }
+                val head = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+                head.addView(label, LinearLayout.LayoutParams(0, -2, 1f)); head.addView(all, LinearLayout.LayoutParams(-2, -2))
+                val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+                val scroll = HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(row, HorizontalScrollView.LayoutParams(-2, -2)) }
+                val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(4), ui.dp(12), ui.dp(10)) }
+                box.addView(head, LinearLayout.LayoutParams(-1, -2)); box.addView(scroll, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
+                hd = YShelfHold(label, all, row); box.tag = hd; v = box
+            } else { v = cv; hd = cv.tag as YShelfHold }
+            val it = items[p]
+            val key = it.url.removePrefix("ythshelf:")
+            hd.label.text = it.title
+            hd.all.setOnClickListener { when (key) { "hist" -> showLocal(2, true); "saved" -> showLocal(3, true); else -> showContinue() } }
+            hd.row.removeAllViews()
+            val cw = ui.dp(150); val chh = cw * 9 / 16
+            for (vi in youShelves[key].orEmpty()) {
+                val thumb = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+                val dur = ui.text("", 10.5f, Color.WHITE, true).apply { setPadding(ui.dp(4), 0, ui.dp(4), ui.dp(1)); background = GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = ui.dp(4).toFloat() } }
+                val tbox = FrameLayout(act).apply { clipToOutline = true; background = GradientDrawable().apply { cornerRadius = ui.dp(8).toFloat(); setColor(th.surface) } }
+                tbox.addView(thumb, FrameLayout.LayoutParams(-1, -1))
+                tbox.addView(dur, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)) })
+                val title = ui.text("", 11.5f, th.text, false).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+                val meta = ui.text("", 10f, th.muted, false).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+                val cell = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; foreground = YtSkin.ripple(true) }
+                cell.addView(tbox, LinearLayout.LayoutParams(cw, chh))
+                cell.addView(title, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(4) })
+                cell.addView(meta, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(1) })
+                val d = fmtDur(vi.dur)
+                dur.text = d; dur.visibility = if (d.isEmpty()) View.GONE else View.VISIBLE
+                title.text = vi.title
+                meta.text = listOf(vi.channel, vi.age).filter { x -> x.isNotBlank() }.joinToString(" · ")
+                try { if (vi.thumb.isNotBlank()) Glide.with(act).load(vi.thumb).centerCrop().into(thumb) else Glide.with(act).clear(thumb) } catch (_: Throwable) {}
+                cell.setOnClickListener { open(vi, cell) }
+                cell.setOnLongClickListener { x -> if (vi.id != "act") menu(x, vi); true }
+                hd.row.addView(cell, LinearLayout.LayoutParams(cw, -2).apply { marginEnd = ui.dp(8) })
+            }
+            return v
+        }
         private fun gridView(p: Int, cv: View?): View {
             val row: LinearLayout
             if (cv == null) {
@@ -1896,6 +2002,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         override fun getView(p: Int, cv: View?, parent: ViewGroup?): View {
             if (grid) return gridView(p, cv)
             if (items[p].kind == 5) return shelfView(p, cv)
+            if (items[p].kind == 6) return youShelfView(p, cv)   // (v1291)
+            if (items[p].kind == 7) return youHeaderView(p, cv)   // (v1291)
             if (cards && items[p].kind == 0 && items[p].id != "act") return cardView(p, cv)
             val hd: Hold
             val v: View

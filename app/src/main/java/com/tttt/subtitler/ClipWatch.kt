@@ -200,6 +200,7 @@ class ClipOrb(ctx: Context) : View(ctx) {
     var accent: Int = Themes.current().primary
     var count = 1
     var showCount = false   // (v852) يرسم الرقم حتى لو 1 (دايرة المتصفح: «1» فيديو واحد، «2» فيديوهين)
+    var countColor = 0xFFE53935.toInt()   // (v1291) لون دايرة الرقم — المتصفح بيخلّيها زرقا لما يلقط فيديو
     var found = false
         set(v) { if (field != v) { field = v; invalidate() } }
     /** (v716) علامة مخصّصة في النص (المتصفح: 🔍 وهو بيدوّر) */
@@ -276,7 +277,7 @@ class ClipOrb(ctx: Context) : View(ctx) {
         // عدّاد لو فيه أكتر من لينك
         if (count > 1 || showCount) {
             val bx = cx + rc * 0.72f; val by = cy - rc * 0.72f
-            p.reset(); p.isAntiAlias = true; p.style = Paint.Style.FILL; p.color = 0xFFE53935.toInt(); c.drawCircle(bx, by, 8f * d, p)
+            p.reset(); p.isAntiAlias = true; p.style = Paint.Style.FILL; p.color = countColor; c.drawCircle(bx, by, 8f * d, p)
             p.color = Color.WHITE; p.textAlign = Paint.Align.CENTER; p.textSize = 10f * d; p.typeface = android.graphics.Typeface.DEFAULT_BOLD
             c.drawText(count.toString(), bx, by + 3.6f * d, p)
         }

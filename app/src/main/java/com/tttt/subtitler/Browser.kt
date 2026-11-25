@@ -2694,7 +2694,7 @@ class BrowserActivity : Activity() {
             if (first) badge.animate().scaleX(1.25f).scaleY(1.25f).setDuration(120).withEndAction { badge.animate().scaleX(1f).scaleY(1f).setDuration(140).start() }.start()
         } else {
             val first = !badge.found || badge.visibility != View.VISIBLE
-            badge.found = true; badge.glyph = null; badge.count = n; badge.showCount = true; hint.visibility = View.GONE   // (v852) 🎬 + رقم (1 · 2 · …)
+            badge.found = true; badge.glyph = null; badge.count = n; badge.showCount = true; badge.countColor = 0xFF2196F3.toInt(); hint.visibility = View.GONE   // (v852) 🎬 + رقم أزرق (1 · 2 · …) — (v1291) الأزرق بطلب صاحب المشروع
             showBadge()
             if (first) badge.animate().scaleX(1.25f).scaleY(1.25f).setDuration(120).withEndAction { badge.animate().scaleX(1f).scaleY(1f).setDuration(140).start() }.start()
         }
@@ -3029,6 +3029,18 @@ class BrowserActivity : Activity() {
                 background = ui.box(0xFF1E6FD9.toInt(), 0x66FFFFFF, 14); setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12))
                 layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(4), 0, ui.dp(6)) }
                 setOnClickListener { YtDlp.start(this@BrowserActivity, pu); Notice.show(this@BrowserActivity, "اتضاف لمركز المهام (yt-dlp)", 2200L) }
+            })
+        } catch (_: Throwable) {}
+        // (v1291) اللينك المنسوخ ← yt-dlp على طول: اعمل كوبي لأي لينك فيديو وافتح القايمة دي وهتلاقي الزرار
+        try {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+            val clip = try { cm?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()?.trim() ?: "" } catch (_: Throwable) { "" }
+            val cu = Regex("https?://\\S+").find(clip)?.value ?: ""
+            if (cu.isNotEmpty()) box.addView(TextView(this).apply {
+                text = "📋 yt-dlp: نزّل اللينك المنسوخ"; textSize = 15f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+                background = ui.box(0xFF1E6FD9.toInt(), 0x66FFFFFF, 14); setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12))
+                layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(4), 0, ui.dp(6)) }
+                setOnClickListener { YtDlp.start(this@BrowserActivity, cu); Notice.show(this@BrowserActivity, "اتضاف لمركز المهام (yt-dlp): " + cu.take(50), 2600L) }
             })
         } catch (_: Throwable) {}
         for (g in gs) box.addView(groupCard(g))

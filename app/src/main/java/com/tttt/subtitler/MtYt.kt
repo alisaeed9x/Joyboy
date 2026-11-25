@@ -278,6 +278,11 @@ object MtYt {
     /** (v929) حساب MeeTube مسجّل دخول؟ */
     fun signedIn(): Boolean = try { boot(); YouTubeServiceManager.instance().signInService.isSigned() } catch (e: Throwable) { LogStore.err("MtYt:signed", e); false }
 
+    /** (v1291) بيانات حساب يوتيوب المسجّل من كاش المحرك (مفيش شبكة) — لصفحة «أنت» */
+    fun accountName(): String = try { boot(); YouTubeServiceManager.instance().signInService.selectedAccount?.name ?: "" } catch (_: Throwable) { "" }
+    fun accountEmail(): String = try { boot(); YouTubeServiceManager.instance().signInService.selectedAccount?.email ?: "" } catch (_: Throwable) { "" }
+    fun accountAvatar(): String = try { boot(); YouTubeServiceManager.instance().signInService.selectedAccount?.avatarImageUrl ?: "" } catch (_: Throwable) { "" }
+
     /** (v929) أحدث فيديوهات الاشتراكات (صفحة الاشتراكات في MeeTube) — من خيط خلفي */
     fun subscriptions(): List<NpItem> =
         try { boot(); flatten(listOfNotNull(YouTubeServiceManager.instance().contentService.getSubscriptions())) }
