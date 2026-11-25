@@ -1830,11 +1830,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         bellRefresh()
         val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         if (items.isEmpty()) box.addView(ui.text("مفيش إشعارات لسه — أول ما قناة مشترك فيها تنزل فيديو جديد هيظهر هنا.", 13.5f, YtSkin.sub).apply { setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)) })
-        for (it in items) {
+        for (inx in items) {
             val row = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)); foreground = YtSkin.ripple(); background = GradientDrawable().apply { setColor(YtSkin.surface); cornerRadius = ui.dp(12).toFloat() } }
-            row.addView(ui.text(it.title, 13.5f, YtSkin.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END })
-            row.addView(ui.text(it.channel + " · " + YtRss.ageOf(it.ts), 11.5f, YtSkin.sub).apply { setPadding(0, ui.dp(3), 0, 0) })
-            row.setOnClickListener { try { inxDlg?.dismiss() } catch (_: Throwable) {}; openVideo(it.id) }
+            row.addView(ui.text(inx.title, 13.5f, YtSkin.text, true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END })
+            row.addView(ui.text(inx.channel + " · " + YtRss.ageOf(inx.ts), 11.5f, YtSkin.sub).apply { setPadding(0, ui.dp(3), 0, 0) })
+            row.setOnClickListener { try { inxDlg?.dismiss() } catch (_: Throwable) {}; openVideo(inx.id) }
             box.addView(row, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(4)) })
         }
         inxDlg = ui.sheet(act, "🔔 الإشعارات", listOf<View>(box), false); inxDlg?.show()

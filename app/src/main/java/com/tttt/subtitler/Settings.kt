@@ -512,14 +512,38 @@ object AdvRows {
     private fun setOn(r: R, on: Boolean) {
         if (r.kind == "ext") Cfg.put(r.key, if (on) "on" else "off") else Cfg.put(r.key, if (on) "1" else "0")
     }
+    /** (v1305) لثبيت الإعدادات في الشريط */
+    fun labelOf(key: String): String = rows.firstOrNull { it.key == key }?.label ?: key
+    fun isOnKey(key: String): Boolean = rows.firstOrNull { it.key == key }?.let { isOn(it) } ?: false
+    /** قلب قيمة إعداد بوليان. بيرجّع الحالة الجديدة، أو null لو المفتاح مش موجود أو سلايدر */
+    fun toggleKey(key: String): Boolean? {
+        val r = rows.firstOrNull { it.key == key } ?: return null
+        if (r.kind == "int") return null
+        val n = !isOn(r); setOn(r, n); return n
+    }
+    fun tabOf(key: String): String = rows.firstOrNull { it.key == key }?.tab ?: "general"
+
     fun forTab(ui: Ui, tab: String): List<View> {
         val rs = rows.filter { it.tab == tab }
         if (rs.isEmpty()) return emptyList()
         val out = ArrayList<View>()
         out.add(ui.text("🧩 إعدادات إضافية", 13f, ui.th.muted, true))
         for (r in rs) {
-            if (r.kind == "int") out.add(ui.slider(r.label, (Cfg.int(r.key, r.d * r.scale) / r.scale), r.lo, r.hi, r.unit) { v -> Cfg.put(r.key, (v * r.scale).toString()) })
-            else out.add(ui.switchRow(r.label, isOn(r)) { on -> setOn(r, on) })
+            val rowV: View = if (r.kind == "int") ui.slider(r.label, (Cfg.int(r.key, r.d * r.scale) / r.scale), r.lo, r.hi, r.unit) { v -> Cfg.put(r.key, (v * r.scale).toString()) }
+            else ui.switchRow(r.label, isOn(r)) { on -> setOn(r, on) }
+            // (v1305) 📌 تثبيت الإعداد في الشريط السفلي (بيطلب منه: دوسة «أضف للشريط» جنب أي إعداد)
+            val pin = ui.text(if (NavCustom.isPinned(r.key)) "📌" else "📍", 15f, ui.th.muted).apply {
+                gravity = android.view.Gravity.CENTER; setPadding(ui.dp(6), 0, ui.dp(2), 0)
+                setOnClickListener {
+                    if (NavCustom.isPinned(r.key)) { NavCustom.removePin(r.key); text = "📍"; Notice.show(ui.ctx, "اتشال من الشريط", 1600L) }
+                    else if (NavCustom.addPin(r.key)) { text = "📌"; Notice.show(ui.ctx, "📌 اتثبّت في الشريط — هتلاقيه بعد إعادة فتح الشاشة", 2400L) }
+                    else Notice.show(ui.ctx, "الشريط ممتلئ (" + NavCustom.BAR_MAX + " أزرار بالكتير)", 2200L)
+                }
+            }
+            out.add(LinearLayout(ui.ctx).apply {
+                orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = android.view.Gravity.CENTER_VERTICAL
+                addView(rowV, LinearLayout.LayoutParams(0, -2, 1f)); addView(pin, LinearLayout.LayoutParams(-2, -2))
+            })
         }
         return out
     }

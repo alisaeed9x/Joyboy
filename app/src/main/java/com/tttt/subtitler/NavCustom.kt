@@ -10,24 +10,44 @@ import android.widget.Toast
 /** (v1273) تخصيص البلاطات: ترتيب/إخفاء أزرار الشريط السفلي وبلاطات «المزيد»، وإضافة أقسام الإعدادات كبلاطات، واختيار صفحة البداية.
  *  كله اختياري: من غير تخصيص الشريط و«المزيد» بيفضلوا زي ما هم. المخفي بيفضل ظاهر هنا عشان يرجعه. */
 object NavCustom {
-    const val K_BAR = "nav_bar"; const val K_ORDER = "nav_more_order"; const val K_HIDE = "nav_more_hide"; const val K_EXTRA = "nav_more_extra"; const val K_START = "start_page"
+    const val K_BAR = "nav_bar"; const val K_ORDER = "nav_more_order"; const val K_HIDE = "nav_more_hide"; const val K_EXTRA = "nav_more_extra"; const val K_START = "start_page"; const val K_PIN = "nav_pins"   // (v1305) إعدادات مثبّتة في الشريط (مفاتيح AdvRows)
     /** بلاطة «الإعدادات» ماتتخفّاش في «المزيد» (عشان ماتتقفلش على نفسك) */
     const val PROTECTED = "الإعدادات"
-    const val BAR_MAX = 5
-    val BAR_OPTS = listOf(Triple("0", "🎞", "ميديا"), Triple("4", "▶", "يوتيوب"), Triple("17", "✨", "الذكاء"), Triple("2", "🌐", "المتصفح"), Triple("12", "📱", "الريموت"),
-        Triple("14", "📶", "النت"), Triple("5", "⬇", "مركز التحميل"), Triple("7", "⚙️", "الإعدادات"))
+    const val BAR_MAX = 6   // (v1305 fix) كان 5 والافتراضي 6 — فأي إضافة كانت بتترفض «الشريط ممتلئ»
+    val BAR_OPTS = listOf(Triple("0", "🎞", "ميديا"), Triple("4", "▶", "يوتيوب"), Triple("2", "🌐", "المتصفح"), Triple("12", "📱", "الريموت"),
+        Triple("14", "📶", "النت"), Triple("5", "⬇", "مركز التحميل"), Triple("7", "⚙️", "الإعدادات"))   // (v1305) «الذكاء» اتشال من الاختيارات (التبويب اتمسح v1303)
 
     private fun csv(k: String): List<String> = try { Cfg.str(k, "").split(",").map { it.trim() }.filter { it.isNotEmpty() } } catch (_: Throwable) { emptyList() }
     private fun put(k: String, l: List<String>) { try { Cfg.put(k, l.joinToString(",")) } catch (_: Throwable) {} }
     private fun hasBar(): Boolean = csv(K_BAR).isNotEmpty()
-    fun barTokens(): List<String> = if (hasBar()) csv(K_BAR).filter { it != "-" } else listOf("0", "12", "4", "17", "2", "14")
+    fun barTokens(): List<String> = if (hasBar()) csv(K_BAR).filter { it != "-" && it != "17" } else listOf("0", "12", "4", "2", "14")   // (v1305) شيل 17 (الذكاء) من أي تخصيص قديم
     fun customTabs(): List<String> = barTokens().filter { it.startsWith("s:") }.map { it.substring(2) }
+    /** (v1305) الإعدادات المثبّتة في الشريط: مفاتيح Cfg من AdvRows */
+    fun pins(): List<String> = barTokens().filter { it.startsWith("p:") }.map { it.substring(2) }
+    fun addPin(key: String): Boolean {
+        val toks = barTokens()
+        if (("p:" + key) in toks) return false
+        if (toks.size >= BAR_MAX) return false
+        put(K_BAR, toks + ("p:" + key)); return true
+    }
+    fun removePin(key: String) { val toks = barTokens(); if (("p:" + key) in toks) put(K_BAR, toks.filter { it != "p:" + key }) }
+    fun isPinned(key: String) = ("p:" + key) in barTokens()
+    /** اسم مختصر للإعداد المثبّت + حالته (✓/✗) */
+    fun pinLabel(key: String): String {
+        val lab = try { AdvRows.labelOf(key) } catch (_: Throwable) { key }
+        val short = split(lab).second.split(" ").take(2).joinToString(" ")
+        val on = try { AdvRows.isOnKey(key) } catch (_: Throwable) { false }
+        return short + (if (on) " ✓" else " ✗")
+    }
+    fun pinEmoji(key: String): String = split(try { AdvRows.labelOf(key) } catch (_: Throwable) { key }).first
     /** ids الخلايا للشريط الأساسي (آخرها المزيد) أو null = الافتراضي */
     fun barIds(): List<Int>? {
         if (!hasBar()) return null
-        val cs = customTabs(); val out = ArrayList<Int>()
+        val cs = customTabs(); val ps = pins(); val out = ArrayList<Int>()
         for (t in barTokens()) {
-            val id = if (t.startsWith("s:")) BottomNav.DEFS.size + cs.indexOf(t.substring(2)) else (t.toIntOrNull() ?: continue)
+            val id = if (t.startsWith("s:")) BottomNav.DEFS.size + cs.indexOf(t.substring(2))
+                else if (t.startsWith("p:")) BottomNav.DEFS.size + cs.size + ps.indexOf(t.substring(2))
+                else (t.toIntOrNull() ?: continue)
             if (id !in out && id != BottomNav.MORE) out.add(id)
         }
         out.add(BottomNav.MORE); return out
@@ -38,7 +58,7 @@ object NavCustom {
 
     fun tabLabel(id: String): String = if (id == "applang") "🌐 " + I18n.languageWord() else try { SettingsTabs.label(id) } catch (_: Throwable) { id }
     fun split(l: String): Pair<String, String> { val i = l.indexOf(' '); return if (i in 1..4) l.substring(0, i) to l.substring(i + 1).trim() else "⚙️" to l }
-    fun customDefs(): List<Pair<String, String>> = customTabs().map { split(tabLabel(it)) }
+    fun customDefs(): List<Pair<String, String>> = customTabs().map { split(tabLabel(it)) } + pins().map { pinEmoji(it) to pinLabel(it) }   // (v1305) + الإعدادات المثبّتة
 
     /** فتح قسم من الإعدادات من أي شاشة */
     fun open(act: Activity, tab: String) {
@@ -72,6 +92,7 @@ object NavCustom {
 
         fun barInfo(tok: String): Pair<String, String> {
             if (tok.startsWith("s:")) return split(tabLabel(tok.substring(2)))
+            if (tok.startsWith("p:")) return pinEmoji(tok.substring(2)) to (pinLabel(tok.substring(2)) + " · إعداد")   // (v1305)
             val o = BAR_OPTS.firstOrNull { it.first == tok }; return if (o != null) o.second to o.third else "•" to tok
         }
         fun saveBar(l: List<String>) { put(K_BAR, if (l.isEmpty()) listOf("-") else l) }
