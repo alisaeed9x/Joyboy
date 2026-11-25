@@ -59,6 +59,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                       val vid: NpItem? = null, val det: YtDetail? = null) {
         var pos = 0
         var durF = 0; var dateF = 0   // (v469) C5: فلاتر بحث (مدة/تاريخ) بتتطبق على صفحات التحميل التالية كمان
+        var liveF = false   // (v1303) فلتر «مباشر» في البحث
         var cMode = false; var cLoaded = false; val ci = ArrayList<NpItem>(); var cn: Page? = null; var cm: ((Page) -> YtRes)? = null
         var typeF = 0   // (v864) فلتر نوع الاشتراكات: 0 الكل · 1 فيديوهات · 2 شورتس · 3 بوستات
         var shelfOn = false   // (v865) الشورتس بتتجمّع 4-4 في «رف» (زي يوتيوب)
@@ -300,16 +301,17 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private val typeLabels = listOf("الكل", "فيديوهات", "شورتس", "بوستات")
     private var ctlType: TextView? = null
     private var hideSeen = try { Cfg.str("ytp_hide_seen", "0") == "1" } catch (_: Throwable) { false }
-    private var pendDurF = 0; private var pendDateF = 0
+    private var pendDurF = 0; private var pendDateF = 0; private var pendLiveF = false   // (v1303) + مباشر
     private var pendingPlayAll = false
     private val sortLabels = listOf("الافتراضي", "الأحدث", "الأكثر مشاهدة", "الأطول", "الأقصر", "الأقدم")   // (v1300) + الأقدم
     private val durLabels = listOf("الكل", "قصير", "متوسط", "طويل")
-    private val dateLabels = listOf("الكل", "اليوم", "الأسبوع", "الشهر")
+    private val dateLabels = listOf("الكل", "اليوم", "الأسبوع", "الشهر", "آخر ساعة", "السنة")   // (v1303) + آخر ساعة/السنة
     private var ctlRow: LinearLayout? = null
     private var ctlSort: TextView? = null
     private var ctlHide: TextView? = null
     private var ctlDur: TextView? = null
     private var ctlDate: TextView? = null
+    private var ctlLive: TextView? = null   // (v1303) شريحة فلتر المباشر
 
     // (v397) شريط يوتيوب العلوي (شعار + أيقونات) وشريط البحث وشرائح الرئيسية
     private val appBar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setBackgroundColor(YtSkin.bg) }
@@ -448,7 +450,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         ctlHide = ctlChip { toggleHideSeen() }
         ctlDur = ctlChip { v -> durMenu(v) }
         ctlDate = ctlChip { v -> dateMenu(v) }
-        for (c in listOf(ctlType!!, ctlSort!!, ctlHide!!, ctlDur!!, ctlDate!!)) ctl.addView(c, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
+        ctlLive = ctlChip { pendLiveF = !pendLiveF; cur?.let { st -> st.q?.let { q -> doSearch(q, st.filter) } } }   // (v1303) مباشر
+        for (c in listOf(ctlType!!, ctlSort!!, ctlHide!!, ctlDur!!, ctlDate!!, ctlLive!!)) ctl.addView(c, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
         ctlRow = ctl
         page.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(ctl) }, LinearLayout.LayoutParams(-1, -2))
 
@@ -889,8 +892,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         hideKb(); sugBox.visibility = View.GONE; search.setText(q); search.setSelection(q.length); sugGen++
         enterSearch(false); chipsScroll.visibility = View.GONE   // (v397)
         paintTabs(-1)
-        val df = pendDurF; val tf = pendDateF   // (v469) C5
-        load("🔍 $q", -1, null, null, q, filter, true, false, df, tf) { val r = YtNp.searchFiltered(q, filter, df, tf); Pair(r, { p: Page -> val m = YtNp.searchMore(q, filter, p); YtRes(YtNp.applyF(m.items, df, tf), m.next) }) }
+        val df = pendDurF; val tf = pendDateF; val lf = pendLiveF   // (v469) C5 · (v1303) مباشر
+        load("🔍 $q", -1, null, null, q, filter, true, false, df, tf, lf) { val r = YtNp.searchFiltered(q, filter, df, tf, lf); Pair(r, { p: Page -> val m = YtNp.searchMore(q, filter, p); YtRes(YtNp.applyF(m.items, df, tf, lf), m.next) }) }
     }
 
     /** (v402) فيديو: صفحة المشاهدة (بأنيميشن من مكان الكارت) أو المشغّل مباشرة حسب إعداد «لما تدوس على فيديو» */
@@ -1138,11 +1141,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
     // ───────── تحميل وعرض ─────────
     private fun load(title: String, tab: Int, chUrl: String?, chName: String?, q: String?, filter: String, push: Boolean, showChan: Boolean,
-                     durF: Int = 0, dateF: Int = 0,
+                     durF: Int = 0, dateF: Int = 0, liveF: Boolean = false,
                      job: () -> Pair<YtRes, ((Page) -> YtRes)?>) {
         val my = ++gen
         val prev = cur; val prevPos = lv.firstVisiblePosition
-        retry = { load(title, tab, chUrl, chName, q, filter, push, showChan, job = job) }
+        retry = { load(title, tab, chUrl, chName, q, filter, push, showChan, durF, dateF, liveF, job) }   // (v1303) إعادة المحاولة بقت بتحافظ على الفلاتر
         // (v472) الرئيسية والاشتراكات بتفتح فورًا من آخر نسخة سليمة (قرص) من غير شاشة فاضية؛ التحديث في الخلفية، ولو فشل/رجع فاضي النسخة القديمة بتفضل
         val snap: List<NpItem>? = if (!push && chUrl == null && q == null && (tab == 0 || tab == 1)) {
             try {
@@ -1171,7 +1174,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                         val c = cur
                         if (r.items.isEmpty() || c == null || c.tab != tab || c.vid != null || c.q != null || c.chUrl != null) return@runOnUiThread   // رجع فاضي أو إنت مشيت لصفحة تانية: نسيب كل حاجة زي ما هي
                         val nst0 = St(title, tab, ArrayList(r.items), r.next, more, chUrl, chName, q, filter)
-                        nst0.durF = durF; nst0.dateF = dateF
+                        nst0.durF = durF; nst0.dateF = dateF; nst0.liveF = liveF
                         val same = r.items.take(8).map { it.id } == snapL.take(8).map { it.id }
                         val keep = lv.firstVisiblePosition
                         if (same) { nst0.pos = keep; cur = nst0; adapter.set(nst0.list()); lv.setSelection(keep) }   // نفس القايمة: تتحدّث في مكانها (وتركّب التصفّح للصفحات اللي بعدها)
@@ -1181,7 +1184,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                     }
                     if (push && prev != null) { prev.pos = prevPos; stack.add(prev) }
                     val nst = St(title, tab, ArrayList(r.items), r.next, more, chUrl, chName, q, filter)
-                    nst.durF = durF; nst.dateF = dateF
+                    nst.durF = durF; nst.dateF = dateF; nst.liveF = liveF
                     bind(nst)
                     if (r.items.isEmpty()) { if (tab == 0 || tab == 1) emptyPrompt(tab, null) else status("مفيش نتايج\n\n(دوس هنا لإعادة المحاولة)", retry) }   // (v475)
                     } catch (e: Throwable) {   // (v1300)
@@ -1648,6 +1651,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val isSearch = st.q != null
         ctlDur?.visibility = if (isSearch) View.VISIBLE else View.GONE
         ctlDate?.visibility = if (isSearch) View.VISIBLE else View.GONE
+        ctlLive?.let { it.visibility = if (isSearch) View.VISIBLE else View.GONE; it.text = if (st.liveF) "🔴 مباشر ✓" else "🔴 مباشر"; paintChip(it, st.liveF) }   // (v1303)
         if (isSearch) { ctlDur?.text = "⏱ المدة: " + durLabels[st.durF]; ctlDate?.text = "📅 الرفع: " + dateLabels[st.dateF] }
     }
     private fun applyListPrefs(st: St) {
@@ -1924,7 +1928,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             val it = items[p]
             val logged = YtAccount.loggedIn()
             hd.name.text = it.title
-            hd.sub.text = it.channel
+            hd.sub.text = it.channel + if (it.chanVerified) " ✔" else ""   // (v1303) ✔ التوثيق
             hd.sub.visibility = if (it.channel.isBlank()) View.GONE else View.VISIBLE
             hd.av.text = if (logged) it.title.trim().take(1).uppercase(Locale.getDefault()) else "👤"
             hd.av.background = GradientDrawable().apply { setShape(GradientDrawable.OVAL); setColor(YtSkin.avatarColor(it.title)) }
@@ -2004,7 +2008,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 val d = fmtDur(vi.dur)
                 dur.text = d; dur.visibility = if (d.isEmpty()) View.GONE else View.VISIBLE
                 title.text = vi.title
-                meta.text = listOf(vi.channel, vi.age).filter { x -> x.isNotBlank() }.joinToString(" · ")
+                meta.text = listOf(vi.channel + if (vi.chanVerified) " ✔" else "", vi.age).filter { x -> x.isNotBlank() }.joinToString(" · ")   // (v1303) ✔ التوثيق
                 try { if (vi.thumb.isNotBlank()) Glide.with(act).load(vi.thumb).centerCrop().into(thumb) else Glide.with(act).clear(thumb) } catch (_: Throwable) {}
                 cell.setOnClickListener { open(vi, cell) }
                 cell.setOnLongClickListener { x -> if (vi.id != "act") menu(x, vi); true }
@@ -2085,7 +2089,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             } else { v.alpha = 1f; v.translationY = 0f }
             c.title.text = vi.title
             c.newB.visibility = if (YtNotify.isNew(vi.id)) View.VISIBLE else View.GONE   // (v1144)
-            c.meta.text = listOf(if (YtRss.isShort(vi.id)) "🩳 شورتس" else "", vi.channel, if (vi.count >= 0) fmtN(vi.count) + " مشاهدة" else "", vi.age).filter { x -> x.isNotBlank() }.joinToString(" · ")
+            c.meta.text = listOf(if (YtRss.isShort(vi.id)) "🩳 شورتس" else "", vi.channel + if (vi.chanVerified) " ✔" else "", if (vi.count >= 0) fmtN(vi.count) + " مشاهدة" else "", vi.age).filter { x -> x.isNotBlank() }.joinToString(" · ")   // (v1303) ✔ التوثيق
             val d = fmtDur(vi.dur)
             c.dur.text = d; c.dur.visibility = if (d.isEmpty()) View.GONE else View.VISIBLE
             val rec = recs()["yt:" + vi.id] as? Recent

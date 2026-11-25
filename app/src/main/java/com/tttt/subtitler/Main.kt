@@ -90,7 +90,7 @@ class MainActivity : Activity() {
     private var warmView: View? = null   // (v469) D2 طبقة الفلتر الدافئ
     /** (v469) D2 فلتر راحة العين الدافئ: طبقة عنبرية شفافة فوق الشاشة الرئيسية (٠ = مقفول، ١٠٠ = أقصى دفء ≈ ٪٣٣ عتمة) */
     private fun refreshWarm() { val v = try { Cfg.int("warm", 0) } catch (_: Throwable) { 0 }.coerceIn(0, 100); warmView?.let { it.setBackgroundColor(android.graphics.Color.argb((v * 0.85f).toInt(), 255, 138, 42)); it.visibility = if (v > 0) View.VISIBLE else View.GONE } }
-    private var aiUi: AiChatUi? = null   // (v1283) تبويب الذكاء (17)
+    // (v1303) تبويب شات الذكاء (17) اتشال: الشات بالموديلات المجانية بطيء وضعيف — جيميناي للترجمة والدبلجة بس
     private var ytUi: YtProUi? = null                // (v1105 Y5) يوتيوب Joyboy القديم (تبويب 4) = يوتيوب البرنامج الوحيد (ميتيوب اتشال)
     private fun openYoutube() { showTabFn(4) }   // (v1105 Y5)
     private var musicUi: MusicUi? = null            // (v189) صفحة الموسيقى
@@ -637,7 +637,7 @@ class MainActivity : Activity() {
                 },
                 ui.button("📊 إحصائية الاستهلاك والكوتة") { StatsUi(this, ui, th).show() },
                                 ui.section("🔑 كل المفاتيح", true,
-                    ui.noHint(), keysUi, backupUi, extraUi)),
+                    ui.noHint(), KeyStatus.row(this, ui, th), keysUi, backupUi, extraUi)),   // (v1303) حالة المفاتيح هنا بعد حذف تبويب الشات
                 ui.section("🔑 مفتاح الوضع البصري فقط", true,
                     ui.noHint(), visKeysUi)) }),   // (v1014) مفتاح الوضع البصري مع باقي المفاتيح
             // ===== 🎙 التفريغ والصوت: موديلات الجهاز + إعدادات الصوت =====
@@ -990,13 +990,6 @@ class MainActivity : Activity() {
             pane.addView(yt.busyView, FrameLayout.LayoutParams(-1, -1))
             return yt
         }
-        fun ensureAi(): AiChatUi {   // (v1283)
-            aiUi?.let { return it }
-            val a = AiChatUi(this, ui, th)
-            aiUi = a; a.root.visibility = View.INVISIBLE
-            pane.addView(a.root, 1, FrameLayout.LayoutParams(-1, -1))
-            return a
-        }
         uniSearchFn = { q ->   // (v345) بحث شامل: فيديوهات + موسيقى + يوتيوب
             val m = ensureMusic()
             UniSearch.show(this, ui, th, q, { x -> lib.searchHits(x) }, { x -> m.lib.searchHits(x) },
@@ -1006,9 +999,9 @@ class MainActivity : Activity() {
         // (v189) البوابات: 0 الفيديوهات · 1 الموسيقى · 2 المتصفح · 3 الملفات (شاشات لوحدها) · (v324) 4 يوتيوب
         // (v324) 5 = صفحة المهام: مش في الشريط، بتتفتح من الزرار العايم (الشريط ساعتها مفيهوش بوابة نشطة)
         showTabFn = { i ->
-            if (i == 0 || i == 1 || i == 4 || i == 5 || i == 7 || i == BottomNav.AI) {
+            if (i == 0 || i == 1 || i == 4 || i == 5 || i == 7) {
                 val prevTab = curTab
-                val prevView: View? = when (prevTab) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> ytUi?.root; 7 -> settingsHostRef; 5 -> tasksUi.root; BottomNav.AI -> aiUi?.root; else -> null }   // (v621) للأنيميشن الخارج
+                val prevView: View? = when (prevTab) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> ytUi?.root; 7 -> settingsHostRef; 5 -> tasksUi.root; else -> null }   // (v621) للأنيميشن الخارج
                 if (i == 5 && prevTab != 5) tabBeforeTasks = prevTab
                 if (i == 7 && prevTab != 7) tabBeforeSettings = prevTab
                 if (prevTab == 7 && i != 7) { try { save(); refreshChip() } catch (_: Throwable) {} }
@@ -1020,11 +1013,8 @@ class MainActivity : Activity() {
                 lib.root.visibility = if (i == 0) View.VISIBLE else View.INVISIBLE   // (v940) كل التبويبات متقاسة ورا بعض: التبديل من غير layout تقيل
                 if (i == 1) ensureMusic()
                 if (i == 4) ensureYt()   // (v1103 Y2)
-                if (i == BottomNav.AI) { ensureAi().root.bringToFront(); window.decorView.postDelayed({ if (curTab == BottomNav.AI) { ytUi?.root?.visibility = View.INVISIBLE; musicUi?.root?.visibility = View.INVISIBLE; lib.root.visibility = View.INVISIBLE; aiUi?.root?.bringToFront() } }, 450L) }   // (v1286)
                 musicUi?.root?.visibility = if (i == 1) View.VISIBLE else View.INVISIBLE
                 ytUi?.root?.visibility = if (i == 4) View.VISIBLE else View.INVISIBLE
-                aiUi?.root?.visibility = if (i == BottomNav.AI) View.VISIBLE else View.INVISIBLE
-                try { window.setSoftInputMode(if (i == BottomNav.AI) android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE else android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_UNSPECIFIED) } catch (_: Throwable) {}   // (v1283) الكيبورد ما يغطيش خانة الشات
                 if (i == 4) { ytUi?.refresh(); ytUi?.tvFocusList() } else if (prevTab == 4) ytUi?.onHide()
                 tasksUi.root.visibility = if (i == 5) View.VISIBLE else View.INVISIBLE
                 settingsHostRef?.visibility = if (i == 7) View.VISIBLE else View.INVISIBLE
@@ -1035,7 +1025,7 @@ class MainActivity : Activity() {
                 updateTasksFab()
                 pageGearUi?.sync(i)   // (v820) ⚙️ الصفحة: بيظهر في الفيديوهات/الموسيقى/المهام بس
                 if (prevTab != i) {   // (v312) الصفحة الجديدة بتنزلق من ناحية اتجاه الانتقال (الشريط RTL: رقم أكبر = شمال)
-                    val target: View? = when (i) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> ytUi?.root; 7 -> settingsHostRef; BottomNav.AI -> aiUi?.root; else -> tasksUi.root }
+                    val target: View? = when (i) { 0 -> lib.root; 1 -> musicUi?.root; 4 -> ytUi?.root; 7 -> settingsHostRef; else -> tasksUi.root }
                     if (target != null && Cfg.bool("anim_tabs", true)) {
                         val dir = if (NavAnim.pos(i) > NavAnim.pos(prevTab)) -1 else 1
                         Motion.tabEnter(target, dir)
@@ -1052,7 +1042,7 @@ class MainActivity : Activity() {
             dv.postDelayed({ if (!isFinishing && !isDestroyed) android.os.Looper.myQueue().addIdleHandler { if (!isFinishing && !isDestroyed) { try { ensureMusic(); musicUi?.ensureLoaded() } catch (e: Throwable) { LogStore.err("Main:prewarmMusic", e) } }; false } }, 1500L)   // (v940) الموسيقى تتبني وتتحمّل ورا الستار بدري
         }
         val tabletShell = DeviceUi.isTablet(this)   // (v462) قشرة التابلت: ريل جانبي زي يوتيوب التابلت بدل الشريط السفلي
-        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i == BottomNav.AI) { musicReturnTab = -1; showTabFn(BottomNav.AI) } else if (i >= BottomNav.YT_HOME) { musicReturnTab = -1; val was = curTab == 4; if (!was) showTabFn(4); ytUi?.tapTab(i - BottomNav.YT_HOME, !was) /* (v1105 Y5) */ } else if (i == 2) { save(); NavAnim.set(curTab, 2); showBrowserLoading(); startActivity(TabNav.front(Intent(this, BrowserActivity::class.java))) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(TabNav.front(FilesHub.intent(this))) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
+        val nav = BottomNav(this, ui, th, 0, tabletShell) { i -> if (i >= BottomNav.YT_HOME) { musicReturnTab = -1; val was = curTab == 4; if (!was) showTabFn(4); ytUi?.tapTab(i - BottomNav.YT_HOME, !was) /* (v1105 Y5) */ } else if (i == 2) { save(); NavAnim.set(curTab, 2); showBrowserLoading(); startActivity(TabNav.front(Intent(this, BrowserActivity::class.java))) } else if (i == 3) { save(); NavAnim.set(curTab, 3); startActivity(TabNav.front(FilesHub.intent(this))) } else if (i == 7) { musicReturnTab = -1; settingsShow?.invoke(null) } else if (i == 0 && fromTv && !fromPlayer && TvFocus.goHome(this)) { /* (v482) تلفزيون: «الرئيسية» = شاشة التلفزيون */ } else { musicReturnTab = -1; showTabFn(i) } }   // (v310) 4 الملفات = شاشة منفصلة زي المتصفح · (v606) يوتيوب شغّال ← المتصفح: الفيديو يكمّل في PiP والاتنين مع بعض
         navUi = nav
         nav.onMoreToggle = { o -> pageGearUi?.moreOpen = o }   // (v820)
         if (!fromPlayer) {
@@ -1501,8 +1491,6 @@ class MainActivity : Activity() {
     override fun onActivityResult(r: Int, c: Int, d: Intent?) {
         super.onActivityResult(r, c, d)
         if (r == ModelsUi.REQ) { ModelsUi.onResult(this, c, d); return }
-        if (r == AiChatUi.REQ_FILE) { if (c == RESULT_OK) d?.data?.let { aiUi?.attachResult(it) }; return }   // (v1286)
-        if (r == AiChatUi.REQ_VOICE) { if (c == RESULT_OK) d?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { aiUi?.voiceResult(it) }; return }   // (v1283)
         if (r == 78) { if (c == RESULT_OK) d?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { ytUi?.voiceResult(it) }; return }   // (v1103 Y2) بحث صوتي يوتيوب
         if (r == 47) { if (c == RESULT_OK) d?.data?.let { ytUi?.importUri(it) }; return }   // (v1103 Y2) ملف اشتراكات يوتيوب   // (v696) اختيار ملف موديل
         if (r == 61) {

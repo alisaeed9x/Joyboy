@@ -2,7 +2,8 @@ package com.tttt.subtitler
 
 /** (v889) نماذج بيانات مشتركة (كانت في YtNp.kt المحذوف). مفيش منطق يوتيوب هنا — بس أشكال بيانات بتستخدمها شاشات Joyboy. */
 class NpItem(val id: String, val title: String, val channel: String, val channelUrl: String, val thumb: String,
-             val dur: Long, val count: Long, val age: String, val kind: Int, val url: String, val ts: Long = 0L, var avatar: String = "", val channelId: String = "")
+             val dur: Long, val count: Long, val age: String, val kind: Int, val url: String, val ts: Long = 0L, var avatar: String = "", val channelId: String = "",
+             val chanVerified: Boolean = false)   // (v1303) القناة موثّقة ✔
 
 class YtPick(val url: String, val audio: String?, val ua: String, val title: String, val h: Int, val qlist: String = "", val durMs: Long = 0L)
 

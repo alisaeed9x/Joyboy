@@ -28,7 +28,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         const val DEAD_AI = 6
         /** (v467) ترتيب الشريط بطلب صاحب التطبيق: الفيديوهات ← يوتيوب ← الموسيقى ← المتصفح ← المزيد.
          *  أي بوابة مش في الشريط بتظهر تلقائيًا جوه «المزيد» — فأي إضافة جديدة هتبان من غير تعديل هنا. */
-        val BAR_ORDER = listOf(0, REMOTE, 4, AI, 2, NET, 8)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»   // (v1041) «العناية» اتشالت
+        val BAR_ORDER = listOf(0, REMOTE, 4, 2, NET, 8)   // (v654) 1 (الموسيقى) اتدمجت مع 0 في زرار «ميديا»   // (v1041) «العناية» اتشالت   // (v1303) «الذكاء» اتشال من الشريط
         /** (v475) خلايا يوتيوب الافتراضية (مش بوابات): الرئيسية 9 · الاشتراكات 10 · أنا 11 — بتحل محل خلية «يوتيوب» وانت جواه */
         const val YT_HOME = 9; const val YT_SUBS = 10; const val YT_ME = 11
         /** (v1283) تبويب «الذكاء» (شات جيميناي): رقم 17 (6 القديم محجوز ومحذوف) */
@@ -94,7 +94,7 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
     private fun moreGroups(act: Activity): List<Pair<String, List<MoreItem>>> {
         // (v861) ترتيب جديد: كل مجموعة مضبوطة على 3 في الصف، والأيقونات مش مكرّرة
         val secs = ArrayList<MoreItem>()
-        for (id in listOf(0, 4, AI, 2, 1, 5)) secs.add(MoreItem(DEFS[id].first, if (id == 0) "الفيديوهات" else DEFS[id].second, id == active) { onPick(id) })   // فيديوهات · يوتيوب · متصفح · موسيقى · مخزن · مهام
+        for (id in listOf(0, 4, 2, 1, 5)) secs.add(MoreItem(DEFS[id].first, if (id == 0) "الفيديوهات" else DEFS[id].second, id == active) { onPick(id) })   // (v1303) «الذكاء» اتشال: فيديوهات · يوتيوب · متصفح · موسيقى · مخزن · مهام
         val trl = ArrayList<MoreItem>()
         // (v1037) «الاستوديو» اتمسح خالص — بس «📚 مكتبة الترجمات» (من v990) فضلت لأنها مستقلة (مش جزء منه)
         if (!tvDev) trl.add(MoreItem("📚", "مكتبة الترجمات", false) { try { TrLibUi(act, ui, th).show() } catch (e: Throwable) { LogStore.err("Nav:trlib", e) } })

@@ -190,10 +190,10 @@ object YtNp {
             if (id.isEmpty() || (!YtBackends.shortsAsVideos() && (i.url.contains("/shorts/") || i.duration in 1L..60L))) null else {   // (v793) الشورتس تظهر كفيديوهات عادية
                 val ts = try { i.uploadDate?.offsetDateTime()?.toInstant()?.toEpochMilli() ?: 0L } catch (_: Throwable) { 0L }
                 NpItem(id, i.name ?: "", i.uploaderName ?: "", i.uploaderUrl ?: "", thumb(i), if (try { i.streamType == org.schabi.newpipe.extractor.stream.StreamType.LIVE_STREAM } catch (_: Throwable) { false }) -2L else i.duration, i.viewCount,
-                    i.textualUploadDate ?: "", 0, if (i.url.contains("/shorts/")) watchUrl(id) else i.url, ts, avatarOf(i))
+                    i.textualUploadDate ?: "", 0, if (i.url.contains("/shorts/")) watchUrl(id) else i.url, ts, avatarOf(i), chanVerified = (callAny(i, "isUploaderVerified") as? Boolean) ?: false)   // (v1303) ✔
             }
         }
-        is ChannelInfoItem -> NpItem("", i.name ?: "", "", i.url, thumb(i), -1L, i.subscriberCount, "", 1, i.url)
+        is ChannelInfoItem -> NpItem("", i.name ?: "", "", i.url, thumb(i), -1L, i.subscriberCount, "", 1, i.url, chanVerified = (callAny(i, "isVerified") as? Boolean) ?: false)   // (v1303) ✔
         is PlaylistInfoItem -> NpItem("", i.name ?: "", i.uploaderName ?: "", i.uploaderUrl ?: "", thumb(i), -1L, i.streamCount, "", 2, i.url)
         else -> null
     }
@@ -245,7 +245,7 @@ object YtNp {
         return System.currentTimeMillis() - n * unit
     }
     fun effTs(x: NpItem): Long = if (x.ts > 0L) x.ts else ageMs(x.age)
-    fun searchLatest(q: String, filter: String, durF: Int, dateF: Int): YtRes {
+    fun searchLatest(q: String, filter: String, durF: Int, dateF: Int, liveF: Boolean = false): YtRes {
         val core = stripLatest(q)
         var r = searchFirst(core, filter)
         var all = r.items
@@ -258,33 +258,34 @@ object YtNp {
         val toks = VideoLib.sigTokens(core)
         val rel = all.filter { x -> x.kind != 0 || toks.isEmpty() || VideoLib.norm(x.title + " " + x.channel).let { h -> toks.all { h.contains(it) } } }
         val base = if (rel.count { it.kind == 0 } >= 3) rel else all
-        val vids = applyF(base.filter { it.kind == 0 }.distinctBy { it.id }, durF, dateF).sortedByDescending { effTs(it) }
+        val vids = applyF(base.filter { it.kind == 0 }.distinctBy { it.id }, durF, dateF, liveF).sortedByDescending { effTs(it) }
         return YtRes(vids + base.filter { it.kind != 0 }, null)
     }
 
-    fun searchFiltered(q: String, filter: String, durF: Int, dateF: Int): YtRes {
-        if (filter != "channels" && filter != "playlists" && latestIntent(q)) { try { return searchLatest(q, filter, durF, dateF) } catch (_: Throwable) { } }   // (v521)
+    fun searchFiltered(q: String, filter: String, durF: Int, dateF: Int, liveF: Boolean = false): YtRes {   // (v1303) + فلتر مباشر
+        if (filter != "channels" && filter != "playlists" && latestIntent(q)) { try { return searchLatest(q, filter, durF, dateF, liveF) } catch (_: Throwable) { } }   // (v521)
         var r = searchFirst(q, filter)
         var pages = 0
-        while (countOk(r.items, durF, dateF) < 8 && r.next != null && pages < 2) {
+        while (countOk(r.items, durF, dateF, liveF) < 8 && r.next != null && pages < 2) {
             val nx = r.next ?: break
             val more = try { searchMore(q, filter, nx) } catch (_: Throwable) { break }
             r = YtRes(r.items + more.items, more.next); pages++
         }
-        return YtRes(applyF(r.items, durF, dateF), r.next)
+        return YtRes(applyF(r.items, durF, dateF, liveF), r.next)
     }
-    fun applyF(l: List<NpItem>, durF: Int, dateF: Int): List<NpItem> {
-        if (durF == 0 && dateF == 0) return l
+    fun applyF(l: List<NpItem>, durF: Int, dateF: Int, liveF: Boolean = false): List<NpItem> {
+        if (durF == 0 && dateF == 0 && !liveF) return l
         val now = System.currentTimeMillis()
-        val cut = when (dateF) { 1 -> now - 86400_000L; 2 -> now - 7 * 86400_000L; 3 -> now - 30 * 86400_000L; else -> 0L }
+        val cut = when (dateF) { 1 -> now - 86400_000L; 2 -> now - 7 * 86400_000L; 3 -> now - 30 * 86400_000L; 4 -> now - 3_600_000L; 5 -> now - 365 * 86400_000L; else -> 0L }   // (v1303) 4 آخر ساعة · 5 السنة
         return l.filter { x ->
-            if (x.kind != 0) return@filter true
+            if (x.kind != 0) return@filter !liveF   // (v1303) فلتر مباشر بيخبّي القنوات والقوايم
+            if (liveF && x.dur != -2L) return@filter false   // -2 = بث مباشر
             val dok = when (durF) { 1 -> x.dur in 61L..239L; 2 -> x.dur in 240L..1200L; 3 -> x.dur > 1200L; else -> true }
             val tok = cut == 0L || x.ts <= 0L || x.ts >= cut
             dok && tok
         }
     }
-    private fun countOk(l: List<NpItem>, durF: Int, dateF: Int) = applyF(l, durF, dateF).size
+    private fun countOk(l: List<NpItem>, durF: Int, dateF: Int, liveF: Boolean = false) = applyF(l, durF, dateF, liveF).size
 
     fun channel(url: String): NpChan {
         YtBackends.alt()?.let { b -> try { b.channel(url)?.let { return it } } catch (_: Throwable) {} }   // (v793)
