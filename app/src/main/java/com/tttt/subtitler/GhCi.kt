@@ -505,29 +505,15 @@ object GhCi {
             Cfg.ensure(a)
             if (DeviceUi.isTv(a)) return
             schedule(a)
-            askPending(a)
+            // (v1311) الإشعار العائم القديم (ورك فلو فشل / في تحديث جديد + أزرار) اتشال بطلب علي — مركز التحديث والجرس هما البديل
             val now = System.currentTimeMillis()
             if (now - lastFg < 180_000L || !(watchOn() || autoUpd())) return
             lastFg = now
             val app = a.applicationContext
             Thread {
                 try { tick(app) } catch (_: Throwable) {}
-                try { a.runOnUiThread { try { if (!a.isFinishing) askPending(a) } catch (_: Throwable) {} } } catch (_: Throwable) {}
             }.apply { isDaemon = true; start() }
         } catch (e: Throwable) { LogStore.err("GhCi:fg", e) }
-    }
-
-    private fun askPending(a: Activity) {
-        val fid = Cfg.str("gh_fail_id", "").toLongOrNull() ?: 0L
-        if (fid > 0L && Cfg.str("gh_fail_asked", "") != fid.toString()) {
-            Cfg.put("gh_fail_asked", fid.toString())
-            Notice.ask(a, "⚠ ورك فلو فشل: " + Cfg.str("gh_fail_name", ""), "📥 تحميل اللوج", "لاحقًا", 12000L, { downloadLogUi(a, fid) }, {})
-        }
-        val up = Cfg.str("gh_upd_id", "")
-        if (up.isNotEmpty() && apkFile(a).isFile && Cfg.str("gh_upd_asked", "") != up) {
-            Cfg.put("gh_upd_asked", up)
-            Notice.ask(a, "⬆ في تحديث جديد جاهز للتثبيت", "تثبيت", "لاحقًا", 12000L, { try { TvUpdate.install(a, apkFile(a)) } catch (e: Throwable) { LogStore.err("GhCi:install", e) } }, {})
-        }
     }
 
     private fun notify(c: Context, id: Int, title: String, text: String, big: String, error: Boolean) {
