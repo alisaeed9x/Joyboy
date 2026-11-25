@@ -88,7 +88,7 @@ object YtMtFeed {
         return try {
             MtYt.ensureBoot()
             val cs = YouTubeServiceManager.instance().contentService
-            val gs: List<MediaGroup>? = when (kind) {
+            val gs: List<MediaGroup> = when (kind) {
                 "trending" -> cs.trendingObserve.blockingFirst()
                 "music" -> cs.musicObserve.blockingFirst()
                 "news" -> cs.newsObserve.blockingFirst()

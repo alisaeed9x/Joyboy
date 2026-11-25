@@ -1,3 +1,4 @@
+v1299: إصلاح build — gs non-null في YtMtFeed.section. التفاصيل: CHANGES_v1299.md
 v1298: تعليقات MeeTube (ترتيب/لايك/رد) + شرائح الرئيسية أقسام حقيقية. التفاصيل: CHANGES_v1298.md
 v1297: إصلاح build — ChSeekBar public. التفاصيل: CHANGES_v1297.md
 v1296: إصلاح build — kit.seek بدل seek في YtWatchPage. التفاصيل: CHANGES_v1296.md
