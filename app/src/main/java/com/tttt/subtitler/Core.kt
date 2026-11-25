@@ -591,9 +591,13 @@ class Pool(private val c: Conf) {
         lastOk[k] = false
     }
     /** (v1114) FIX 5: حالة المفتاح للنقطة — 0 أزرق (فاضي/لسه ما اشتغلش) · 1 أخضر (شغّال أو آخر رد صالح) · 2 أحمر (آخر رد فاشل) · 3 برتقالي (إعادة بعد فشل) */
+    private val overAt = HashMap<String, Long>()
+    /** (v1304) المفتاح خد 5xx (ضغط على الموديل): النقطة 🟡 بدل الأحمر/البرتقالي لحد أول رد ناجح أو دقيقة */
+    @Synchronized fun markOver(k: String) { overAt[k] = System.currentTimeMillis() }
     @Synchronized fun dotState(k: String): Int {
         val busy = (load[k] ?: 0) > 0
         val last = lastOk[k]
+        if (last == false && (overAt[k] ?: 0L) > System.currentTimeMillis() - 60_000L) return 4
         if (busy && last == false) return 3
         if (busy) return 1
         if (last == true) return 1

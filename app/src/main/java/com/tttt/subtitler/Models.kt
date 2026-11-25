@@ -40,7 +40,11 @@ object Models {
 object Overload {
     @Volatile private var lastAt = 0L
     @Volatile private var streak = 0
-    fun hit() { streak++; lastAt = System.currentTimeMillis() }
+    private val hits = java.util.concurrent.ConcurrentLinkedQueue<Long>()
+    fun hit() { streak++; val n = System.currentTimeMillis(); lastAt = n; hits.add(n); while (hits.size > 40) hits.poll() }
+    /** (v1304) ضغط ممتد: 3 أخطاء ضغط أو أكتر في آخر 60 ثانية حتى لو بينهم نجاحات (الـstreak بيتصفّر مع أي نجاح، ومع الطلبات المتوازية كان نادرًا ما يتفعّل) */
+    fun pressured(): Boolean { val lim = System.currentTimeMillis() - 60_000L; var c = 0; for (t in hits) if (t >= lim) c++; return c >= 3 }
+    fun busy(): Boolean = active() || pressured()
     fun ok() { streak = 0 }
     fun active(): Boolean = streak >= 2 && System.currentTimeMillis() - lastAt < 45_000L
 }

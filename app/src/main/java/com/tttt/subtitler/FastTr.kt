@@ -128,7 +128,7 @@ class FastTr(
 
     /** (v1116) FIX 1: نقاط حالة المفاتيح من حوض المحرك البسيط نفسه — نفس معنى وألوان Engine.keyDots */
     fun keyDots(): String {
-        val dots = arrayOf("🔵", "🟢", "🔴", "🟠")
+        val dots = arrayOf("🔵", "🟢", "🔴", "🟠", "🟡")
         val parts = pool.all().mapIndexed { idx, k -> dots[pool.dotState(k)] + (idx + 1) }
         return parts.joinToString(" ")
     }

@@ -192,7 +192,7 @@ class Engine(
     private fun keyNo(k: String): Int = basePool.all().indexOf(k) + 1
     // (v1114) FIX 5: نقاط حالة المفاتيح — نقطة لكل مفتاح في الـ pool (العدد من الـ pool نفسه، من غير عدد ثابت) برقمه
     fun keyDots(): String {
-        val dots = arrayOf("🔵", "🟢", "🔴", "🟠")
+        val dots = arrayOf("🔵", "🟢", "🔴", "🟠", "🟡")
         val parts = pool.all().mapIndexed { idx, k -> dots[pool.dotState(k)] + (idx + 1) }
         return parts.joinToString(" ")
     }
@@ -205,6 +205,7 @@ class Engine(
     private val gapTried = Ranges()      // بتتحفظ بين الجلسات
     private val gapSession = Ranges()    // لجلسة التشغيل دي بس (للحد الأقصى)
     private val gapBusy = AtomicInteger(0)
+    private val gapRetry = ConcurrentHashMap<Int, Int>()   // (v1304) فجوة فشلت بـ5xx بتتعاد 3 مرات بالكتير
     private val gapKeys = ConcurrentHashMap.newKeySet<String>()
     @Volatile private var lastGapScan = 0L
     private val gapEx = Executors.newFixedThreadPool(Gaps.MAX_PARALLEL) { r -> Thread(r).also { it.isDaemon = true } }
@@ -1294,7 +1295,7 @@ class Engine(
      * بنبعت نسخة منه على مفتاح تاني — أول نسخة تخلص هي اللي بتتطبّق والتانية بتتجاهل. نسخة واحدة بس في نفس الوقت.
      */
     private fun hedgeTick() {
-        if (quotaCooling() || Overload.active()) return   // (v1094) 429 / (v1237) ضغط جيميناي: ماتبعتش نسخ تانية من الباتشات
+        if (quotaCooling() || Overload.busy()) return   // (v1094) 429 / (v1237) ضغط جيميناي: ماتبعتش نسخ تانية من الباتشات
         if (!TrSlider.on("hedge") || inflight.isEmpty() || hedgeBusy.get() >= 1 || pool.usableCount() < 2 || Offline.on()) return   // (v1100) T2b: السلايدر · (v253) الأوفلاين: نسخة احتياطية بتستنى نفس المعالج
         val now = System.currentTimeMillis()
         val ms = recentMs.toList().sorted()
@@ -1525,7 +1526,7 @@ class Engine(
         var srv = 0   // (v459) مفيش موديل بديل: أخطاء السيرفر بتتعاد على نفس الموديل الواحد (كان في v227 بيبدّل لموديل تاني)
         val fastStep = fastLatched && !hedge && !backupFirst && i == rampChunk && rampStep < 2
         val spd = if (fastStep && FAST_SPEED > 1.0 && w.durSec >= 4.0 && !easternSrc() && !SongHint.on()) FAST_SPEED else 1.0   // (v1171) أغنية: من غير تسريع صوت   // (v1147) من غير تسريع صوت للغات الشرقية   // (v1067) تسريع الصوت
-        val canSplit = fastStep && !Overload.active() && rampStep == 0 && w.durSec >= 16.0 && !Offline.on() && pool.usableCount() >= 2 && TrSlider.on("race")   // (v1067) طلبين بالتوازي   // (v1097) T2: TrSlider
+        val canSplit = fastStep && !Overload.busy() && rampStep == 0 && w.durSec >= 16.0 && !Offline.on() && pool.usableCount() >= 2 && TrSlider.on("race")   // (v1067) طلبين بالتوازي   // (v1097) T2: TrSlider
         val sendBytes = if (spd > 1.0) { try { AudioTools.speedUp(w.bytes, spd) } catch (_: Throwable) { w.bytes } } else w.bytes
         val spdEff = if (sendBytes === w.bytes) 1.0 else spd
         val tx = activeMode >= KeyMode.SPLIT_A && i !in fullChunks && !fastLatched && !(rampOn && i == rampChunk)   // (v1141) خطوات التصاعد: تفريغ+ترجمة في طلب واحد // (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
@@ -1557,7 +1558,7 @@ class Engine(
                                 else {
                                     resScale = spdEff
                                     // (v1114) الكوتة واقعة (429): مفيش سباق مفتاحين — الباتش بيتبعت على مفتاح واحد بس لحد ما الكوتة ترجع
-                                    val k2 = if (i == rampChunk && rampStep < 2 && !Overload.active() && !Offline.on() && pool.usableCount() >= 2 && !quotaCooling() && TrSlider.on("race")) pool.pickFree(key, rr.getAndIncrement()) else null   // (v1097) T2: TrSlider
+                                    val k2 = if (i == rampChunk && rampStep < 2 && !Overload.busy() && !Offline.on() && pool.usableCount() >= 2 && !quotaCooling() && TrSlider.on("race")) pool.pickFree(key, rr.getAndIncrement()) else null   // (v1097) T2: TrSlider
                                     if (k2 != null && k2 != key) fastRace(i, p, mdl, key, k2, prompt, sendBytes, w.durSec, tmp, spdEff)   // (v1066) أول خطوتين: نفس الطلب على مفتاحين والأسرع يكسب
                                     else {
                                         val sc = StreamSubs()
@@ -1683,10 +1684,10 @@ class Engine(
                 }
                 if (e.code >= 500) {
                     srv++
-                    Overload.hit()
+                    Overload.hit(); pool.markOver(key)
                     if (Models.FALLBACK && srv >= 2 && fbModel == null) { fbModel = Models.alt(curModel(), key).let { if (it == curModel()) null else it } ?: curModel(); host.log("⚠ جيميناي عليه ضغط (${e.code}) على كل المفاتيح — بجرّب موديل ${fbModel}") }
                     if ((srv >= 2 || (gateOn && gateThread === Thread.currentThread())) && Overload.active()) { pressureGate(key); srv = 0 }   // (v1244) ضغط جيميناي: استراحة دقيقة + طلب خفيف قبل ما نكمّل
-                    else if (srv >= 3) nap(minOf(6000L, 1200L * srv) + (Math.random() * 600).toLong())
+                    else if (srv >= 2 || Overload.pressured()) nap(minOf(8000L, 1000L * (1L shl minOf(srv, 3))) + (Math.random() * 900).toLong())   // (v1304) ضغط ممتد: انتظار متصاعد بدل إعادة فورية تضرب نفس الموديل
                     // (v1114) 503 — تصحيح: إعادة فورية من غير أي انتظار — الأولوية لمفتاح تاني فاضي، ولو مفيش مفتاح فاضي الإعادة فورًا على نفس المفتاح
                     val alt = try { switchKey(key) } catch (_: RehomeEx) { null }
                     if (alt != null) {
@@ -1897,8 +1898,16 @@ class Engine(
     }
     private class HoleJob(val i: Int, val rawStart: Double, val rawEnd: Double, val w: WavChunk, val key: String)
     private val holeDefer = java.util.concurrent.ConcurrentLinkedQueue<HoleJob>()
+    private val holeRetry = ConcurrentHashMap<Int, Int>()
+    /** (v1304) ثغرة فشلت بـ5xx: ما تتحسبش «اتجرّبت» — بترجع للطابور وتتعاد لما الضغط يهدى (3 مرات بالكتير للمقطع) */
+    private fun holeRequeue(i: Int, rs: Double, re: Double, w: WavChunk, key: String) {
+        val n = (holeRetry[i] ?: 0) + 1; holeRetry[i] = n
+        if (n > 3) return
+        holeTried.remove(i)
+        if (holeDefer.none { it.i == i }) { holeDefer.add(HoleJob(i, rs, re, w, key)); while (holeDefer.size > 4) holeDefer.poll() }
+    }
     private fun holeDeferTick() {
-        if (holeDefer.isEmpty() || playheadHot() || quotaCooling()) return
+        if (holeDefer.isEmpty() || playheadHot() || quotaCooling() || Overload.busy()) return
         val h = holeDefer.poll() ?: return
         scheduleHoleFill(h.i, h.rawStart, h.rawEnd, h.w, h.key)
     }
@@ -3682,6 +3691,7 @@ class Engine(
         if (!conf.gapFill || !running || !TrSlider.on("holes")) return false   // (v1097) T2
         if (playheadHot() || quotaCooling()) return false   // (v1094) المشاهد أولًا + راحة للمفاتيح بعد 429
         val off = offFill()
+        if (!off && Overload.busy()) return false   // (v1304) ضغط على الموديل: الفجوات تستنى
         val maxPar = if (off) 1 else Gaps.MAX_PARALLEL   // (v283) الأوفلاين بينسخ واحد في المرة
         val now = System.currentTimeMillis()
         if (now - lastGapScan < Gaps.COOLDOWN_MS) return false
@@ -3719,7 +3729,7 @@ class Engine(
     private fun scheduleHoleFill(i: Int, rawStart: Double, rawEnd: Double, w: WavChunk, key: String) {
         if (!fillOk() || !TrSlider.on("holes")) return   // (v283) من غير أوفلاين ومن غير جيميناي مفيش حاجة تسدّ الثغرة · (v1097) T2 السلايدر
         if (holeTried.contains(i)) return
-        if (playheadHot() || quotaCooling()) {   // (v1094) المشاهد أولًا: سدّ الثغرات يتأجّل لحد ما الجزء اللي قدام المشاهد يتترجم ومفيش 429
+        if (playheadHot() || quotaCooling() || Overload.busy()) {   // (v1094) المشاهد أولًا: سدّ الثغرات يتأجّل لحد ما الجزء اللي قدام المشاهد يتترجم ومفيش 429
             if (holeDefer.none { it.i == i }) { holeDefer.add(HoleJob(i, rawStart, rawEnd, w, key)); while (holeDefer.size > 4) holeDefer.poll() }
             return
         }
@@ -3773,7 +3783,7 @@ class Engine(
                         host.changed(); persist()
                         host.log("✅ ثغرة ${"%.0f".format(java.util.Locale.US, pt[0])}ث→${"%.0f".format(java.util.Locale.US, pt[1])}ث: اتضاف ${base.size} جملة")
                     } catch (e: ApiErr) {
-                        if (e.code == 429) pool.block(key, 60_000) else if (e.code == 403) pool.block(key, 3_600_000) else { host.log("⚠ ثغرة: " + (e.message ?: "").take(80)); return }
+                        if (e.code == 429) pool.block(key, 60_000) else if (e.code == 403) pool.block(key, 3_600_000) else if (e.code >= 500) { host.log("⚠ ثغرة: ضغط على الموديل (" + e.code + ") — هتتعاد لما يهدى"); holeRequeue(i, rawStart, rawEnd, w, key0); return } else { host.log("⚠ ثغرة: " + (e.message ?: "").take(80)); return }
                         key = pool.pick(key, rr.getAndIncrement()) ?: return
                     } catch (e: IOException) { if (netHold(e, "ثغرة")) { tries--; continue }; host.log("📶 ثغرة: مشكلة اتصال"); return }   // (v1101)
                 }
@@ -3858,7 +3868,7 @@ class Engine(
                 host.log("✅ فجوة ${a.toInt()}ث: اتسدّ ${marked.size} جملة")
                 return
             } catch (e: ApiErr) {
-                if (e.code == 429) { noteQuota(); pool.block(key, 60_000) } else if (e.code == 403) pool.block(key, 3_600_000) else if (e.code == 404 && gapFb != null) { Models.markDead(gapFb!!); val nx = Models.alt(curModel(), key); gapFb = if (nx == curModel()) null else nx; host.log("⚠ موديل احتياطي مش متاح (404) — " + (gapFb ?: "الأساسي")) } else if (e.code >= 500 && !Models.FALLBACK) { } else if (e.code >= 500 && gapFb == null) { gapFb = Models.alt(curModel(), key).let { if (it == curModel()) null else it }; host.log("⚠ جيميناي عليه ضغط — سدّ الفجوة بموديل " + gapFb) } else throw e
+                if (e.code == 429) { noteQuota(); pool.block(key, 60_000) } else if (e.code == 403) pool.block(key, 3_600_000) else if (e.code == 404 && gapFb != null) { Models.markDead(gapFb!!); val nx = Models.alt(curModel(), key); gapFb = if (nx == curModel()) null else nx; host.log("⚠ موديل احتياطي مش متاح (404) — " + (gapFb ?: "الأساسي")) } else if (e.code >= 500 && !Models.FALLBACK) { if ((gapRetry.merge(a.toInt(), 1, Int::plus) ?: 1) <= 3) gapTried.remove(a, b) } else if (e.code >= 500 && gapFb == null) { gapFb = Models.alt(curModel(), key).let { if (it == curModel()) null else it }; host.log("⚠ جيميناي عليه ضغط — سدّ الفجوة بموديل " + gapFb) } else throw e
                 key = pool.gapKey(gapKeys - key, rr.getAndIncrement()) ?: return
             }
         }
