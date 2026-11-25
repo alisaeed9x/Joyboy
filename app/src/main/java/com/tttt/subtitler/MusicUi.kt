@@ -1195,8 +1195,8 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     // (v1309) تنضيف تاجات ملفات التحميل: «- Vocal» وأشباهها + جملة/سطر كلمات متحطوط في خانة المغني
     private fun cleanTagTitle(raw: String, uri: String): String {
         var s = raw.trim()
-        s = s.replace(Regex("(?i)\s*[-–—_]\s*(vocal|vocals|karaoke|instrumental|audio|official)\s*$"), "").trim()
-        s = s.replace(Regex("(?i)^(vocal|vocals|karaoke|instrumental)\s*[-–—_]\s*"), "").trim()
+        s = s.replace(Regex("(?i)\\s*[-–—_]\\s*(vocal|vocals|karaoke|instrumental|audio|official)\\s*$"), "").trim()
+        s = s.replace(Regex("(?i)^(vocal|vocals|karaoke|instrumental)\\s*[-–—_]\\s*"), "").trim()
         if (s.length < 2 || s.all { it == '-' || it == '–' || it == '—' || it == '_' || it == ' ' }) {
             val fn = try { Uri.parse(uri).lastPathSegment ?: "" } catch (_: Throwable) { "" }
             s = fn.substringAfterLast('/').substringBeforeLast('.').trim()
@@ -1218,8 +1218,8 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val tagA = cleanTagArtist(if (SongId.looksLikeSite(t.artist)) "" else t.artist)
         fun diff(a: String, b: String): Boolean {
             if (a.isBlank() || b.isBlank()) return false
-            val x = a.lowercase().replace(Regex("\s+"), " ").trim()
-            val y = b.lowercase().replace(Regex("\s+"), " ").trim()
+            val x = a.lowercase().replace(Regex("\\s+"), " ").trim()
+            val y = b.lowercase().replace(Regex("\\s+"), " ").trim()
             return x != y && !x.contains(y) && !y.contains(x)
         }
         return diff(tagT, ided.first) || diff(tagA, ided.second)

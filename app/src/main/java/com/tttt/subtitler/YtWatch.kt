@@ -1880,7 +1880,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         Thread {
             try {
                 val r = YtAccount.mtComments(key)
-                act.runOnUiThread { if (my == gen) { cItems.addAll(r.items); cNextKey = r.nextKey; if (comments || cSheetBox != null) renderComments()   // (v1308) الشيت العايم كمان } }
+                act.runOnUiThread { if (my == gen) { cItems.addAll(r.items); cNextKey = r.nextKey; if (comments || cSheetBox != null) renderComments() } }   // (v1308) الشيت العايم كمان
             } catch (e: Throwable) {
                 act.runOnUiThread { if (my == gen) Notice.show(act, "ما قدرتش أجيب تعليقات أكتر", 2000L) }
             }
@@ -1902,7 +1902,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
                 act.runOnUiThread {
                     if (my != gen) return@runOnUiThread
                     cEdit.setText(""); cReplyTo = null; cEdit.hint = "اكتب تعليق…"
-                    if (rp == null) { cItems.add(0, NpComment(t, "أنت", "", 0L, "دلوقتي", false, false, false, 0, null)); cLoaded = true; if (comments || cSheetBox != null) renderComments()   // (v1308) الشيت العايم كمان }
+                    if (rp == null) { cItems.add(0, NpComment(t, "أنت", "", 0L, "دلوقتي", false, false, false, 0, null)); cLoaded = true; if (comments || cSheetBox != null) renderComments() }   // (v1308) الشيت العايم كمان
                     Notice.show(act, if (rp != null) "✅ الرد اتنشر" else "✅ التعليق اتنشر على حسابك", 2200L)
                 }
             } catch (e: Throwable) {
