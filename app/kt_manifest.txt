@@ -332,3 +332,4 @@ com/tttt/subtitler/Changelog.kt
 com/tttt/subtitler/NavCustom.kt
 com/tttt/subtitler/BrSet.kt
 com/tttt/subtitler/AiChat.kt
+com/tttt/subtitler/YtDlp.kt

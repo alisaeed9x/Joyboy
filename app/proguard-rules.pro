@@ -73,3 +73,10 @@
 -dontwarn javax.annotation.**
 # (v1103 Y1) RxJava3 — مستعمل من شاشة دخول الكود
 -dontwarn io.reactivex.rxjava3.**
+
+# (v1289) yt-dlp
+-keep class com.yausername.** { *; }
+-dontwarn com.yausername.**
+-keep class org.apache.commons.compress.** { *; }
+-dontwarn org.apache.commons.**
+-dontwarn com.fasterxml.jackson.**
