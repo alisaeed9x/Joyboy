@@ -668,7 +668,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun enterSearch(focus: Boolean) {
         searchTyping = focus
         appBar.visibility = View.GONE; searchBar.visibility = View.VISIBLE
-        if (focus) { search.requestFocus(); h.postDelayed({ showKb() }, 80L) }
+        if (focus) { search.requestFocus(); h.postDelayed({ showKb() }, 80L); if (search.text.isNullOrEmpty()) showHistory() }
     }
     private fun exitSearch() {
         searchTyping = false
@@ -818,8 +818,9 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         if (l.isEmpty()) status(if (tab == 2) "السجل فاضي" else "مفيش محفوظات — ضغطة طويلة على أي فيديو ← 🔖")
     }
 
-    private fun doSearch(q0: String, filter: String = "videos") {
+    private fun doSearch(q0: String, filter: String = "") {   // (v1288) الافتراضي «الكل» (فيديوهات + قنوات + قوايم) زي يوتيوب الرسمي
         val q = q0.trim(); if (q.isEmpty()) return
+        shAdd(q)
         hideKb(); sugBox.visibility = View.GONE; search.setText(q); search.setSelection(q.length); sugGen++
         enterSearch(false); chipsScroll.visibility = View.GONE   // (v397)
         paintTabs(-1)
@@ -1492,8 +1493,26 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     }
 
     // ───────── اقتراحات البحث ─────────
+    // (v1288) سجل البحث: آخر 15 كلمة، بتظهر لما خانة البحث فاضية، ✕ لحذف واحدة و«مسح الكل»
+    private fun shRead(): MutableList<String> = Cfg.str("yt_search_hist", "").split('\n').map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+    private fun shWrite(l: List<String>) { Cfg.put("yt_search_hist", l.take(15).joinToString("\n")) }
+    private fun shAdd(q: String) { val l = shRead(); l.removeAll { it.equals(q, true) }; l.add(0, q); shWrite(l) }
+    private fun showHistory() {
+        val l = shRead()
+        if (l.isEmpty()) { sugBox.visibility = View.GONE; return }
+        sugBox.removeAllViews()
+        l.forEach { s ->
+            val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setBackgroundColor(th.card) }
+            row.addView(ui.text("🕘  $s", 14f, th.text).apply { setPadding(ui.dp(18), ui.dp(10), ui.dp(8), ui.dp(10)); setOnClickListener { doSearch(s) } }, LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(ui.text("✕", 15f, th.muted).apply { setPadding(ui.dp(14), ui.dp(10), ui.dp(18), ui.dp(10)); setOnClickListener { val x = shRead(); x.removeAll { it == s }; shWrite(x); showHistory() } }, LinearLayout.LayoutParams(-2, -2))
+            sugBox.addView(row, LinearLayout.LayoutParams(-1, -2))
+        }
+        sugBox.addView(ui.text("🗑 مسح سجل البحث", 12.5f, th.muted).apply { setPadding(ui.dp(18), ui.dp(10), ui.dp(18), ui.dp(12)); setBackgroundColor(th.card); setOnClickListener { shWrite(emptyList()); sugBox.visibility = View.GONE } }, LinearLayout.LayoutParams(-1, -2))
+        sugBox.visibility = View.VISIBLE
+    }
     private fun suggest(q: String) {
         val my = ++sugGen
+        if (q.isEmpty() && searchTyping) { showHistory(); return }
         if (q.length < 2) { sugBox.visibility = View.GONE; return }
         h.postDelayed({
             if (my != sugGen) return@postDelayed
@@ -1678,7 +1697,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         n < 1_000_000_000 -> String.format(Locale.US, "%.1fM", n / 1_000_000.0)
         else -> String.format(Locale.US, "%.1fB", n / 1_000_000_000.0)
     }
-    private fun fmtDur(s: Long): String = if (s <= 0) "" else if (s >= 3600) String.format(Locale.US, "%d:%02d:%02d", s / 3600, s % 3600 / 60, s % 60) else String.format(Locale.US, "%d:%02d", s / 60, s % 60)
+    private fun fmtDur(s: Long): String = if (s == -2L) "🔴 مباشر" else if (s <= 0) "" else if (s >= 3600) String.format(Locale.US, "%d:%02d:%02d", s / 3600, s % 3600 / 60, s % 60) else String.format(Locale.US, "%d:%02d", s / 60, s % 60)
 
     private class Hold(val thumb: ImageView, val dur: TextView, val title: TextView, val meta: TextView, val box: View, val col: View, val btns: View, val aud: View, val dl: View)
 

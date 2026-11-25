@@ -870,6 +870,32 @@ object YtQueue {
 class YtWatchPage(private val act: Activity, private val ui: Ui, private val host: YtWatchHost, private val embedded: Boolean = false) : FrameLayout(act) {
     var link: YtPageLink? = null
 
+    /** (v1288) الوصف: الروابط تتفتح، والتوقيتات (1:23 / 1:02:03) بتنقّل الفيديو للثانية دي */
+    private fun linkDesc(t: String): CharSequence {
+        val sp = android.text.SpannableStringBuilder(t)
+        try {
+            val link = YtSkin.accent
+            for (m in Regex("(?<![\\d:])(?:(\\d{1,2}):)?(\\d{1,2}):(\\d{2})(?![\\d:])").findAll(t)) {
+                val h = m.groupValues[1].toIntOrNull() ?: 0; val mi = m.groupValues[2].toInt(); val se = m.groupValues[3].toInt()
+                if (se > 59 || (h > 0 && mi > 59)) continue
+                val ms = ((h * 3600L) + mi * 60L + se) * 1000L
+                sp.setSpan(object : android.text.style.ClickableSpan() {
+                    override fun onClick(w: View) { pSeek(ms) }
+                    override fun updateDrawState(ds: android.text.TextPaint) { ds.color = link; ds.isUnderlineText = false }
+                }, m.range.first, m.range.last + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            for (m in Regex("https?://[^\\s<>\"]+").findAll(t)) {
+                val u = m.value.trimEnd('.', ',', ')', ';')
+                sp.setSpan(object : android.text.style.ClickableSpan() {
+                    override fun onClick(w: View) { try { act.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(u))) } catch (_: Throwable) {} }
+                    override fun updateDrawState(ds: android.text.TextPaint) { ds.color = link; ds.isUnderlineText = true }
+                }, m.range.first, m.range.first + u.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            descTv.movementMethod = android.text.method.LinkMovementMethod.getInstance()
+        } catch (_: Throwable) {}
+        return sp
+    }
+
     private fun pPos(): Long = if (embedded) (link?.posMs() ?: 0L) else kit.position()
     private fun pDur(): Long = if (embedded) (link?.durMs() ?: 0L) else kit.durationMs()
     private fun pSeek(ms: Long) {
@@ -1519,7 +1545,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         val nm = chanNameNow()
         chanName.text = nm
         chanAvHost.removeAllViews(); chanAvHost.addView(avatar(nm.ifBlank { "؟" }, 40, v.avatar, v.channelId.ifBlank { chanUrl() }), FrameLayout.LayoutParams(-1, -1))
-        descTv.text = d.desc.trim().ifBlank { "(مفيش وصف)" }
+        descTv.text = linkDesc(d.desc.trim().ifBlank { "(مفيش وصف)" })   // (v1288) روابط وتوقيتات قابلة للضغط
         paintSub(); paintSave()
         renderList()
     }

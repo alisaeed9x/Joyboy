@@ -187,7 +187,7 @@ object YtNp {
             // (v351) الشورتس مش بتظهر خالص: رابط /shorts/ أو مدة ≤ 60 ثانية
             if (id.isEmpty() || (!YtBackends.shortsAsVideos() && (i.url.contains("/shorts/") || i.duration in 1L..60L))) null else {   // (v793) الشورتس تظهر كفيديوهات عادية
                 val ts = try { i.uploadDate?.offsetDateTime()?.toInstant()?.toEpochMilli() ?: 0L } catch (_: Throwable) { 0L }
-                NpItem(id, i.name ?: "", i.uploaderName ?: "", i.uploaderUrl ?: "", thumb(i), i.duration, i.viewCount,
+                NpItem(id, i.name ?: "", i.uploaderName ?: "", i.uploaderUrl ?: "", thumb(i), if (try { i.streamType == org.schabi.newpipe.extractor.stream.StreamType.LIVE_STREAM } catch (_: Throwable) { false }) -2L else i.duration, i.viewCount,
                     i.textualUploadDate ?: "", 0, if (i.url.contains("/shorts/")) watchUrl(id) else i.url, ts, avatarOf(i))
             }
         }
