@@ -39,7 +39,7 @@ jobs:
           CH=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || true)
           if [ -n "$CH" ]; then
             APP=false; PLG=false
-            if echo "$CH" | grep -qE '^(app/|meetube/|build\.gradle|settings\.gradle|versions\.gradle|gradle\.properties|gradle/)'; then APP=true; fi
+            if echo "$CH" | grep -qE '^(app/|meetube/|build\.gradle|settings\.gradle|versions\.gradle|gradle\.properties|gradle/|\.github/workflows/build\.yml)'; then APP=true; fi
             if echo "$CH" | grep -qE '^(plugin-aniyomi/|build\.gradle|settings\.gradle|versions\.gradle|gradle\.properties|gradle/)'; then PLG=true; fi
           fi
           echo "app=$APP" >> "$GITHUB_OUTPUT"
@@ -51,6 +51,19 @@ jobs:
           set -o pipefail
           gradle :app:assembleDebug --stacktrace --console=plain 2>&1 | tee build.log
           ls -la app/build/outputs/apk/debug/
+      - name: "Stash Joyboy APKs (v1313)"
+        if: steps.chg.outputs.app == 'true'
+        run: |
+          mkdir -p out/joyboy
+          cp app/build/outputs/apk/debug/*.apk out/joyboy/
+      - name: "Build AW Player clone APK (v1313)"
+        if: steps.chg.outputs.app == 'true'
+        run: |
+          set -o pipefail
+          gradle :app:assembleDebug -PjoyAppId=com.awystudio.awplayer "-PjoyAppLabel=AW Player" --stacktrace --console=plain 2>&1 | tee awplayer-build.log
+          mkdir -p out/awplayer
+          cp app/build/outputs/apk/debug/*universal*.apk out/awplayer/
+          ls -la out/awplayer/
       - name: Report build errors (annotation)
         if: failure()
         run: |
@@ -68,7 +81,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: subtitler-${{ github.ref_name }}-universal-debug
-          path: app/build/outputs/apk/debug/*.apk
+          path: out/joyboy/*.apk
       - name: Publish Release
         if: success() && steps.chg.outputs.app == 'true'
         env:
@@ -79,7 +92,7 @@ jobs:
           NAME="$((VER / 100)).$(printf '%02d' $((VER % 100)))"
           # (v1302) كل الـAPKs (arm64-v8a · armeabi-v7a · universal) بتترفع على الريليز باسم فيه المعمارية
           OUTS=()
-          for APK in app/build/outputs/apk/debug/*.apk; do
+          for APK in out/joyboy/*.apk; do
             B=$(basename "$APK")
             SUF=""
             case "$B" in
@@ -91,6 +104,10 @@ jobs:
             cp "$APK" "$OUT"
             OUTS+=("$OUT")
           done
+          # (v1313) نسخة AW Player المستنسخة (باكدج com.awystudio.awplayer، universal بس) بتترفع على نفس الريليز
+          AWOUT="Joyboy-AWPlayer-v${NAME}-build${{ github.run_number }}-universal.apk"
+          cp out/awplayer/*universal*.apk "$AWOUT"
+          OUTS+=("$AWOUT")
           # (v1190) ملاحظات الريليز = كل الـChangelogs الأحدث من آخر ريليز (الأحدث فوق)
           PREVREL=$(gh release list --limit 30 --json name,tagName --jq '[.[] | select(.tagName | startswith("build-"))][0].name' 2>/dev/null | sed -nE 's/^Joyboy v([0-9]+)\.([0-9]+).*/\1\2/p')
           : > NOTES.md
