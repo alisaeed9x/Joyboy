@@ -14,7 +14,7 @@ import java.net.URL
 
 /**
  * (v1220) شيت التحديث (الشكل الجديد): من أسفل الشاشة، بيعرض إيه اللي اتغيّر في آخر نسخة (من ملاحظات الـRelease)،
- * وفيه «لاحقًا» و«تحميل». «تحميل» بيفتح لينك الـAPK في المتصفح مباشرة (مش المنزّل بتاع البرنامج).
+ * وفيه «إغلاق» وزرار «تحميل» ثابت. (v1318) «تحميل» بينزّل من جوه البرنامج بشريط تقدّم + تثبيت (Upd.startApp)، وبيرجع للمتصفح بس لو الفحص الداخلي مش جاهز.
  */
 object UpdateSheet {
     private const val API = "https://api.github.com/repos/alisaeed9x/Joyboy/releases?per_page=15"
@@ -55,7 +55,11 @@ object UpdateSheet {
         var upToDateFlag = false
         var page = "https://github.com/alisaeed9x/Joyboy/releases/latest"
         val g = GAlert(a).setView(sv)
-        g.setNegativeButton("إغلاق", null)   // (v1264) زرار التحميل ما بيظهر غير بعد ما الفحص يلاقي تحديث
+        g.setNegativeButton("إغلاق", null)
+        g.setPositiveButton("تحميل") { _, _ ->
+            if (!upToDateFlag) try { if (Upd.app != null) Upd.startApp(a) else a.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(if (apkUrl.isNotBlank()) apkUrl else page)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            catch (e: Throwable) { LogStore.err("UpdateSheet:open", e) }
+        }   // (v1318) رجوع زرار التحميل الثابت + التحميل من جوه البرنامج بشريط تقدّم وتثبيت (Upd.startApp)، مع رجوع للمتصفح لو الفحص الداخلي مش جاهز
         val d: Dialog = g.show()
         try { d.window?.setGravity(Gravity.BOTTOM) } catch (_: Throwable) {}
         Thread {
@@ -79,13 +83,8 @@ object UpdateSheet {
                     if (upToDate) {
                         title.text = "✅ أنت على آخر تحديث"
                         upToDateFlag = true
-                    } else if (tName.isNotBlank()) {
-                        title.text = "⬆ $tName   (النسخة اللي عندك: v$ver)"
-                        if (Upd.app == null) col.addView(ui.button("⬇ تحميل التحديث", true) {
-                            try { a.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(if (apkUrl.isNotBlank()) apkUrl else page)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                            catch (e: Throwable) { LogStore.err("UpdateSheet:open", e) }
-                        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
-                    }
+                        try { (d as? android.app.AlertDialog)?.getButton(android.content.DialogInterface.BUTTON_POSITIVE)?.text = "تمام" } catch (_: Throwable) {}   // (v1318)
+                    } else if (tName.isNotBlank()) title.text = "⬆ $tName   (النسخة اللي عندك: v$ver)"   // (v1318) التحميل رجع للزرار الثابت تحت
                     notesBox.removeAllViews()
                     notesBox.addView(Notes.render(a, ui, th, cleanTxt.ifBlank { "مفيش ملاحظات للنسخة دي." }))
                 } catch (_: Throwable) {}

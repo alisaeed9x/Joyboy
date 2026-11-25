@@ -16,11 +16,45 @@ object Notes {
 
     private class Sec(val name: String) { val items = ArrayList<Pair<String, String>>() }
 
+    /** (v1318) استنتاج لون الكبسولة من اسم القسم لما البند نفسه مفيهوش [تسمية] */
+    private fun chipOf(sec: String): String = when {
+        sec.contains("إصلاح") -> "إصلاح"
+        sec.contains("جديد") || sec.contains("ميز") || sec.contains("إضاف") -> "ميزة جديدة"
+        sec.contains("حذف") || sec.contains("إزال") || sec.contains("إلغاء") -> "حذف"
+        sec.contains("تعديل") || sec.contains("تحسين") -> "تعديل"
+        else -> ""
+    }
+
+    /** (v1318) توحيد صيغة الملاحظات قبل العرض: بيفهم البنود المسطرة (- / • / *) والبولد ** وعناوين الأقسام من غير ## — رجّع الباتش نوتس الملونة بعد ما صيغة ملفات CHANGES اتغيّرت لـmarkdown عادي */
+    private fun norm(text: String): List<String> {
+        val out = ArrayList<String>()
+        var sec = ""
+        var n = 0
+        for (raw0 in text.lines()) {
+            val ln = raw0.trim().replace("**", "")
+            if (ln.isEmpty() || ln.startsWith(">")) continue
+            if (ln.startsWith("▌") || ln.startsWith("#")) { sec = ln.trimStart('▌', '#', ' '); out.add("▌" + sec); continue }
+            val m = Regex("^[-*•]\s+|^\d+[.)]\s+").find(ln)
+            if (m != null) {
+                var body = ln.substring(m.range.last + 1).trim()
+                body = Regex("^[\p{So}\s]+").replace(body, "")   // شيل الإيموجي من أول البند
+                if (body.isEmpty()) continue
+                n += 1
+                val chip = if (Regex("^\[[^]]+]").containsMatchIn(body)) "" else chipOf(sec)
+                out.add(n.toString() + ". " + (if (chip.isNotEmpty()) "[$chip] " else "") + body)
+                continue
+            }
+            if (ln.length <= 42 && chipOf(ln).isNotEmpty()) { sec = ln; out.add("▌" + ln); continue }   // عنوان قسم من غير ##
+            out.add(ln)
+        }
+        return out
+    }
+
     fun render(a: Activity, ui: Ui, th: Theme, text: String): View {
         val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
         val secs = ArrayList<Sec>()
         var cur: Sec? = null
-        for (raw in text.lines()) {
+        for (raw in norm(text)) {   // (v1318)
             val ln = raw.trim()
             if (ln.isEmpty()) continue
             if (ln.startsWith("▌") || ln.startsWith("#")) { cur = Sec(ln.trimStart('▌', '#', ' ')); secs.add(cur); continue }
