@@ -501,9 +501,6 @@ object AdvRows {
         R("capture", "lw_hist_off", "🗑 عدم حفظ سجل الروابط المنسوخة", "b", 0),
         R("capture", "pub_hist_on", "📜 حفظ سجل الصفحات المعروضة", "s01", 1),
         R("capture", "subhunt_close", "🧲 قفل صفحة صيد الترجمة بعد ما تتحمّل", "b", 1),
-        R("appearance", "app_wall_scrim", "🖼 تعتيم خلفية الشاشة الرئيسية", "int", 55, 0, 95, "%"),
-        R("appearance", "glass_lens", "🔍 عدسة الشريط السفلي (زجاج)", "b", 0),
-        R("appearance", "glass_jiggle", "〰 اهتزاز عدسة الشريط", "b", 0),
         R("tvset", "tv_autoscale", "📺 تكبير الواجهة تلقائيًا على شاشة التلفزيون", "s01", 1))
 
     private fun isOn(r: R): Boolean = when (r.kind) {
