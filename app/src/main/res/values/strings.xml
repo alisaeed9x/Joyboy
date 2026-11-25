@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- (v1300) بادج القايمة على كروت نتايج البحث — بيترجم حسب لغة الجهاز -->
+    <string name="yt_playlist_badge">Playlist</string>
+</resources>

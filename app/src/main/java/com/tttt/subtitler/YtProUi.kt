@@ -302,7 +302,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private var hideSeen = try { Cfg.str("ytp_hide_seen", "0") == "1" } catch (_: Throwable) { false }
     private var pendDurF = 0; private var pendDateF = 0
     private var pendingPlayAll = false
-    private val sortLabels = listOf("الافتراضي", "الأحدث", "الأكثر مشاهدة", "الأطول", "الأقصر")
+    private val sortLabels = listOf("الافتراضي", "الأحدث", "الأكثر مشاهدة", "الأطول", "الأقصر", "الأقدم")   // (v1300) + الأقدم
     private val durLabels = listOf("الكل", "قصير", "متوسط", "طويل")
     private val dateLabels = listOf("الكل", "اليوم", "الأسبوع", "الشهر")
     private var ctlRow: LinearLayout? = null
@@ -431,6 +431,13 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             filterViews.add(tv)
             filterRow.addView(tv, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
         }
+        // (v1300) زرار إعدادات البحث الكاملة (النوع + الترتيب في مكان واحد زي يوتيوب)
+        val gear = ui.text("⚙ فلاتر", 12f, th.text).apply {
+            gravity = Gravity.CENTER; setPadding(ui.dp(12), ui.dp(5), ui.dp(12), ui.dp(5))
+            setOnClickListener { searchSettings() }
+        }
+        paintChip(gear, false)
+        filterRow.addView(gear, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
         page.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(filterRow) }, LinearLayout.LayoutParams(-1, -2))
 
         // (v469) صف التحكم في القوايم: ترتيب · إخفاء المُشاهَد · (للبحث) مدة/تاريخ الرفع
@@ -844,6 +851,38 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         if (l.isEmpty()) status(if (tab == 2) "السجل فاضي" else "مفيش محفوظات — ضغطة طويلة على أي فيديو ← 🔖")
     }
 
+    /** (v1300) إعدادات البحث الكاملة زي يوتيوب الرسمي: النوع (الكل/فيديو/قناة/قايمة) + الترتيب (الأكثر مطابقة/الأحدث/الأقدم/الأطول/الأقصر) */
+    private fun searchSettings() {
+        val st = cur ?: return; val q = st.q ?: return
+        val sortNames = listOf("الأكثر مطابقة", "الأحدث", "الأقدم", "الأطول", "الأقصر")
+        val sortModes = intArrayOf(0, 1, 5, 3, 4)   // أرقام sortMode المقابلة
+        var selType = FILTERS.indexOfFirst { it.first == st.filter }.coerceAtLeast(0)
+        var selSort = sortModes.indexOf(sortMode).coerceAtLeast(0)
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        val d = android.app.AlertDialog.Builder(act).setView(android.widget.ScrollView(act).apply { addView(box) }).create()
+        fun refill() {
+            box.removeAllViews()
+            fun optRow(label: String, on: Boolean, click: () -> Unit) = ui.text((if (on) "● " else "○ ") + label, 14f, if (on) th.text else th.muted, on).apply {
+                setPadding(ui.dp(16), ui.dp(10), ui.dp(16), ui.dp(10)); setOnClickListener { click() }
+            }
+            box.addView(ui.text("النوع", 15f, th.text, true).apply { setPadding(ui.dp(16), ui.dp(14), ui.dp(16), ui.dp(4)) })
+            FILTERS.forEachIndexed { i, (_, n) -> box.addView(optRow(n, i == selType) { selType = i; refill() }) }
+            box.addView(ui.text("الترتيب", 15f, th.text, true).apply { setPadding(ui.dp(16), ui.dp(14), ui.dp(16), ui.dp(4)) })
+            sortNames.forEachIndexed { i, n -> box.addView(optRow(n, i == selSort) { selSort = i; refill() }) }
+            val apply = ui.text("تطبيق", 15f, YtSkin.accent, true).apply { setPadding(ui.dp(16), ui.dp(10), ui.dp(16), ui.dp(14)); foreground = YtSkin.ripple() }
+            apply.setOnClickListener {
+                d.dismiss()
+                val nf = FILTERS[selType].first
+                sortMode = sortModes[selSort]
+                if (nf != st.filter) doSearch(q, nf)   // النوع الجديد = بحث جديد (والترتيب بيتطبق على النتايج في bind)
+                else cur?.let { s -> applyListPrefs(s); adapter.set(s.list()); paintCtl(s) }   // نفس النوع: رتّب المعروض بس
+            }
+            box.addView(apply)
+        }
+        refill()
+        d.show()
+    }
+
     private fun doSearch(q0: String, filter: String = "") {   // (v1288) الافتراضي «الكل» (فيديوهات + قنوات + قوايم) زي يوتيوب الرسمي
         val q = q0.trim(); if (q.isEmpty()) return
         shAdd(q)
@@ -1125,6 +1164,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 val (r, more) = job()
                 if (tab == 1 && r.items.isNotEmpty()) YtSnap.save(act, 1, r.items)
                 act.runOnUiThread {
+                    try {   // (v1300) أي خطأ في bind كان بيسيب اللودر شغّال للأبد (الاستثناء بيطلع على خيط الواجهة برّه catch بتاع الخيط)
                     if (my != gen || act.isFinishing || act.isDestroyed) return@runOnUiThread
                     if (onSnap) {
                         bgLine(false)
@@ -1144,6 +1184,10 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                     nst.durF = durF; nst.dateF = dateF
                     bind(nst)
                     if (r.items.isEmpty()) { if (tab == 0 || tab == 1) emptyPrompt(tab, null) else status("مفيش نتايج\n\n(دوس هنا لإعادة المحاولة)", retry) }   // (v475)
+                    } catch (e: Throwable) {   // (v1300)
+                        LogStore.err("YtProUi:bind", e)
+                        if (my == gen && !act.isFinishing && !act.isDestroyed) status("⚠ حصل خطأ في العرض: " + (e.message ?: e.javaClass.simpleName).take(120) + "\n\n(دوس هنا لإعادة المحاولة)", retry)
+                    }
                 }
             } catch (e: Throwable) {
                 act.runOnUiThread {
@@ -1155,6 +1199,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 }
             }
         }.start()
+        // (v1300) كلب حراسة ضد «اللودر بيهنج»: لو التحميل عدّى 60 ثانية من غير نتيجة (شبكة معلّقة/خطأ مكتوم) نعرض إعادة المحاولة بدل ما يفضل يلف
+        h.postDelayed({ if (my == gen && loadBusy && !act.isFinishing && !act.isDestroyed) status("⚠ التحميل أخد وقت أطول من المعتاد\n\n(دوس هنا لإعادة المحاولة)", retry) }, 60_000L)
     }
 
     /** (v472) تسخين استباقي: لما القايمة تقف نجيب روابط أول فيديوهين ظاهرين (خفيف) ونحمّل صور اللي جاي — الفتح بعدها شبه فوري */
@@ -1596,7 +1642,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val show = st != null && st.vid == null && st.tab != 2 && st.tab != 3 && st.tab != 4 && !st.title.startsWith("📥")
         row.visibility = if (show) View.VISIBLE else View.GONE
         if (!show || st == null) return
-        ctlSort?.text = "↕ ترتيب: " + sortLabels[sortMode]
+        ctlSort?.text = "↕ ترتيب: " + (if (st.q != null && sortMode == 0) "الأكثر مطابقة" else sortLabels[sortMode])   // (v1300) تسمية يوتيوب في البحث
         ctlType?.let { it.visibility = if (st.tab == 1 && st.chUrl == null && st.q == null) View.VISIBLE else View.GONE; it.text = "🎞 النوع: " + typeLabels[typeMode]; paintChip(it, typeMode != 0) }
         ctlHide?.let { it.text = if (hideSeen) "🙈 المُشاهَد: مخفي" else "👁 المُشاهَد: ظاهر"; paintChip(it, hideSeen) }
         val isSearch = st.q != null
@@ -1612,6 +1658,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             2 -> st.items.sortByDescending { it.count }
             3 -> st.items.sortByDescending { it.dur }
             4 -> st.items.sortBy { if (it.dur > 0) it.dur else Long.MAX_VALUE }
+            5 -> st.items.sortBy { if (it.ts > 0) it.ts else Long.MAX_VALUE }   // (v1300) الأقدم (اللي مالهاش تاريخ في الآخر)
         }
         val pa = st.items.firstOrNull { it.url == "ytpl:all" }
         if (pa != null) { st.items.remove(pa); st.items.add(0, pa) }
@@ -1983,7 +2030,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 c.title.text = vi.title
                 c.title.alpha = if (vi.kind == 0 && recs().containsKey("yt:" + vi.id)) 0.6f else 1f
                 c.meta.text = listOf(vi.channel, vi.age).filter { x -> x.isNotBlank() }.joinToString(" · ")
-                val d = if (vi.kind == 0) fmtDur(vi.dur) else ""
+                val d = if (vi.kind == 0) fmtDur(vi.dur) else if (vi.kind == 2) "☰ " + act.getString(R.string.yt_playlist_badge) else ""   // (v1300) بادج القايمة
                 c.dur.text = d; c.dur.visibility = if (d.isEmpty()) View.GONE else View.VISIBLE
                 try { if (vi.thumb.isNotBlank()) Glide.with(act).load(vi.thumb).centerCrop().override(ui.dp(300), ui.dp(170)).into(c.thumb) else Glide.with(act).clear(c.thumb) } catch (_: Throwable) {}
                 c.root.setOnClickListener { if (vi.kind != 3) open(vi, c.root) }
@@ -2124,7 +2171,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 else -> "📃 قايمة" + (if (it.channel.isNotBlank()) " · " + it.channel else "") + if (it.count >= 0) " · " + it.count + " فيديو" else ""
             }
             if (cm) return v
-            val d = if (it.kind == 0) fmtDur(it.dur) else ""
+            val d = if (it.kind == 0) fmtDur(it.dur) else if (it.kind == 2 && it.id != "act") "☰ " + act.getString(R.string.yt_playlist_badge) else ""   // (v1300) بادج القايمة على الصورة
             hd.dur.text = d; hd.dur.visibility = if (d.isEmpty()) View.GONE else View.VISIBLE
             try { if (it.thumb.isNotBlank()) Glide.with(act).load(it.thumb).centerCrop().override(ui.dp(300), ui.dp(170)).into(hd.thumb) else Glide.with(act).clear(hd.thumb) } catch (_: Throwable) {}
             return v

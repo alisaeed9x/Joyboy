@@ -25,7 +25,7 @@ class WinSpinnerDrawable : Drawable() {
     }
     /** (v899) لودر MeeTube (AVD) بدل النقط لما MtLook.loaderOn() — الـCallback لازم مرجع قوي (الـDrawable بيمسكه weak) */
     private var avd: Drawable? = null
-    private var tint: ColorFilter? = null   // (v1277) الفلتر لازم يوصل للودر MeeTube كمان (كان بيتجاهله فبيظهر أبيض على خلفية فاتحة)
+    // (v1300) لودر MeeTube بيتعرض زي ما هو بالظبط زي المعاينة في الإعدادات: من غير تلوين — فلتر SRC_IN كان بيحوّل التصميم كله لقرص مصمت بلون واحد
     private val avdCb = object : Drawable.Callback {
         override fun invalidateDrawable(who: Drawable) { invalidateSelf() }
         override fun scheduleDrawable(who: Drawable, what: Runnable, `when`: Long) { scheduleSelf(what, `when`) }
@@ -39,7 +39,7 @@ class WinSpinnerDrawable : Drawable() {
             try { (avd as? android.graphics.drawable.Animatable)?.stop() } catch (_: Throwable) {}
             avd = try { MtYt.app?.let { MtLook.newLoader(it) } } catch (_: Throwable) { null }
             avdVer = MtLook.loaderVer
-            avd?.let { it.callback = avdCb; try { if (tint != null) it.colorFilter = tint } catch (_: Throwable) {}; (it as? android.graphics.drawable.Animatable)?.start() }
+            avd?.let { it.callback = avdCb; (it as? android.graphics.drawable.Animatable)?.start() }
         }
         return avd != null
     }
@@ -66,7 +66,7 @@ class WinSpinnerDrawable : Drawable() {
         }
     }
     override fun setAlpha(a: Int) { paint.alpha = a }
-    override fun setColorFilter(f: ColorFilter?) { paint.colorFilter = f; tint = f; try { avd?.colorFilter = f } catch (_: Throwable) {}; invalidateSelf() }
+    override fun setColorFilter(f: ColorFilter?) { paint.colorFilter = f; invalidateSelf() }   // (v1300) التلوين للنقط القديمة بس، مش للودر MeeTube
     @Suppress("OVERRIDE_DEPRECATION")
     override fun getOpacity() = PixelFormat.TRANSLUCENT
 }
