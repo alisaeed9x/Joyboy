@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.liskovsoft.mediaserviceinterfaces.data.MediaGroup
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItem
+import com.liskovsoft.mediaserviceinterfaces.data.CommentItem
 import com.liskovsoft.youtubeapi.service.YouTubeServiceManager
 import org.json.JSONArray
 import org.json.JSONObject
@@ -280,6 +281,39 @@ object YtAccount {
         needLogin()
         MtYt.ensureBoot()
         YouTubeServiceManager.instance().commentsService.createCommentObserve(videoId, text).blockingFirst()
+    }
+
+    // ───────── (v1298) تعليقات MeeTube: تحميل + ترتيب + لايك + رد ─────────
+    private fun commentSvc() = run { MtYt.ensureBoot(); YouTubeServiceManager.instance().commentsService }
+
+    /** مفاتيح التعليقات (الأعلى/الأحدث) + العدد المختصر من ميتا الفيديو */
+    fun commentKeys(videoId: String): Triple<String?, String?, String?> {
+        val md = try { MtYt.itemSvc().getMetadata(videoId) } catch (_: Throwable) { null } ?: return Triple(null, null, null)
+        return Triple(md.commentsKey, try { md.newestCommentsKey } catch (_: Throwable) { null }, try { md.commentsCount } catch (_: Throwable) { null })
+    }
+
+    class MtComments(val items: List<NpComment>, val nextKey: String?)
+
+    private fun mtNp(c: CommentItem): NpComment {
+        val likes = (c.likeCount ?: "").filter { it.isDigit() }.toLongOrNull() ?: 0L
+        val rc = (c.replyCount ?: "").filter { it.isDigit() }.toIntOrNull() ?: 0
+        return NpComment(c.message ?: "", c.authorName ?: "", c.authorPhoto ?: "", likes, c.publishedDate ?: "", c.pinnedLabel != null, false, false, rc, null, c.isLiked, c.nestedCommentsKey, c.id)
+    }
+
+    /** صفحة تعليقات (أو ردود لو المفتاح مفتاح ردود) — blocking، اتنادى من خيط خلفية */
+    fun mtComments(key: String): MtComments {
+        val g = commentSvc().getCommentsObserve(key).blockingFirst()
+        val list = (g.comments ?: emptyList()).filter { !it.message.isNullOrBlank() }.map { mtNp(it) }
+        return MtComments(list, g.nextCommentsKey)
+    }
+
+    /** لايك/شيل لايك على تعليق (المفتاح هو مفتاح الردود بتاعه زي ما MeeTube بيعمل) */
+    fun likeComment(nestedKey: String) { needLogin(); commentSvc().toggleLikeObserve(nestedKey).blockingFirst() }
+
+    /** رد على تعليق */
+    fun postReply(videoId: String, parentId: String, text: String) {
+        needLogin(); MtYt.ensureBoot()
+        YouTubeServiceManager.instance().commentsService.createReplyObserve(videoId, parentId, text).blockingFirst()
     }
 
     // ───────── قراءة الرد (ماشي عام على الـJSON) ─────────

@@ -315,8 +315,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private val appBar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setBackgroundColor(YtSkin.bg) }
     private val searchBar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; visibility = View.GONE; setBackgroundColor(YtSkin.bg) }
     private var searchTyping = false
-    private val HOME_CHIPS = listOf("الكل" to "", "موسيقى" to "موسيقى", "ألعاب" to "ألعاب", "أخبار" to "أخبار", "مباشر" to "بث مباشر", "رياضة" to "رياضة",
-        "طبخ" to "وصفات طبخ", "كوميديا" to "كوميديا", "قرآن" to "قرآن كريم", "أفلام" to "أفلام", "تعلّم" to "شرح دروس", "تقنية" to "تقنية")
+    private val HOME_CHIPS = listOf("الكل" to "", "الرائج" to "mt:trending", "موسيقى" to "mt:music", "ألعاب" to "mt:gaming", "أخبار" to "mt:news", "رياضة" to "mt:sports", "مباشر" to "mt:live")   // (v1298) شرائح أقسام حقيقية من محرك MeeTube (مع رجوع للبحث لو المحرك مش متاح)
     private val chipViews = ArrayList<TextView>()
     private var chipSel = 0
     private val chipsScroll = HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; visibility = View.GONE; setBackgroundColor(YtSkin.bg) }
@@ -691,6 +690,17 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         chipSel = i; paintHomeChips()
         if (i == 0) { openTab(0); return }
         hideKb()
+        if (term.startsWith("mt:")) {   // (v1298) قسم حقيقي من يوتيوب
+            val kind = term.removePrefix("mt:")
+            val label = HOME_CHIPS[i].first
+            load("🏠 " + label, 0, null, null, null, "", false, false) {
+                val hh = YtStore.read(YtStore.HIST)
+                val r = try { YtMtFeed.section(kind, hh) } catch (_: Throwable) { null }
+                if (r != null && r.items.isNotEmpty()) Pair(r, { p: Page -> YtMtFeed.more(p, hh) })
+                else { val rr = YtNp.searchFirst(label, "videos"); Pair(rr, { p: Page -> YtNp.searchMore(label, "videos", p) }) }
+            }
+            return
+        }
         load("🏠 " + term, 0, null, null, null, "", false, false) { val r = YtNp.searchFirst(term, "videos"); Pair(r, { p: Page -> YtNp.searchMore(term, "videos", p) }) }
     }
 

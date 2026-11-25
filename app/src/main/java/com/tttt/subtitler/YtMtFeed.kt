@@ -81,6 +81,30 @@ object YtMtFeed {
         return Page(k)
     }
 
+    /** (v1298) قسم حقيقي من يوتيوب (رائج/موسيقى/أخبار/ألعاب/رياضة/مباشر) من محرك MeeTube. null = فشل/فاضي ← YtProUi بيرجع للبحث. من خيط خلفي. */
+    fun section(kind: String, hist: List<NpItem>): YtRes? {
+        if (!usable()) return null
+        val seen = hist.map { it.id }.toHashSet()
+        return try {
+            MtYt.ensureBoot()
+            val cs = YouTubeServiceManager.instance().contentService
+            val gs: List<MediaGroup>? = when (kind) {
+                "trending" -> cs.trendingObserve.blockingFirst()
+                "music" -> cs.musicObserve.blockingFirst()
+                "news" -> cs.newsObserve.blockingFirst()
+                "gaming" -> cs.gamingObserve.blockingFirst()
+                "sports" -> cs.sportsObserve.blockingFirst()
+                "live" -> cs.liveObserve.blockingFirst()
+                else -> null
+            } ?: return null
+            val items = MtYt.flattenGroups(gs).filter { it.id !in seen && it.kind == 0 }.distinctBy { it.id }
+            if (items.isEmpty()) return null
+            fillAvatars(items)
+            val next = gs.firstOrNull { it != null && it.nextPageKey != null && !it.mediaItems.isNullOrEmpty() }
+            YtRes(items, keep(next))
+        } catch (e: Throwable) { LogStore.err("YtMtFeed:section", e); null }
+    }
+
     private fun res(f: MtYt.Feed, seen: Set<String>): YtRes {
         val items = f.items.filter { it.id !in seen && it.kind == 0 }.distinctBy { it.id }
         fillAvatars(items)

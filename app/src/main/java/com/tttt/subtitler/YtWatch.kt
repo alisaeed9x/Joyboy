@@ -918,8 +918,12 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     private var closing = false
     private var comments = false
     private var cLoaded = false
-    private var cNext: Page? = null
-    private var cMore: ((Page) -> NpComments)? = null
+    private var cNextKey: String? = null   // (v1298) صفحات التعليقات بقت مفاتيح MeeTube
+    private var cTopKey: String? = null
+    private var cNewKey: String? = null
+    private var cNewest = false
+    private var cCountStr = ""
+    private var cReplyTo: String? = null
     private var cItems = ArrayList<NpComment>()
     private var cTotal = -1
     private var liked = false
@@ -1418,7 +1422,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         closing = false
         animate().cancel(); kit.animate().cancel(); tail.animate().cancel()
         gen++; val my = gen
-        item = v; det = null; comments = false; cLoaded = false; cNext = null; cMore = null; cItems = ArrayList(); cTotal = -1; relShown = 20
+        item = v; det = null; comments = false; cLoaded = false; cNextKey = null; cTopKey = null; cNewKey = null; cNewest = false; cCountStr = ""; cReplyTo = null; cEdit.hint = "اكتب تعليق…"; cItems = ArrayList(); cTotal = -1; relShown = 20
         liked = likedSet().contains(v.id); likeCount = -1L; dislikeN = -1L; metaBase = ""; lastSkipFrom = -1L; sbBar?.visibility = View.GONE; cEdit.setText(""); composer.visibility = View.GONE; tabCom.text = "💬 تعليقات"; kit.seek.marks = FloatArray(0)   // (v1295)
         if (YtSponsor.on()) YtSponsor.fetch(v.id) {}   // (v469) C1
         hh2.removeCallbacks(pageTick); hh2.postDelayed(pageTick, 600L)
@@ -1609,11 +1613,14 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         status("⏳ …")
         Thread {
             try {
-                val (r, more) = YtNp.commentsX(v.id)
+                // (v1298) تحميل من MeeTube: المفاتيح من ميتا الفيديو + الصفحات من commentsService
+                if (cTopKey == null) { val k = YtAccount.commentKeys(v.id); cTopKey = k.first; cNewKey = k.second; cCountStr = k.third ?: "" }
+                val key = (if (cNewest) (cNewKey ?: cTopKey) else cTopKey) ?: throw RuntimeException("التعليقات مقفولة على الفيديو ده")
+                val r = YtAccount.mtComments(key)
                 act.runOnUiThread {
                     if (my != gen) return@runOnUiThread
-                    cItems.addAll(r.items); cNext = r.next; cMore = more; cLoaded = true; cTotal = r.total
-                    if (r.total > 0) tabCom.text = "💬 تعليقات " + fmtN(r.total.toLong())
+                    cItems.clear(); cItems.addAll(r.items); cNextKey = r.nextKey; cLoaded = true
+                    if (cCountStr.isNotBlank()) tabCom.text = "💬 تعليقات " + cCountStr
                     if (comments) renderComments()
                 }
             } catch (e: Throwable) {
@@ -1626,9 +1633,10 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     private fun renderComments() {
         listBox.removeAllViews()
         if (cItems.isEmpty()) { status(if (cLoaded) "مفيش تعليقات" else "⏳ …"); return }
+        if (cNewKey != null) listBox.addView(chip(if (cNewest) "⇅ الترتيب: الأحدث أولاً" else "⇅ الترتيب: الأعلى تقييمًا") { cNewest = !cNewest; cLoaded = false; cItems.clear(); loadComments() }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(14), ui.dp(4), ui.dp(14), ui.dp(4)) })   // (v1298)
         for (c in cItems) listBox.addView(commentView(c, false), LinearLayout.LayoutParams(-1, -2))
-        val nx = cNext; val mf = cMore
-        if (nx != null && mf != null) listBox.addView(chip("عرض المزيد") { loadMoreComments(nx, mf) }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(16)) })
+        val nx = cNextKey
+        if (nx != null) listBox.addView(chip("عرض المزيد") { loadMoreComments(nx) }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(16)) })
     }
 
     /** تعليق (أو رد): مثبّت 📌 · قلب ❤ من صاحب القناة · علامة صاحب القناة · وزرار «ردود» بيفتحها تحته */
@@ -1641,15 +1649,35 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         col.addView(TextView(act).apply { text = head; textSize = 12f; setTextColor(if (c.owner) YtSkin.text else YtSkin.sub); typeface = medium; setSingleLine(); ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(-1, -2))
         col.addView(TextView(act).apply { text = c.text; textSize = 14f; setTextColor(YtSkin.text) }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(2) })
-        val foot = ArrayList<String>()
-        if (c.likes > 0) foot.add("👍 " + fmtN(c.likes))
-        if (c.hearted) foot.add("❤ من صاحب القناة")
-        if (foot.isNotEmpty()) col.addView(TextView(act).apply { text = foot.joinToString("   "); textSize = 12f; setTextColor(YtSkin.sub) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = ui.dp(4) })
+        // (v1298) صف تفاعل: لايك فعّال من MeeTube + زرار رد + قلب صاحب القناة
+        val footRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_VERTICAL }
+        var footAny = false
+        if (c.mtKey != null) {
+            val likeTv = TextView(act).apply { textSize = 12f; setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(4)); foreground = YtSkin.ripple(); isSelected = c.liked }
+            paintCLike(likeTv, c.liked, c.likes)
+            likeTv.setOnClickListener {
+                val mk = c.mtKey ?: return@setOnClickListener
+                if (!YtAccount.loggedIn()) { Notice.show(act, "سجّل الدخول بحساب جوجل من تبويب «أنت» عشان تعمل لايك", 3000L); return@setOnClickListener }
+                val now = !likeTv.isSelected
+                likeTv.isSelected = now
+                paintCLike(likeTv, now, c.likes + (if (now != c.liked) (if (now) 1 else -1) else 0))
+                Thread { try { YtAccount.likeComment(mk) } catch (_: Throwable) {} }.apply { isDaemon = true }.start()
+            }
+            footRow.addView(likeTv, LinearLayout.LayoutParams(-2, -2)); footAny = true
+        } else if (c.likes > 0) {
+            footRow.addView(TextView(act).apply { text = "👍 " + fmtN(c.likes); textSize = 12f; setTextColor(YtSkin.sub); setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(4)) }, LinearLayout.LayoutParams(-2, -2)); footAny = true
+        }
+        if (!isReply && c.mtId != null) {
+            val repTv = TextView(act).apply { text = "↩ رد"; textSize = 12f; setTextColor(YtSkin.sub); setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(4)); foreground = YtSkin.ripple() }
+            repTv.setOnClickListener { cReplyTo = c.mtId ?: return@setOnClickListener; cEdit.hint = "رد على " + c.author + "…"; composer.visibility = View.VISIBLE; cEdit.requestFocus() }   // (v1298)
+            footRow.addView(repTv, LinearLayout.LayoutParams(-2, -2)); footAny = true
+        }
+        if (c.hearted) { footRow.addView(TextView(act).apply { text = "❤ من صاحب القناة"; textSize = 12f; setTextColor(YtSkin.sub); setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(4)) }, LinearLayout.LayoutParams(-2, -2)); footAny = true }
+        if (footAny) col.addView(footRow, LinearLayout.LayoutParams(-2, -2).apply { topMargin = ui.dp(4) })
         val repBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
-        val rp = c.replies
-        if (!isReply && c.replyCount > 0 && rp != null) {
+        if (!isReply && c.replyCount > 0 && c.mtKey != null) {
             val tv = TextView(act).apply { text = "↩ " + c.replyCount + " ردود"; textSize = 13f; setTextColor(YtSkin.text); typeface = medium; setPadding(0, ui.dp(8), 0, ui.dp(2)) }
-            tv.setOnClickListener { toggleReplies(tv, repBox, rp, c.replyCount) }
+            tv.setOnClickListener { val mk = c.mtKey ?: return@setOnClickListener; toggleReplies(tv, repBox, mk, c.replyCount) }
             col.addView(tv, LinearLayout.LayoutParams(-2, -2))
         }
         val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.TOP; setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(6)) }
@@ -1663,20 +1691,27 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         return wrap
     }
 
-    private fun toggleReplies(tv: TextView, box: LinearLayout, first: Page, n: Int) {
+    /** (v1298) شكل زرار لايك التعليق: لون أوضح و بولد لما يكون متعلّم */
+    private fun paintCLike(tv: TextView, liked: Boolean, n: Long) {
+        tv.text = "👍" + (if (n > 0) " " + fmtN(n) else "")
+        tv.setTextColor(if (liked) YtSkin.text else YtSkin.sub)
+        tv.typeface = if (liked) medium else Typeface.DEFAULT
+    }
+
+    private fun toggleReplies(tv: TextView, box: LinearLayout, firstKey: String, n: Int) {
         if (box.visibility == View.VISIBLE) { box.visibility = View.GONE; tv.text = "↩ $n ردود"; return }
         box.visibility = View.VISIBLE; LoadUi.set(tv, "⏳ …")
         if (box.childCount > 0) { tv.text = "▲ إخفاء الردود"; return }
-        val v = item ?: return; val my = gen
-        fun fill(page: Page) {
+        val my = gen
+        fun fill(key: String) {
             Thread {
                 try {
-                    val r = YtNp.repliesOf(v.id, page)
+                    val r = YtAccount.mtComments(key)
                     act.runOnUiThread {
                         if (my != gen) return@runOnUiThread
                         if (box.childCount > 0 && box.getChildAt(box.childCount - 1).tag == "more") box.removeViewAt(box.childCount - 1)
                         for (c in r.items) box.addView(commentView(c, true), LinearLayout.LayoutParams(-1, -2))
-                        val nx = r.next
+                        val nx = r.nextKey
                         if (nx != null) box.addView(chip("المزيد من الردود") { fill(nx) }.also { it.tag = "more" }, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(14), ui.dp(4), ui.dp(14), ui.dp(8)) })
                         tv.text = "▲ إخفاء الردود"
                     }
@@ -1685,15 +1720,15 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
                 }
             }.apply { isDaemon = true }.start()
         }
-        fill(first)
+        fill(firstKey)
     }
 
-    private fun loadMoreComments(nx: Page, mf: (Page) -> NpComments) {
+    private fun loadMoreComments(key: String) {
         val my = gen
         Thread {
             try {
-                val r = mf(nx)
-                act.runOnUiThread { if (my == gen) { cItems.addAll(r.items); cNext = r.next; if (comments) renderComments() } }
+                val r = YtAccount.mtComments(key)
+                act.runOnUiThread { if (my == gen) { cItems.addAll(r.items); cNextKey = r.nextKey; if (comments) renderComments() } }
             } catch (e: Throwable) {
                 act.runOnUiThread { if (my == gen) Notice.show(act, "ما قدرتش أجيب تعليقات أكتر", 2000L) }
             }
@@ -1710,13 +1745,13 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         Notice.show(act, "⏳ بنشر التعليق…", 1500L)
         Thread {
             try {
-                YtAccount.postComment(v.id, t)
+                val rp = cReplyTo   // (v1298) لو بنرد على تعليق
+                if (rp != null) YtAccount.postReply(v.id, rp, t) else YtAccount.postComment(v.id, t)
                 act.runOnUiThread {
                     if (my != gen) return@runOnUiThread
-                    cEdit.setText("")
-                    cItems.add(0, NpComment(t, "أنت", "", 0L, "دلوقتي", false, false, false, 0, null))
-                    cLoaded = true; if (comments) renderComments()
-                    Notice.show(act, "✅ التعليق اتنشر على حسابك", 2200L)
+                    cEdit.setText(""); cReplyTo = null; cEdit.hint = "اكتب تعليق…"
+                    if (rp == null) { cItems.add(0, NpComment(t, "أنت", "", 0L, "دلوقتي", false, false, false, 0, null)); cLoaded = true; if (comments) renderComments() }
+                    Notice.show(act, if (rp != null) "✅ الرد اتنشر" else "✅ التعليق اتنشر على حسابك", 2200L)
                 }
             } catch (e: Throwable) {
                 LogStore.err("YtWatch:postComment", e)

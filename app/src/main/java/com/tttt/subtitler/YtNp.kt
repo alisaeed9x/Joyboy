@@ -91,7 +91,8 @@ class NpChanFull(val url: String, val name: String, val avatar: String, val bann
                  val tabs: List<NpChanTab>, val loadTab: (String) -> Pair<YtRes, (Page) -> YtRes>)
 /** (v403) تعليق: مثبّت/قلب من صاحب القناة/صاحب القناة + عدد الردود (صفحة الردود في replies) */
 class NpComment(val text: String, val author: String, val avatar: String, val likes: Long, val age: String,
-                val pinned: Boolean, val hearted: Boolean, val owner: Boolean, val replyCount: Int, val replies: Page?)
+                val pinned: Boolean, val hearted: Boolean, val owner: Boolean, val replyCount: Int, val replies: Page?,
+                val liked: Boolean = false, val mtKey: String? = null, val mtId: String? = null)   // (v1298) حقول MeeTube: لايك + مفتاح الردود/اللايك + معرّف التعليق
 class NpComments(val total: Int, val items: List<NpComment>, val next: Page?)
 
 /** (v325) Downloader بتاع NewPipeExtractor على HttpURLConnection (من غير مكتبة إضافية) */
