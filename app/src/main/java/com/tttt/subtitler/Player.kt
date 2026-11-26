@@ -3661,12 +3661,13 @@ class PlayerActivity : Activity(), Host {
                 diaBox.addView(rs, LinearLayout.LayoutParams(-1, -2))
                 if (TrProfile.styleIsLiteral()) diaBox.addView(shNote("الأسلوب حرفي — الشدة مش هتأثر (غيّره من 🌐 اللهجة والأسلوب)", true))
             }
+            var sliderRef: SeekBar? = null
             fun refresh() {
                 val m = TrProfile.uiMode()
                 val none = m == TrProfile.TX   // (v1332) «بدون ترجمة»: كل ما يخص الترجمة بيختفي
                 modeTitle.text = when (m) { TrProfile.TX -> "✍ تفريغ بس (من غير ترجمة)"; TrProfile.MSA -> "🔤 ترجمة فصحى"; TrProfile.DUB -> "🎙 وضع الدبلجة (فصحى + تشكيل + صوت)"; else -> "🗣 ترجمة بلهجة" }
                 modeTitle.visibility = if (none) View.GONE else View.VISIBLE
-                msb.visibility = if (none) View.GONE else View.VISIBLE
+                sliderRef?.visibility = if (none) View.GONE else View.VISIBLE
                 dubNote.visibility = if (m == TrProfile.DUB && !none) View.VISIBLE else View.GONE
                 diaBox.visibility = if (m == TrProfile.DIA && !off && !none) View.VISIBLE else View.GONE
                 qBox.visibility = if (m != TrProfile.TX && !off) View.VISIBLE else View.GONE
@@ -3688,6 +3689,7 @@ class PlayerActivity : Activity(), Host {
                     override fun onStopTrackingTouch(s: SeekBar?) {}
                 })
             }
+            sliderRef = msb
             col.addView(msb, LinearLayout.LayoutParams(-1, -2))
             val mends = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
             mends.addView(ui.text("✍ تفريغ", 11.5f, 0xFF9AA0A6.toInt()), LinearLayout.LayoutParams(0, -2, 1f))
