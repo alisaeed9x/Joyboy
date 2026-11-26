@@ -701,6 +701,7 @@ class MainActivity : Activity() {
                     ui.noHint(),
                     ui.slider("🪟 الشفافية والبلر (50 = الافتراضي · أكتر = أشفّ وأبلر)", MtGlass.level(), 0, 100, "%") { Cfg.put("glass_level", it.toString()); MtGlass.fireLevel() },   // (v1312) تطبيق لحظي وقت التحريك
                     ui.text("بيتطبق لحظيًا على الكروت والشيتات والنوافذ المنبثقة وقت تحريك السلايدر.", 12f, th.muted),
+                    glassPreview(ui),
                     ui.slider("🖼 تعتيم خلفية الشاشة الرئيسية", Cfg.int("app_wall_scrim", 55).coerceIn(0, 95), 0, 95, "%") { Cfg.put("app_wall_scrim", it.toString()) },
                     ui.switchRow("🔍 عدسة الشريط السفلي (زجاج)", Cfg.bool("glass_lens", false)) { Cfg.put("glass_lens", if (it) "1" else "0") },
                     ui.switchRow("〰 اهتزاز عدسة الشريط", Cfg.bool("glass_jiggle", false)) { Cfg.put("glass_jiggle", if (it) "1" else "0") }),
@@ -2099,4 +2100,22 @@ class MainActivity : Activity() {
     }
     override fun startActivity(i: Intent?) { super.startActivity(i); try { if (tvShellOn) { NavAnim.take(this); overridePendingTransition(0, 0) } else if (i?.getBooleanExtra("handoff", false) == true) { NavAnim.take(this); overridePendingTransition(0, 0) } else if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_enter, R.anim.act_stay) } catch (e: Exception) { LogStore.err("Main:720", e) } }
     override fun finish() { super.finish(); try { if (fromPlayer || tvShellOn) overridePendingTransition(0, 0) else overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:721", e) } }
+}
+
+
+/** معاينة حيّة لشريط زجاجي فوق صورة: بتتحدّث وقت تحريك سلايدر الشفافية والبلر */
+private fun MainActivity.glassPreview(ui: Ui): View {
+    val d = resources.displayMetrics.density
+    val box = FrameLayout(this)
+    box.background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, intArrayOf(0xFFFF8A65.toInt(), 0xFFAB47BC.toInt(), 0xFF26C6DA.toInt())).apply { cornerRadius = 16f * d }
+    val stripes = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+    for (c in intArrayOf(0xFFFFEB3B.toInt(), 0xFF212121.toInt(), 0xFFFFFFFF.toInt(), 0xFF1565C0.toInt(), 0xFFD81B60.toInt())) stripes.addView(View(this).apply { setBackgroundColor(c) }, LinearLayout.LayoutParams(0, -1, 1f))
+    box.addView(stripes, FrameLayout.LayoutParams(-1, (40 * d).toInt(), Gravity.TOP).apply { topMargin = (14 * d).toInt(); leftMargin = (14 * d).toInt(); rightMargin = (14 * d).toInt() })
+    val bar = TextView(this).apply { text = "🏠   📺   🎬   ⚙"; textSize = 18f; gravity = Gravity.CENTER }
+    val paint = { try { bar.background = MtGlass.floatPill(30f * d, d, 0) } catch (_: Throwable) {} }
+    paint()
+    MtGlass.liveGlass(box, paint)
+    box.addView(bar, FrameLayout.LayoutParams(-1, (56 * d).toInt(), Gravity.BOTTOM).apply { leftMargin = (28 * d).toInt(); rightMargin = (28 * d).toInt(); bottomMargin = (14 * d).toInt() })
+    box.layoutParams = LinearLayout.LayoutParams(-1, (110 * d).toInt()).apply { topMargin = (6 * d).toInt(); bottomMargin = (6 * d).toInt() }
+    return box
 }

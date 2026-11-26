@@ -627,6 +627,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 // كبسولة GlassView من غير setSource: نفس تنت زجاج الشريط الأساسي (setSource هنا هيسجّل المصدر جوه نفسه ويكرش)
                 val g = MeeGlass.bar(act, th)
                 g.addView(rr, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+                try { g.background = MtGlass.floatPill(ui.dp(34).toFloat(), act.resources.displayMetrics.density, 0) } catch (_: Throwable) {}
                 g
             } else {
                 rr.background = GradientDrawable().apply { setColor(MtGlass.barSolid(th)); cornerRadius = ui.dp(34).toFloat(); setStroke(ui.dp(1), MtGlass.rim(th)) }
@@ -643,10 +644,33 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 railLabs.add(cell)
                 rr.addView(cell, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) })
             }
-            ytRail = cap
-            content.addView(cap, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.LEFT).apply { leftMargin = ui.dp(16) })
-            ytDock.onVis = { ytDock.post { railInset() } }   // post: الظهور بيتظبط في آخر show() فلازم نقراه بعدها
-            cap.post { railInset() }
+            val host = object : FrameLayout(act) {
+                private var dx = 0f; private var drag = false; private var base = 0f
+                override fun onInterceptTouchEvent(e: android.view.MotionEvent): Boolean {
+                    when (e.actionMasked) {
+                        android.view.MotionEvent.ACTION_DOWN -> { dx = e.rawX; drag = false; base = translationX }
+                        android.view.MotionEvent.ACTION_MOVE -> if (!drag && Math.abs(e.rawX - dx) > ui.dp(10)) { drag = true; parent?.requestDisallowInterceptTouchEvent(true) }
+                    }
+                    return drag
+                }
+                override fun onTouchEvent(e: android.view.MotionEvent): Boolean {
+                    when (e.actionMasked) {
+                        android.view.MotionEvent.ACTION_MOVE -> {
+                            val pw = (parent as? View)?.width ?: 0
+                            val lim = ((pw - width) / 2f).coerceAtLeast(0f)
+                            translationX = (base + e.rawX - dx).coerceIn(-lim, lim)
+                        }
+                        android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> { if (drag) { try { Cfg.put("yt_rail_x", translationX.toInt().toString()) } catch (_: Throwable) {} }; drag = false }
+                    }
+                    return true
+                }
+            }
+            host.addView(cap, FrameLayout.LayoutParams(-2, -2))
+            host.translationX = try { Cfg.int("yt_rail_x", 0).toFloat() } catch (_: Throwable) { 0f }
+            ytRail = host
+            content.addView(host, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
+            ytDock.onVis = { ytDock.post { railInset() } }
+            host.post { railInset() }
         }
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         navBar = null; navLine = null   // (v472) الشريط السفلي الخاص بيوتيوب اتشال (التبويبات فوق)
@@ -786,6 +810,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 val hh = YtStore.read(YtStore.HIST); var ss = YtStore.read(YtStore.SUBS)
                 // (v1104 Y3) الرئيسية من محرك MeeTube (حساب الكود): كل الفيديوهات + تحميل مفتوح. فاضية/فشلت ← المسار القديم تحت زي ما هو
                 if (YtMtFeed.usable()) {
+                    val seenH = hh.map { it.id }.toHashSet()
+                    val stH = YtMtFeed.homeStale()?.let { c0 -> YtRes(c0.filter { x -> x.id !in seenH }, null) }?.takeIf { it.items.size >= 6 }
+                    if (stH != null) {
+                        if (YtMtFeed.refreshHomeAsync(hh)) act.runOnUiThread { bgLine(true) }
+                        return@load homeFirst(stH, hh, ss)
+                    }
                     val m = try { YtMtFeed.home(hh) } catch (e: Throwable) { LogStore.err("YtProUi:mtHome", e); null }
                     if (m != null) {
                         val shown = HashSet<String>(); m.items.forEach { shown.add(it.id) }
@@ -892,9 +922,10 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val r = ytRail ?: return
         val lp = r.layoutParams as? FrameLayout.LayoutParams ?: return
         val bt = try { MtFloat.barTop(act) } catch (_: Throwable) { 0 }
-        val dock = if (::ytDock.isInitialized && ytDock.visibility == View.VISIBLE) ui.dp(58) + ui.dp(8) else 0
-        val b = (if (bt > 0) bt + ui.dp(8) else ui.dp(12)) + dock
+        val b = if (bt > 0) bt + ui.dp(8) else ui.dp(12)
         if (lp.bottomMargin != b) { lp.bottomMargin = b; r.layoutParams = lp }
+        // الدوك فوق الريل (الريل لازق فوق الشريط)
+        if (::ytDock.isInitialized) { ytDock.extraBottom = if (r.visibility == View.VISIBLE) (if (r.height > 0) r.height else ui.dp(52)) + ui.dp(8) else 0; ytDock.reinset() }
     }
     // ───────── (v1291) «أنت»: زي صفحة You في يوتيوب الرسمي — كارت الحساب فوق، أرفف أفقية بالصور (السجل · أكمل · المحفوظات)، وتحتها قوايمك والتحميلات والإعدادات ─────────
     private fun yrow(title: String, sub: String, key: String) = NpItem("act", title, sub, "", "", -1L, -1L, "", 2, "yta:$key")
@@ -1004,7 +1035,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         }
     }
 
-    private fun setNavHidden(h: Boolean) { navBar?.visibility = if (h) View.GONE else View.VISIBLE; navLine?.visibility = if (h) View.GONE else View.VISIBLE; ytRail?.visibility = if (h) View.GONE else View.VISIBLE }   // (v1323) الريل الجانبي بيختفي مع صفحة المشاهدة/القناة
+    private fun setNavHidden(h: Boolean) { navBar?.visibility = if (h) View.GONE else View.VISIBLE; navLine?.visibility = if (h) View.GONE else View.VISIBLE; ytRail?.visibility = if (h) View.GONE else View.VISIBLE; try { railInset() } catch (_: Throwable) {} }   // (v1323) الريل الجانبي بيختفي مع صفحة المشاهدة/القناة
 
     private fun watchVideo(v: NpItem, view: View?) {
         hideKb(); sugBox.visibility = View.GONE

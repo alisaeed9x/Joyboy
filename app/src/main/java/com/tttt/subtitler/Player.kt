@@ -2520,6 +2520,7 @@ class PlayerActivity : Activity(), Host {
     lateinit var resumeTv: TextView
     private var resumePending = false
     private var handedOff = false
+    @Volatile private var ffShown = false
     fun applyCard() { if (::resumeCard.isInitialized) resumeCard.visibility = if (resumePending && !pipNow()) View.VISIBLE else View.GONE }
     private fun placeCard() {
         if (!::resumeCard.isInitialized) return
@@ -5024,7 +5025,7 @@ class PlayerActivity : Activity(), Host {
         hookRotAnim(videoBox)   // (v1125)
         val sv = SurfaceView(this); svRef = sv
         sv.holder.addCallback(object : android.view.SurfaceHolder.Callback {   // (v604) تدوير الموبايل في وضع المتحكم
-            override fun surfaceCreated(h: android.view.SurfaceHolder) { if (remote) redrawLastRemoteFrame() }
+            override fun surfaceCreated(h: android.view.SurfaceHolder) { if (remote) redrawLastRemoteFrame() else try { if (::player.isInitialized) player.exo()?.setVideoSurfaceView(sv) } catch (_: Throwable) {} }
             override fun surfaceChanged(h: android.view.SurfaceHolder, f: Int, w: Int, hh: Int) { if (remote) { redrawLastRemoteFrame(); rmFrameForce = true } }
             override fun surfaceDestroyed(h: android.view.SurfaceHolder) {}
         })
@@ -6547,6 +6548,8 @@ class PlayerActivity : Activity(), Host {
         try { val mh = if (DeviceUi.realTvCached) TvQ.HARD else Cfg.int("yt_maxh", 0); if (mh > 0 && uri == null) player.exo()?.let { xp -> xp.trackSelectionParameters = xp.trackSelectionParameters.buildUpon().setMaxVideoSize(Int.MAX_VALUE, mh).build() } } catch (e: Throwable) { LogStore.err("Player:maxh", e) }
         player.setPlaybackSpeed(speed)
         var firstFrame = false
+        ffShown = false
+        if (!remote) { val wdP = player.exo(); h.postDelayed({ try { if (!ffShown && !gone && !isFinishing && wdP != null && wdP === player.exo() && ::svRef.isInitialized) { wdP.clearVideoSurfaceView(svRef); wdP.setVideoSurfaceView(svRef) } } catch (_: Throwable) {} }, 2000L) }
         val plst = object : Player.Listener {
             override fun onAudioSessionIdChanged(audioSessionId: Int) { try { loud?.release() } catch (_: Throwable) {}; loud = null; applyBoost() }
             override fun onVideoSizeChanged(v: VideoSize) {
@@ -6590,7 +6593,7 @@ class PlayerActivity : Activity(), Host {
                     }
                 }
             }
-            override fun onRenderedFirstFrame() { firstFrame = true; webFirstFrame = true; ytBusy(false) }
+            override fun onRenderedFirstFrame() { firstFrame = true; ffShown = true; webFirstFrame = true; ytBusy(false) }
             override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
                 val rawCue = cueGroup.cues.mapNotNull { it.text?.toString()?.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
                 nativeCue = if (sfHideNative) "" else rawCue   // (v762) الأصلية مقفولة بعد ترجمة الملف
@@ -7421,8 +7424,7 @@ class PlayerActivity : Activity(), Host {
     private fun ytCommitMini() {
         // (v1326) النزول بالسحب = دوك التطبيق السفلي (مفيش إذن صورة-في-صورة) — زرار ⧉ في ملء الشاشة لسه بيدخل PiP عادي
         if (ytTryDock()) return
-        try { enterPip(true) } catch (e: Throwable) { LogStore.err("Player:ytCommitMini", e) }
-        h.postDelayed({ try { if (!gone && !isFinishing && !pipNow()) ytAnimTo(0f) } catch (_: Throwable) {} }, 650L)
+        try { ytAnimTo(0f) } catch (e: Throwable) { LogStore.err("Player:ytCommitMini", e) }
     }
 
     private fun wantFull(): Boolean {
@@ -7527,27 +7529,31 @@ class PlayerActivity : Activity(), Host {
     }
 
     private fun openYtPageVideo(v: NpItem) {
-        val ret = intent.getStringExtra("ret") ?: ""
-        startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
-            putExtra("ytpend", true)
-            putExtra("ytid", v.id)
-            putExtra("title", v.title)
-            putExtra("ref", "https://www.youtube.com/")
-            putExtra("nosub", true)
-            putExtra("autotr", false)
-            putExtra("ret", ret)
-            putExtra("ytpage", true)
-            putExtra("ytswap", true)   // (v1161) فيديو تاني من صفحة المشاهدة: كروس-فيد في مكانه + المحتوى يطلع بنعومة (من غير ما الصفحة كلها تنزل وتطلع)
-            putExtra("ytchan", v.channel)
-            putExtra("ytchanurl", v.channelUrl)
-            putExtra("ytthumb", v.thumb)
-            putExtra("ytav", v.avatar)
-            putExtra("ytcid", v.channelId)
-            putExtra("ytcount", v.count)
-            putExtra("ytage", v.age)
-            putExtra("ytdur", v.dur)
-        })
-        overridePendingTransition(R.anim.yt_swap_enter, R.anim.yt_swap_exit)
+        // تبديل الفيديو في نفس الشاشة: صندوق الفيديو ثابت والمحتوى تحته بس هو اللي بيتغيّر (من غير Activity جديدة ولا حركة أفقية)
+        try { EndOverlay.hide(); ResumeAsk.dismiss() } catch (_: Throwable) {}
+        try { stopVoice() } catch (_: Throwable) {}
+        try { saveRecent(); saveYtProg() } catch (_: Throwable) {}
+        try { visual.stop() } catch (_: Throwable) {}
+        try { retireEngine() } catch (_: Throwable) {}
+        try { engine.saveNow() } catch (_: Throwable) {}
+        try { loud?.release(); loud = null } catch (_: Throwable) {}
+        try { player.release() } catch (_: Throwable) {}
+        intent.putExtra("ytid", v.id); intent.putExtra("title", v.title); intent.putExtra("ytchan", v.channel); intent.putExtra("ytchanurl", v.channelUrl)
+        intent.putExtra("ytthumb", v.thumb); intent.putExtra("ytav", v.avatar); intent.putExtra("ytcid", v.channelId); intent.putExtra("ytcount", v.count)
+        intent.putExtra("ytage", v.age); intent.putExtra("ytdur", v.dur); intent.putExtra("ytpend", true); intent.putExtra("handoff", false)
+        try { YtHistory.add(this, v.id, v.title) } catch (_: Throwable) {}
+        uri = null; url = null; aurl = null; hdr.clear(); qOpts = emptyList(); qCur = -1
+        cur = 0L; durMs = 0L; vidW = 0; vidH = 0; curIdx = -2; curKey = ""; dirty = true
+        nativeCue = ""; sfHideNative = false; textPicked = false; natShown = false; natLast = ""; diagCueN = 0; diagCueLast = ""; diagN = 0; preferNative = false; sfLive = ""; sfLiveCache.clear(); sfLiveAsk.clear()
+        sfShown = false; sfOffKey = ""
+        synchronized(logBuf) { logBuf.setLength(0) }
+        status = ""; conf = Cfg.snapshot()
+        try { sub.show(null) } catch (_: Throwable) {}
+        try { visOv.showBoxes(emptyList()) } catch (_: Throwable) {}
+        resumePending = false; engineStarted = false; autoRotDone = false; userRot = false
+        try { ytWatch?.open(v, null) } catch (_: Throwable) {}
+        pendingYt = true
+        startYtPend()
     }
     /** (v604) تدوير صورة الفيديو نفسها (0/90/180/270) — على التلفزيون بس (شاشته مابتلفّش) */
     private var rotDeg = 0

@@ -842,6 +842,7 @@ class YtPlayerKit(private val act: Activity, private val ui: Ui) : FrameLayout(a
         hh.removeCallbacks(ticker); exo = null; keepScreenOn = false
         p.playWhenReady = true
         YtHandoff.put(p); YtHandoff.putSnap(tex)   // (v1124)
+        try { p.clearVideoTextureView(tex) } catch (_: Throwable) {}
         thumb.visibility = View.VISIBLE
         playG.kind = 0; playG.invalidate()
         resumeMs = pos; handed = true
@@ -2026,9 +2027,12 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
     private fun applyInset() {
         val lp = layoutParams as? FrameLayout.LayoutParams ?: return
         val bt = try { MtFloat.barTop(act) } catch (_: Throwable) { 0 }
-        val b = if (bt > 0) bt + ui.dp(8) else 0
+        val b = (if (bt > 0) bt + ui.dp(8) else 0) + extraBottom
         if (lp.bottomMargin != b) { lp.bottomMargin = b; layoutParams = lp }
     }
+    /** ارتفاع إضافي تحت الدوك (ريل يوتيوب اللي بين الدوك والشريط) */
+    var extraBottom = 0
+    fun reinset() { applyInset() }
 
     /** (v1327) إشعار ظهور/اختفاء الدوك: ريل يوتيوب بيترفع فوقه عشان مفيش عنصر يغطّي التاني (بطلب علي) */
     var onVis: ((Boolean) -> Unit)? = null
@@ -2107,6 +2111,7 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
         hh.removeCallbacks(tick); exo = null
         p.playWhenReady = true
         YtHandoff.put(p); YtHandoff.putSnap(tex)   // (v1124)
+        try { p.clearVideoTextureView(tex) } catch (_: Throwable) {}
         YtHandoff.pageItem = curItem   // (v1162)
         visibility = View.GONE
         onExpand(vid, ttl, pos, pk)
