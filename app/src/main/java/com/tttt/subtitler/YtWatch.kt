@@ -999,7 +999,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     /** (v1288) الوصف: الروابط تتفتح، والتوقيتات (1:23 / 1:02:03) بتنقّل الفيديو للثانية دي */
     private fun linkDesc(t0: String): CharSequence {
         // (v1343) وصف يوتيوب بيرجع أحيانًا بوسوم HTML خام (<a href=...>#tag</a>) — بتتقري كليك نضيفة مش كود ظاهر (بطلب علي)
-        val t1 = t0.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&amp;", "&")
+        val t1 = t0.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&amp;", "&").replace("&nbsp;", " ").replace("&#160;", " ")   // (v1346) فك &nbsp; — بتوصل مدبلجة (&amp;nbsp;) فبتفضل ظاهرة كنص خام في الوصف (بطلب علي)
         val out = StringBuilder(t1.length)
         val lnks = ArrayList<Triple<Int, Int, String>>()
         val tagRx = Regex("<a\\s+[^>]*?href=\"([^\"]+)\"[^>]*>([\\s\\S]*?)</a>|<[^>]+>")
