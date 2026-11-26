@@ -814,13 +814,16 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             0 -> load("🏠 الرئيسية", 0, null, null, null, "", false, false) {
                 val hh = YtStore.read(YtStore.HIST); var ss = YtStore.read(YtStore.SUBS)
                 // (v1104 Y3) الرئيسية من محرك MeeTube (حساب الكود): كل الفيديوهات + تحميل مفتوح. فاضية/فشلت ← المسار القديم تحت زي ما هو
-                if (YtMtFeed.usable()) {
+                // (v1332) العرض الفوري قبل أي تشغيل للمحرك: usable() بيشغّل المحرك وبياخد ثواني — الكاش يتفحص الأول
+                if (YtMtFeed.usableCached()) {
                     val seenH = hh.map { it.id }.toHashSet()
                     val stH = YtMtFeed.homeStale()?.let { c0 -> YtRes(c0.filter { x -> x.id !in seenH }, null) }?.takeIf { it.items.size >= 6 }
                     if (stH != null) {
                         if (YtMtFeed.refreshHomeAsync(hh)) act.runOnUiThread { bgLine(true) }
                         return@load homeFirst(stH, hh, ss)
                     }
+                }
+                if (YtMtFeed.usable()) {
                     val m = try { YtMtFeed.home(hh) } catch (e: Throwable) { LogStore.err("YtProUi:mtHome", e); null }
                     if (m != null) {
                         val shown = HashSet<String>(); m.items.forEach { shown.add(it.id) }

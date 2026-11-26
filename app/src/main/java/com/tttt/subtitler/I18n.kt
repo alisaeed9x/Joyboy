@@ -105,7 +105,6 @@ object I18n {
         arrayOf("النت والداتا","Network & data","Red y datos","网络与数据"),
         arrayOf("مركز التحديث","Update center","Centro de actualizaciones","更新中心"),
         arrayOf("إرسال التحديث للتلفزيون","Send update to TV","Enviar actualización a la TV","发送更新到电视"),
-        arrayOf("شرح الاستخدام","How to use","Cómo usar","使用说明"),
         arrayOf("الأقسام","Sections","Secciones","分区"),
         arrayOf("الترجمة","Translation","Traducción","翻译"),
         arrayOf("تحكم وريموت","Control & remote","Control y mando","控制与遥控"),

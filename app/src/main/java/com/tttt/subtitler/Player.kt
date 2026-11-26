@@ -3575,14 +3575,50 @@ class PlayerActivity : Activity(), Host {
             fun again() { close(); h.post { trSettings(anchor) } }
             fun engSync() { try { if (::engine.isInitialized) engine.convDialect = Cfg.str("conv_dialect", "") } catch (_: Throwable) {} }
             col.addView(shHead("⚙ إعدادات الترجمة", "زرار «ترجم» بيشتغل على طول بالإعدادات دي"))
-            // (v1320) المسار البديل + جلب الموديلات جوه المشغّل (بطلب علي) — نفس خيارات الإعدادات
-            col.addView(shSection("🔀 المسار البديل والموديل"))
-            col.addView(shRow("🔀 محرك الترجمة", if (TrWizard.method() == "google") "🎙 وشبر + 🌐 جوجل ترانسليت ✓" else "☁ جيميناي بيعمل كل حاجة ✓", true) {
-                val r = TrWizard.setEngineChoice(if (TrWizard.method() == "google") "gemini" else "whisper_google")
-                say(r.second); again()
-            })
-            col.addView(shRow("🩺 حالة المسار البديل", "وشبر + جوجل ترانسليت — فحص سريع") { close(); h.post { altPathCheck() } })
-            col.addView(shRow("🔄 جلب الموديلات واختيار واحد", "بيتطبّق على كل المفاتيح") { close(); h.post { modelsPick() } })
+            // (v1332) تفريغ وترجمة زرارين منفصلين: اللي تختاره هو الشغّال (بطلب علي)
+            fun pickStt(whisper: Boolean) {
+                if (whisper) {
+                    Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper")
+                    val rdy = try { Offline.engine().ready() || Offload.wanted() } catch (_: Throwable) { false }
+                    if (!rdy) whisperModelAsk { h.post { beginTranslate() } } else say("🎙 وشبر — التفريغ على الجهاز")
+                } else { Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "gemini"); say("☁ جيميناي بيفرّغ الصوت") }
+                again()
+            }
+            fun pickMt(kind: String) {
+                when (kind) {
+                    "none" -> TrProfile.setMode(TrProfile.TX)
+                    "gemini" -> { Cfg.put("tr_method", "gemini"); if (TrProfile.uiMode() == TrProfile.TX) TrProfile.setMode(TrProfile.MSA) }
+                    else -> {
+                        Cfg.put("tr_method", "google"); Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper")
+                        if (TrProfile.uiMode() == TrProfile.TX) TrProfile.setMode(TrProfile.MSA)
+                        say("🌐 جوجل ترانسليت بيترجم تفريغ الويشبر — التفريغ اتحوّل لوشبر تلقائيًا")
+                        val rdy = try { Offline.engine().ready() || Offload.wanted() } catch (_: Throwable) { false }
+                        if (!rdy) whisperModelAsk { }
+                    }
+                }
+                again()
+            }
+            val sttW = Cfg.bool("stt_offline", false)
+            val mtSel = if (TrProfile.uiMode() == TrProfile.TX) "none" else if (TrWizard.method() == "google") "google" else "gemini"
+            col.addView(shSection("🎙 المحرك الأساسي للتفريغ"))
+            val sttRow = shFlow()
+            sttRow.addView(shChip("☁ جيميناي", !sttW) { pickStt(false) }, shChipLp())
+            sttRow.addView(shChip("🎙 ويشبر (على الجهاز)", sttW) { pickStt(true) }, shChipLp())
+            col.addView(sttRow, LinearLayout.LayoutParams(-1, -2))
+            if (sttW) {
+                val wm = Offline.model(); val wdl = try { Offline.downloaded() } catch (_: Throwable) { false }
+                col.addView(shNote("الموديل: " + wm.label + " (~" + wm.approxMb + "MB) — " + (if (wdl) "✅ متنزّل" else "❌ مش متنزّل"), !wdl))
+                if (!wdl) col.addView(shRow("⬇ تحميل موديل الويشبر", "بروجرس + تحميل في الخلفية") { whisperModelAsk { h.post { beginTranslate() } } })
+            } else {
+                col.addView(shRow("🔄 جلب الموديلات واختيار واحد", "بيتطبّق على كل المفاتيح") { close(); h.post { modelsPick() } })
+            }
+            col.addView(shSection("🌐 المحرك الأساسي للترجمة"))
+            val mtRow = shFlow()
+            mtRow.addView(shChip("☁ جيميناي", mtSel == "gemini") { pickMt("gemini") }, shChipLp())
+            mtRow.addView(shChip("🌐 جوجل ترانسليت", mtSel == "google") { pickMt("google") }, shChipLp())
+            mtRow.addView(shChip("🚫 بدون ترجمة (تفريغ بس)", mtSel == "none") { pickMt("none") }, shChipLp())
+            col.addView(mtRow, LinearLayout.LayoutParams(-1, -2))
+            if (mtSel == "google") col.addView(shNote("جوجل ترانسليت بيترجم النص المفرّغ بس — التفريغ بيتم بالويشبر على الجهاز."))
             // (v1098) T3: سلايدر النوع: شمال تفريغ بس · نص ترجمة فصحى · يمين ترجمة بلهجة (اللهجة تحتها وبتظهر/تختفي مع الموضع)
             col.addView(shSection("النوع"))
             val modeTitle = ui.text("", 14f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(2), 0, ui.dp(2)) }
@@ -3627,11 +3663,14 @@ class PlayerActivity : Activity(), Host {
             }
             fun refresh() {
                 val m = TrProfile.uiMode()
+                val none = m == TrProfile.TX   // (v1332) «بدون ترجمة»: كل ما يخص الترجمة بيختفي
                 modeTitle.text = when (m) { TrProfile.TX -> "✍ تفريغ بس (من غير ترجمة)"; TrProfile.MSA -> "🔤 ترجمة فصحى"; TrProfile.DUB -> "🎙 وضع الدبلجة (فصحى + تشكيل + صوت)"; else -> "🗣 ترجمة بلهجة" }
-                dubNote.visibility = if (m == TrProfile.DUB) View.VISIBLE else View.GONE
-                diaBox.visibility = if (m == TrProfile.DIA && !off) View.VISIBLE else View.GONE
+                modeTitle.visibility = if (none) View.GONE else View.VISIBLE
+                msb.visibility = if (none) View.GONE else View.VISIBLE
+                dubNote.visibility = if (m == TrProfile.DUB && !none) View.VISIBLE else View.GONE
+                diaBox.visibility = if (m == TrProfile.DIA && !off && !none) View.VISIBLE else View.GONE
                 qBox.visibility = if (m != TrProfile.TX && !off) View.VISIBLE else View.GONE
-                qNote.visibility = if (qBox.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                qNote.visibility = if (qBox.visibility == View.VISIBLE || none) View.GONE else View.VISIBLE
             }
             col.addView(modeTitle, LinearLayout.LayoutParams(-1, -2))
             val mModes = if (off) listOf(TrProfile.TX, TrProfile.MSA, TrProfile.DUB) else listOf(TrProfile.TX, TrProfile.MSA, TrProfile.DIA, TrProfile.DUB)   // (v1229) موضع رابع: دبلجة
@@ -3667,7 +3706,6 @@ class PlayerActivity : Activity(), Host {
             if (::realEngine.isInitialized && !remote && realEngine.applied.isNotEmpty())
                 col.addView(shRow("( ) شيل الأقواس من الجمل المتغيّرة", realEngine.applied.size.toString() + " جملة") { realEngine.clearMarks(); touchSubs(); again() })   // (v1099) T4
             // (v1098) حفظ: الإعدادات دي بتتطبّق تلقائي على أي فيديو تاني تفتحه بعد كده
-            if (!Design.isNew()) col.addView(shRow("🔀 اختار نظام تاني (جيميناي · وشبر · تفريغ)", "", true) { close(); h.post { translateMenu(anchor) } })
             if (!Design.isNew()) col.addView(shRow("🔧 إعدادات متقدمة", "", true) { close(); h.post { modeSettings(anchor) } })
             col.addView(shRow("إغلاق") { close() })
             refresh()
@@ -3778,8 +3816,6 @@ class PlayerActivity : Activity(), Host {
             val m = SongHint.mode(); val lw = SongHint.lyricsWanted()
             row.removeAllViews(); lyr.removeAllViews()
             row.addView(shChip("🤖 تلقائي", m == "auto") { SongHint.setMode("auto"); paint() }, shChipLp())
-            row.addView(shChip("🎵 دايمًا أغنية", m == "on") { SongHint.setMode("on"); paint() }, shChipLp())
-            row.addView(shChip("⛔ مقفول", m == "off") { SongHint.setMode("off"); paint() }, shChipLp())
             lyr.addView(shChip(if (lw) "📜 كلمات مرجعية LRCLIB: شغّال" else "📜 كلمات مرجعية LRCLIB: مقفول", lw) { SongHint.setLyricsWanted(!lw); paint() }, shChipLp())
             (note as? TextView)?.text = "الأغنية بتتعرف من العنوان أو من رد الموديل. وقتها: البرومبت الخفيف وتسريع الصوت بيتقفلوا، وقاعدة «تجاهل الموسيقى» بتتلغي، والكلمات المرجعية (للإملاء بس) بتتجاب من LRCLIB بإنترنت. بيتطبّق على الباتشات الجاية.\nدلوقتي: " + SongHint.state()
         }
@@ -6420,6 +6456,37 @@ class PlayerActivity : Activity(), Host {
     }
 
     /** (v1320) فحص سريع لحالة المسار البديل: موديل الوشبر متنزّل؟ وجوجل ترانسليت بيرد؟ */
+    private var whDlView: LinearLayout? = null
+    /** (v1332) موديل الويشبر مش متنزّل: تحميل بصفحة بروجرس أو في الخلفية (دايرة صغيرة فوق الشمال)، وأول ما يتنصّب التفريغ يبدأ فورًا */
+    private fun whisperModelAsk(onReady: () -> Unit) {
+        val m = Offline.model()
+        GAlert(this).setTitle("🎙 موديل الويشبر")
+            .setMessage("الموديل («" + m.label + "» ~" + m.approxMb + " ميجا) مش متنزّل على الجهاز. تحب تنزّله دلوقتي؟")
+            .setPositiveButton("⬇ تحميل") { _, _ -> whisperDownloadDialog(onReady) }
+            .setNeutralButton("📥 في الخلفية") { _, _ -> whisperDownloadBg(onReady) }
+            .setNegativeButton("إلغاء", null).show()
+    }
+    private fun whisperDownloadDialog(onReady: () -> Unit) {
+        val tv = ui.text("⏳ بيبدأ التنزيل…", 14f, Color.WHITE)
+        val pb = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100 }
+        val c2 = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(8)); addView(tv); addView(pb, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) }) }
+        val d = GAlert(this).setTitle("⬇ تحميل موديل الويشبر").setView(c2).setNegativeButton("إلغاء التحميل") { _, _ -> try { Offline.cancelDownload() } catch (_: Throwable) {} }.create()
+        d.setCancelable(false); d.show()
+        Offline.download(Offline.model(), { a, t -> runOnUiThread { if (t > 0) { pb.progress = (a * 100 / t).toInt(); tv.text = "⬇ " + (a / 1048576) + " / " + (t / 1048576) + " ميجا" } } },
+            { err -> runOnUiThread { try { d.dismiss() } catch (_: Throwable) {}; if (err == null) { say("✅ موديل الويشبر اتنزّل"); h.post { onReady() } } else say("❌ " + err) } })
+    }
+    private fun whisperDownloadBg(onReady: () -> Unit) {
+        if (whDlView != null) return
+        val pb = ProgressBar(this).apply { isIndeterminate = false; max = 100 }
+        val tv = ui.text("", 11f, Color.WHITE)
+        val pill = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(8), ui.dp(4), ui.dp(10), ui.dp(4)); background = GradientDrawable().apply { setColor(0xCC1A1A1A.toInt()); cornerRadius = ui.dp(16).toFloat() }; addView(pb, LinearLayout.LayoutParams(ui.dp(22), ui.dp(22))); addView(tv, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(6) }) }
+        whDlView = pill
+        try { videoBoxRef.addView(pill, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { marginStart = ui.dp(10); topMargin = ui.dp(64) }) } catch (_: Throwable) {}
+        say("📥 الموديل بينزّل في الخلفية…")
+        Offline.download(Offline.model(), { a, t -> runOnUiThread { if (t > 0) { pb.progress = (a * 100 / t).toInt(); tv.text = (a * 100 / t).toInt().toString() + "٪" } } },
+            { err -> runOnUiThread { try { videoBoxRef.removeView(pill) } catch (_: Throwable) {}; whDlView = null; if (err == null) { say("✅ موديل الويشبر اتنزّل — التفريغ بيبدأ"); h.post { onReady() } } else say("❌ " + err) } })
+    }
+
     private fun altPathCheck() {
         Notice.show(this, "⏳ بفحص المسار البديل…", 1800L)
         Thread {
@@ -9062,7 +9129,6 @@ class PlayerActivity : Activity(), Host {
             h.postDelayed({ try { if (!isFinishing && !isDestroyed) PermAsk.overlay(this, { }, { }) } catch (_: Throwable) {} }, 900L)
         }
         trEnsureBtn()   // (v463) زرار لوحة النص في وضع التابلت
-        Tour.maybePlayer(this)   // (v1258) جولة أزرار المشغّل أول مرة
         WebMute.pauseAll()   // (v149) أي صوت WebView (متصفح/يوتيوب) يتقفل أول ما المشغّل يظهر
         if (audioOnlyMode) {   // رجعنا من وضع «صوت بس»: المحرك كان موقوف، نجهّزه من جديد (الترجمة بتبدأ لما تدوس ترجم)
             audioOnlyMode = false; engineStarted = false

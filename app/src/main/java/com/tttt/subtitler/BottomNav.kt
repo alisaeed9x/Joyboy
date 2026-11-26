@@ -111,7 +111,6 @@ class BottomNav(act: Activity, private val ui: Ui, private val th: Theme, privat
         if (!tvDev) sys.add(MoreItem("🔄", "مركز التحديث", false) { try { if (Design.isNew()) UpdateSheet.show(act) else GhCiUi.show(act) } catch (e: Throwable) { LogStore.err("Nav:gh", e) } }.also { it.badge = Upd.count })   // (v861) تحديث البرنامج + تحديث التلفزيون + لوج الفشل
         if (!tvDev) sys.add(MoreItem("📤", "إرسال التحديث للتلفزيون", false) { try { RemoteClient.forcePushFlow(act) } catch (e: Throwable) { LogStore.err("Nav:pushUpd", e) } })   // (v1048) من صفحة «المزيد» مباشرة
         sys.add(MoreItem("🎨", "التصميم: " + Design.label(Design.cur()), false) { try { Design.pick(act) } catch (e: Throwable) { LogStore.err("Nav:design", e) } })   // (v1219) تبديل الشكل جديد/قديم
-        if (!tvDev) sys.add(MoreItem("🎓", "شرح الاستخدام", false) { try { collapseMore(); Tour.replay(act) } catch (e: Throwable) { LogStore.err("Nav:tour", e) } })   // (v1258)
         sys.add(MoreItem(DEFS[7].first, "الإعدادات", 7 == active) { onPick(7) })
         return listOf("الأقسام" to secs, "الترجمة" to trl, "تحكم وريموت" to ctl, "النظام والتحديث" to sys)
     }

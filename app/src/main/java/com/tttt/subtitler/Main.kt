@@ -651,11 +651,21 @@ class MainActivity : Activity() {
                 ui.noHint(),
                 ui.section("🔊 الصوت", true, atrack, audioPresetTitle, audioPresetChips, audioPresetDesc, *fl("soundtags", "hitiming")),
                 ModelsUi.section(this, ui, th),
-                ui.section("🔀 محرك الترجمة", true,
-                    ui.text("لو جيميناي واقف (503): فعّل المسار البديل — وشبر بيفرّغ الصوت لنص على موبايلك، والنص بيتبعت لجوجل ترانسليت يترجمه من غير جيميناي خالص.", 12f, th.muted),
-                    ui.chips(listOf("☁ جيميناي — بيعمل كل حاجة", "🎙 وشبر + 🌐 جوجل ترانسليت"), { if (TrWizard.method() == "google") "🎙 وشبر + 🌐 جوجل ترانسليت" else "☁ جيميناي — بيعمل كل حاجة" }) { n ->
-                        val r = TrWizard.setEngineChoice(if (n.startsWith("🎙")) "whisper_google" else "gemini")
-                        Notice.show(this, r.second, 3200L)
+                ui.section("🔀 محرك الترجمة والتفريغ", true,
+                    ui.text("التفريغ (صوت ← نص):", 12f, th.muted),
+                    ui.chips(listOf("☁ جيميناي", "🎙 ويشبر (على الجهاز)"), { if (Cfg.bool("stt_offline", false)) "🎙 ويشبر (على الجهاز)" else "☁ جيميناي" }) { n ->
+                        if (n.startsWith("🎙")) { Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper"); if (!Offline.downloaded()) Notice.show(this, "🎙 موديل الويشبر مش متنزّل — نزّله من «📴 التفريغ على الجهاز» فوق", 3200L) }
+                        else { Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "gemini") }
+                        recreate()
+                    },
+                    ui.text("الترجمة (نص ← عربي):", 12f, th.muted),
+                    ui.chips(listOf("☁ جيميناي", "🌐 جوجل ترانسليت", "🚫 بدون ترجمة"), { if (TrProfile.uiMode() == TrProfile.TX) "🚫 بدون ترجمة" else if (TrWizard.method() == "google") "🌐 جوجل ترانسليت" else "☁ جيميناي" }) { n ->
+                        when {
+                            n.startsWith("🚫") -> TrProfile.setMode(TrProfile.TX)
+                            n.startsWith("🌐") -> { Cfg.put("tr_method", "google"); Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper"); if (TrProfile.uiMode() == TrProfile.TX) TrProfile.setMode(TrProfile.MSA); Notice.show(this, "🌐 جوجل ترانسليت بيترجم تفريغ الويشبر — التفريغ اتحوّل لوشبر تلقائيًا", 3200L) }
+                            else -> { Cfg.put("tr_method", "gemini"); if (TrProfile.uiMode() == TrProfile.TX) TrProfile.setMode(TrProfile.MSA) }
+                        }
+                        recreate()
                     },
                     ui.noHint()),
                 ui.section("📴 التفريغ على الجهاز (من غير مفتاح)", true,
@@ -2037,7 +2047,6 @@ class MainActivity : Activity() {
         if (!fromPlayer) ClipOverlay.ensure(this)   // (v735) مراقب الكليبورد بإذن العرض فوق التطبيقات (بيشتغل لوحده أول ما الإذن يتفعّل)
         if (!fromPlayer) ModelWatch.maybeCheck(this)   // (v141) فحص يومي لموديل flash-lite أحدث
         if (!fromPlayer) { Upd.onChange = { updateUpdBadge() }; updateUpdBadge(); Upd.onOpen(this) }   // (v1259) فحص التحديث عند كل فتح + البادج
-        if (!fromPlayer) Tour.maybeMain(this)   // (v1258) جولة أول تشغيل
         if (!fromPlayer) GhCi.onForeground(this)   // (v856) فشل ورك فلو GitHub ← إشعار + تحميل اللوج · تحديث جاهز ← تثبيت
         // المخفي بيتقفل تاني لو التطبيق قعد في الخلفية أكتر من دقيقة
         if (stoppedAt > 0 && System.currentTimeMillis() - stoppedAt > 60_000) { libUi?.relock(); musicUi?.lib?.relock() }
