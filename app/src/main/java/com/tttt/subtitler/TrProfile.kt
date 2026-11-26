@@ -56,11 +56,23 @@ object TrProfile {
 
     fun dialects(): List<String> = TrWizard.dialects.filter { it != "فصحى" }
 
-    /** اللهجة الحالية لو فيه، وإلا آخر لهجة اتختارت، وإلا مصري */
+    /** اللهجة الحالية لو فيه، وإلا أوتوماتيك من لغة الكيبورد/النظام */
     fun dialect(): String {
         val d = Cfg.str("conv_dialect", "").ifBlank { Cfg.str("lang", "") }.trim()
         if (d.isNotEmpty() && d != "فصحى") return d
-        return Cfg.str("tr_dia_last", DEF_DIALECT).ifBlank { DEF_DIALECT }
+        return autoDialect()
+    }
+
+    /** (v1341) اللهجة أوتوماتيك على حسب لغة الكيبورد/النظام (بطلب علي 11/26): عربي مصري ← «مصري»، أي لغة تانية ← فصحى (من غير تحويل لهجة). السلايدر اليدوي اتشال */
+    fun autoDialect(): String {
+        val tags = ArrayList<String>(4)
+        try { val l = java.util.Locale.getDefault(); tags += l.language + "_" + l.country } catch (_: Throwable) {}
+        try {
+            val c = TrWizard.appCtx
+            val imm = c?.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+            imm?.currentInputMethodSubtype?.localeTag?.replace(' ', '_')?.let { tags += it }
+        } catch (_: Throwable) {}
+        return if (tags.any { it.startsWith("ar") && it.contains("EG", true) }) "مصري" else "فصحى"
     }
 
     fun degree(): String = Cfg.str("tone_strength", "متوسطة").let { if (it in degrees) it else "متوسطة" }

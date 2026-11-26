@@ -3580,7 +3580,7 @@ class PlayerActivity : Activity(), Host {
                 if (whisper) {
                     Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper")
                     val rdy = try { Offline.engine().ready() || Offload.wanted() } catch (_: Throwable) { false }
-                    if (!rdy) whisperModelAsk { h.post { beginTranslate() } } else say("🎙 وشبر — التفريغ على الجهاز")
+                    if (!rdy) { close(); h.post { whisperModelPick { h.post { beginTranslate() } } }; return } else say("🎙 وشبر — التفريغ على الجهاز")   // (v1341) الدايلوج بيفتح بعد قفل الشيت — كان بيطلع وراها (بطلب علي)
                 } else { Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "gemini"); say("☁ جيميناي بيفرّغ الصوت") }
                 again()
             }
@@ -3593,7 +3593,7 @@ class PlayerActivity : Activity(), Host {
                         if (TrProfile.uiMode() == TrProfile.TX) TrProfile.setMode(TrProfile.MSA)
                         say("🌐 جوجل ترانسليت بيترجم تفريغ الويشبر — التفريغ اتحوّل لوشبر تلقائيًا")
                         val rdy = try { Offline.engine().ready() || Offload.wanted() } catch (_: Throwable) { false }
-                        if (!rdy) whisperModelAsk { }
+                        if (!rdy) { close(); h.post { whisperModelPick { } }; return }   // (v1341) نفس ترتيب الفتح فوق الشيت
                     }
                 }
                 again()
@@ -3608,7 +3608,7 @@ class PlayerActivity : Activity(), Host {
             if (sttW) {
                 val wm = Offline.model(); val wdl = try { Offline.downloaded() } catch (_: Throwable) { false }
                 col.addView(shNote("الموديل: " + wm.label + " (~" + wm.approxMb + "MB) — " + (if (wdl) "✅ متنزّل" else "❌ مش متنزّل"), !wdl))
-                if (!wdl) col.addView(shRow("⬇ تحميل موديل الويشبر", "بروجرس + تحميل في الخلفية") { whisperModelAsk { h.post { beginTranslate() } } })
+                col.addView(shRow(if (wdl) "🎙 تغيير موديل الويشبر" else "⬇ تحميل موديل الويشبر", "اختار الموديل الأول (tiny/base/small/medium/turbo)، بعدين نزّله بروجرس أو في الخلفية") { close(); h.post { whisperModelPick { h.post { if (!wdl) beginTranslate() } } } })   // (v1341) اختيار الموديل قبل التحميل + الدايلوج فوق الشيت (بطلب علي)
             } else {
                 col.addView(shRow("🔄 جلب الموديلات واختيار واحد", "بيتطبّق على كل المفاتيح") { close(); h.post { modelsPick() } })
             }
@@ -3629,32 +3629,10 @@ class PlayerActivity : Activity(), Host {
             fun paintSave() { try { TrProfile.save() } catch (_: Throwable) {} }   // (v1140) حفظ تلقائي: أي تغيير بيتحفظ لكل الفيديوهات على طول (مفيش زرار حفظ)
             fun paintDia() {
                 diaBox.removeAllViews()
-                val ds = TrProfile.dialects(); val cd = TrProfile.dialect()
-                var shown = cd
+                val cd = TrProfile.dialect()
                 val dTitle = ui.text("🗣 اللهجة: " + cd, 14f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(2), 0, ui.dp(2)) }
                 diaBox.addView(dTitle, LinearLayout.LayoutParams(-1, -2))
-                val dsb = SeekBar(this).apply {
-                    layoutDirection = View.LAYOUT_DIRECTION_LTR; max = (ds.size - 1).coerceAtLeast(0); progress = ds.indexOf(cd).coerceAtLeast(0)
-                    setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                        override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
-                            if (!u) return
-                            val d = ds.getOrNull(p) ?: return
-                            if (d == shown) return
-                            val pd = curEngDia(); shown = d
-                            TrProfile.applyDialect(d); engSync(); updateTr(); dTitle.text = "🗣 اللهجة: " + d; paintSave()
-                            trLiveApply("dia", TrProfile.DIA, pd)   // (v1140) سلايدر اللهجة (حفظ تلقائي + تطبيق بعد ~1.2ث من آخر لمسة)
-                        }
-                        override fun onStartTrackingTouch(s: SeekBar?) {}
-                        override fun onStopTrackingTouch(s: SeekBar?) {}
-                    })
-                }
-                diaBox.addView(dsb, LinearLayout.LayoutParams(-1, -2))
-                if (ds.size > 1) {
-                    val de = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
-                    de.addView(ui.text(ds.first(), 11.5f, 0xFF9AA0A6.toInt()), LinearLayout.LayoutParams(0, -2, 1f))
-                    de.addView(ui.text(ds.last(), 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.END }, LinearLayout.LayoutParams(0, -2, 1f))
-                    diaBox.addView(de, LinearLayout.LayoutParams(-1, -2))
-                }
+                diaBox.addView(shNote("اللهجة بتتبع لغة الكيبورد/النظام أوتوماتيك — عربي مصري = «مصري»، أي لغة تانية = فصحى"))   // (v1341) سلايدر اللهجة اتشال: كان بلا وظيفة (لهجة واحدة بس) — بطلب علي
                 diaBox.addView(shNote("الشدة"))
                 val rs = shFlow(); val cg = TrProfile.degree()
                 for (g in TrProfile.degrees) rs.addView(shChip(g, g == cg) { TrProfile.setDegree(g); try { if (::engine.isInitialized) engine.toneStrength = g } catch (_: Throwable) {}; paintDia(); paintSave(); if (g != cg) trLiveApply("deg", TrProfile.DIA) }, shChipLp())
@@ -6459,25 +6437,38 @@ class PlayerActivity : Activity(), Host {
 
     /** (v1320) فحص سريع لحالة المسار البديل: موديل الوشبر متنزّل؟ وجوجل ترانسليت بيرد؟ */
     private var whDlView: LinearLayout? = null
-    /** (v1332) موديل الويشبر مش متنزّل: تحميل بصفحة بروجرس أو في الخلفية (دايرة صغيرة فوق الشمال)، وأول ما يتنصّب التفريغ يبدأ فورًا */
-    private fun whisperModelAsk(onReady: () -> Unit) {
-        val m = Offline.model()
-        GAlert(this).setTitle("🎙 موديل الويشبر")
-            .setMessage("الموديل («" + m.label + "» ~" + m.approxMb + " ميجا) مش متنزّل على الجهاز. تحب تنزّله دلوقتي؟")
-            .setPositiveButton("⬇ تحميل") { _, _ -> whisperDownloadDialog(onReady) }
-            .setNeutralButton("📥 في الخلفية") { _, _ -> whisperDownloadBg(onReady) }
+    /** (v1341) اختيار موديل الويشبر قبل التحميل (بطلب علي 11/26): قايمة بكل الموديلات الخمسة وحجمها وحالة التنزيل، والاختيار بيتحفظ في off_model */
+    private fun whisperModelPick(onReady: () -> Unit) {
+        val ms = Offline.models
+        fun dl(m: Offline.Model): Boolean = try { Offline.downloaded(m) } catch (_: Throwable) { false }
+        val labels = ms.map { m -> m.label + "  ·  ~" + m.approxMb + " ميجا  ·  " + (if (dl(m)) "✅ متنزّل" else "❌ مش متنزّل") }.toTypedArray()
+        GAlert(this).setTitle("🎙 اختار موديل الويشبر")
+            .setItems(labels) { _, i ->
+                val m = ms.getOrNull(i) ?: return@setItems
+                Cfg.put("off_model", m.id)
+                if (dl(m)) { say("✅ «" + m.label + "» متنزّل أصلًا — اتحدد كموديل التفريغ"); h.post { onReady() } }
+                else whisperModelAsk(m, onReady)
+            }
             .setNegativeButton("إلغاء", null).show()
     }
-    private fun whisperDownloadDialog(onReady: () -> Unit) {
+    /** (v1332) موديل الويشبر مش متنزّل: تحميل بصفحة بروجرس أو في الخلفية (دايرة صغيرة فوق الشمال)، وأول ما يتنصّب التفريغ يبدأ فورًا */
+    private fun whisperModelAsk(m: Offline.Model, onReady: () -> Unit) {
+        GAlert(this).setTitle("🎙 موديل الويشبر")
+            .setMessage("الموديل («" + m.label + "» ~" + m.approxMb + " ميجا) مش متنزّل على الجهاز. تحب تنزّله دلوقتي؟")
+            .setPositiveButton("⬇ تحميل") { _, _ -> whisperDownloadDialog(m, onReady) }
+            .setNeutralButton("📥 في الخلفية") { _, _ -> whisperDownloadBg(m, onReady) }
+            .setNegativeButton("إلغاء", null).show()
+    }
+    private fun whisperDownloadDialog(m: Offline.Model, onReady: () -> Unit) {
         val tv = ui.text("⏳ بيبدأ التنزيل…", 14f, Color.WHITE)
         val pb = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100 }
         val c2 = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(8)); addView(tv); addView(pb, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) }) }
         val d = GAlert(this).setTitle("⬇ تحميل موديل الويشبر").setView(c2).setNegativeButton("إلغاء التحميل") { _, _ -> try { Offline.cancelDownload() } catch (_: Throwable) {} }.create()
         d.setCancelable(false); d.show()
-        Offline.download(Offline.model(), { a, t -> runOnUiThread { if (t > 0) { pb.progress = (a * 100 / t).toInt(); tv.text = "⬇ " + (a / 1048576) + " / " + (t / 1048576) + " ميجا" } } },
+        Offline.download(m, { a, t -> runOnUiThread { if (t > 0) { pb.progress = (a * 100 / t).toInt(); tv.text = "⬇ " + (a / 1048576) + " / " + (t / 1048576) + " ميجا" } } },
             { err -> runOnUiThread { try { d.dismiss() } catch (_: Throwable) {}; if (err == null) { say("✅ موديل الويشبر اتنزّل"); h.post { onReady() } } else say("❌ " + err) } })
     }
-    private fun whisperDownloadBg(onReady: () -> Unit) {
+    private fun whisperDownloadBg(m: Offline.Model, onReady: () -> Unit) {
         if (whDlView != null) return
         val pb = ProgressBar(this).apply { isIndeterminate = false; max = 100 }
         val tv = ui.text("", 11f, Color.WHITE)
@@ -6485,7 +6476,7 @@ class PlayerActivity : Activity(), Host {
         whDlView = pill
         try { videoBoxRef.addView(pill, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { marginStart = ui.dp(10); topMargin = ui.dp(64) }) } catch (_: Throwable) {}
         say("📥 الموديل بينزّل في الخلفية…")
-        Offline.download(Offline.model(), { a, t -> runOnUiThread { if (t > 0) { pb.progress = (a * 100 / t).toInt(); tv.text = (a * 100 / t).toInt().toString() + "٪" } } },
+        Offline.download(m, { a, t -> runOnUiThread { if (t > 0) { pb.progress = (a * 100 / t).toInt(); tv.text = (a * 100 / t).toInt().toString() + "٪" } } },
             { err -> runOnUiThread { try { videoBoxRef.removeView(pill) } catch (_: Throwable) {}; whDlView = null; if (err == null) { say("✅ موديل الويشبر اتنزّل — التفريغ بيبدأ"); h.post { onReady() } } else say("❌ " + err) } })
     }
 
