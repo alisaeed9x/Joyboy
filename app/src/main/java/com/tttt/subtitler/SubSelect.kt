@@ -44,12 +44,42 @@ object SubSel {
     fun choice(ctx: Context, u: Uri): String = try { choiceKey(ctx, u)?.let { Cfg.str(it, "") } ?: "" } catch (_: Throwable) { "" }
     fun setChoice(ctx: Context, u: Uri, v: String) { try { choiceKey(ctx, u)?.let { Cfg.put(it, v) } } catch (e: Throwable) { LogStore.err("SubSel:set", e) } }
 
-    /** الملف المختار: null = بدون ترجمة (أو مفيش ملفات). من غير اختيار محفوظ ← الأحدث */
+    /** الملف المختار: null = بدون ترجمة (أو مفيش ملف مطابق). اختيار المستخدم المحفوظ دايمًا محترم (حتى لو الاسم مش مطابق) · من غير اختيار محفوظ ← الأحدث *المطابق* بس */
     fun chosen(ctx: Context, u: Uri, all: List<File>): File? {
         val c = choice(ctx, u)
         if (c == NONE) return null
         if (c.isNotEmpty()) all.firstOrNull { it.absolutePath == c }?.let { return it }
-        return all.firstOrNull()
+        val vb = videoPath(ctx, u)?.let { File(it).nameWithoutExtension } ?: return all.firstOrNull()   // (v1353) مسار الفيديو مش معروف ← السلوك القديم (الأحدث)
+        return all.firstOrNull { strictAuto(vb, it.nameWithoutExtension) }   // (v1353) الاختيار الصامت بقى صارم: نفس الاسم أو نفس توكن الحلقة بس — ممنوع يلقط أي ملف ترجمة من الفولدر (بطلب علي)
+    }
+
+    /** (v1353) توكن الحلقة في الاسم: S07E04 أو 7x04 ← زوج (الموسم، الحلقة) للمقارنة الصارمة (بطلب علي) */
+    fun epToken(x: String): Pair<Int, Int>? {
+        val m = Regex("[sS](\d{1,3})[eE](\d{1,4})").find(x) ?: Regex("(?<!\d)(\d{1,2})x(\d{1,3})(?!\d)").find(x) ?: return null
+        val s = m.groupValues[1].toIntOrNull() ?: return null
+        val e = m.groupValues[2].toIntOrNull() ?: return null
+        return s to e
+    }
+    private fun normTok(x: String): String = x.lowercase().replace(Regex("[^\p{L}\p{N}]+"), "")
+    /** (v1353) مطابقة صارمة للاختيار التلقائي الصامت: نفس اسم الفيديو (مع لاحقة لغة زي .ar) أو —لو الفيديو فيه توكن حلقة— نفس التوكن بالظبط؛ لو الفيديو مفيهوش توكن حلقة ← قاعدة الرقم الأخير القديمة (v667/v703) زي ما هي (بطلب علي) */
+    fun strictAuto(videoBase: String, subBase: String): Boolean {
+        val base = videoBase.lowercase(); val n = subBase.lowercase()
+        if (n == base || n.startsWith("$base.")) return true
+        val nb = normTok(base); val nn = normTok(subBase)
+        if (nb.isNotEmpty() && nn.startsWith(nb)) {
+            val rest = nn.substring(nb.length)
+            if (rest.isEmpty() || Regex("^(?:ar|ara|arb|arabic|عربي|عربى|en|eng|english|fr|fre|de|ger|es|spa|tr|tur|hi|ja|jpn|ko|kor|ru|rus|it|ita|pt|por|sub|subs|subtitle|subtitles|cc|sdh|forced|default|translated|ترجمه|ترجمة)+$").matches(rest)) return true
+        }
+        val ev = epToken(videoBase)
+        if (ev != null) return epToken(subBase) == ev   // (v1353) فولدر مسلسلات: الحلقة بتتطابق بتوكنها — «720» في آخر الاسم كانت بتخلي كل الحلقات تلقط ترجمات بعض (بطلب علي)
+        fun digits(x: String): String = buildString { for (ch in x) append(if (ch in '\u0660'..'\u0669') ('0' + (ch - '\u0660')) else if (ch in '\u06F0'..'\u06F9') ('0' + (ch - '\u06F0')) else ch) }
+        fun lastNum(x: String): Long? = Regex("\d+").findAll(digits(x)).lastOrNull()?.value?.toLongOrNull()
+        val vn = lastNum(videoBase) ?: return false
+        if (lastNum(subBase) != vn) return false
+        val vl = normTok(videoBase.filter { !it.isDigit() })
+        if (vl.isEmpty()) return true
+        val sl = normTok(subBase.filter { !it.isDigit() })
+        return sl.isNotEmpty() && (sl.contains(vl) || vl.contains(sl))
     }
 
     /** أكتر من ملف ومفيش اختيار صالح محفوظ ← لازم نسأل المستخدم (مفيش اختيار تلقائي صامت) */
