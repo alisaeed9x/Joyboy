@@ -670,9 +670,9 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             content.addView(host, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
             ytDock.onVis = { ytDock.post { railInset() } }
             // (v1331) زجاج الريل = نفس زجاج شريط الأدوات حرفيًا: بلور حي فوق مصدر الصفحة + نفس التنت وبيتبع سلايدر «الشفافية والبلر»
+            // (v1334) إصلاح الفورس كلوز: الريل جوه مصدر الزجاج نفسه، فالبلور الحي بيسجّل نفسه ويكرش — رجعنا لتنت ثابت بنفس قيمة الشريط حرفيًا (نفس الشفافية، من غير بلور)
             val paintRail = {
-                val src = try { MtFloat.sourceFor(act) } catch (_: Throwable) { null }
-                if (MtGlass.on() && src != null) try { com.tttt.subtitler.mtui.GlassDrawable.apply(cap, src, 0, MtGlass.ak(MeeRes.color("meetube_glass_tint", 0x66FAFAFA, 0x66000000))) } catch (_: Throwable) {}
+                if (MtGlass.on()) try { cap.background = GradientDrawable().apply { setColor(MtGlass.ak(MeeRes.color("meetube_glass_tint", 0x66FAFAFA, 0x66000000))); cornerRadius = ui.dp(34).toFloat(); setStroke(ui.dp(1), MtGlass.ak(MeeRes.color("meetube_glass_rim", 0x3DFFFFFF, 0x1F000000))) } } catch (_: Throwable) {}
             }
             MtGlass.liveGlass(cap, paintRail)
             host.post { railInset(); paintRail() }
