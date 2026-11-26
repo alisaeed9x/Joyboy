@@ -624,10 +624,9 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         if (!DeviceUi.isTv(act) && !act.packageName.endsWith(".lite")) {
             val rr = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             val cap: ViewGroup = if (MtGlass.on()) {
-                // كبسولة GlassView من غير setSource: نفس تنت زجاج الشريط الأساسي (setSource هنا هيسجّل المصدر جوه نفسه ويكرش)
-                val g = MeeGlass.bar(act, th)
+                val g = FrameLayout(act)
+                g.setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6))
                 g.addView(rr, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-                try { g.background = MtGlass.floatPill(ui.dp(34).toFloat(), act.resources.displayMetrics.density, 0) } catch (_: Throwable) {}
                 g
             } else {
                 rr.background = GradientDrawable().apply { setColor(MtGlass.barSolid(th)); cornerRadius = ui.dp(34).toFloat(); setStroke(ui.dp(1), MtGlass.rim(th)) }
@@ -670,7 +669,13 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             ytRail = host
             content.addView(host, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
             ytDock.onVis = { ytDock.post { railInset() } }
-            host.post { railInset() }
+            // (v1331) زجاج الريل = نفس زجاج شريط الأدوات حرفيًا: بلور حي فوق مصدر الصفحة + نفس التنت وبيتبع سلايدر «الشفافية والبلر»
+            val paintRail = {
+                val src = try { MtFloat.sourceFor(act) } catch (_: Throwable) { null }
+                if (MtGlass.on() && src != null) try { com.tttt.subtitler.mtui.GlassDrawable.apply(cap, src, 0, MtGlass.ak(MeeRes.color("meetube_glass_tint", 0x66FAFAFA, 0x66000000))) } catch (_: Throwable) {}
+            }
+            MtGlass.liveGlass(cap, paintRail)
+            host.post { railInset(); paintRail() }
         }
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         navBar = null; navLine = null   // (v472) الشريط السفلي الخاص بيوتيوب اتشال (التبويبات فوق)

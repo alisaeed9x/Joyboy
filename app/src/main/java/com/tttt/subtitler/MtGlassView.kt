@@ -122,6 +122,8 @@ object MtFloat {
         nav.floatGlass()
         val bar = MeeGlass.bar(act, th)   // (v906) GlassView بتاع MeeTube الأصلي
         bar.setSource(src)
+        val tintLive = { try { bar.setGlassTint(MtGlass.ak(MeeRes.color("meetube_glass_tint", 0x66FAFAFA, 0x66000000))) } catch (_: Throwable) {} }   // (v1331) الشريط بيتبع سلايدر «الشفافية والبلر» لحظيًا
+        tintLive(); MtGlass.liveGlass(bar, tintLive)
         // (v922) زرارين فيديوهات/موسيقى كانوا جوه نفس كبسولة الشريط فكل أنيميشن (عدسة/اهتزاز/ضغطة) كان بيجري عليهم ويتقل — دلوقتي كبسولة زجاجية لوحدها فوق الشريط، من غير أي أنيميشن للشريط
         var mswBar: com.tttt.subtitler.mtui.GlassView? = null
         if (msw != null) {
