@@ -16,13 +16,3 @@
 ✏️ تعديل: app/src/main/java/com/tttt/subtitler/Player.kt
 ✏️ تعديل: app/src/main/java/com/tttt/subtitler/TrProfile.kt
 ```
-
-
-## 🗂️ الملفات اللي اتغيّرت (أوتوماتيك)
-```
-➕ أضاف:  CHANGES_v1341.md
-✏️ عدّل:   STATUS.txt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/Player.kt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/TrProfile.kt
-```
-🔙 نسخة احتياطية قبل التعديل: `backup-v1340-run150` (للرجوع: Actions ← Rollback)

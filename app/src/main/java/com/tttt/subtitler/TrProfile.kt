@@ -70,7 +70,7 @@ object TrProfile {
         try {
             val c = TrWizard.appCtx
             val imm = c?.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
-            imm?.currentInputMethodSubtype?.localeTag?.replace(' ', '_')?.let { tags += it }
+            imm?.currentInputMethodSubtype?.locale?.let { tags += it.replace(' ', '_') }   // صيغة ar_EG
         } catch (_: Throwable) {}
         return if (tags.any { it.startsWith("ar") && it.contains("EG", true) }) "مصري" else "فصحى"
     }
