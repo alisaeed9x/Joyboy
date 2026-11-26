@@ -500,7 +500,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         GAlert(act).setTitle("✏️ اسم الأغنية والفنان").setView(col)
             .setPositiveButton("💾 احفظ") { _, _ ->
                 val a = etT.text.toString().trim(); val b = etA.text.toString().trim()
-                if (a.isEmpty()) quiet("اكتب اسم الأغنية", 2000L) else { applyIdentified(t, SongMatch(a, b, etAl.text.toString().trim())); SongId.setVerified(t.id, true); paintIdState() }
+                if (a.isEmpty()) quiet("اكتب اسم الأغنية", 2000L) else { applyIdentified(t, SongMatch(a, b, etAl.text.toString().trim())); SongId.setVerified(t.id, true); paintIdState(); loadLyrics(force = true, manual = true) }
             }
             .setNegativeButton("إلغاء", null).show()
     }
@@ -689,14 +689,15 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         }
         fun add(v: View) { tools.addView(v, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(6) }) }
         // (v270) أول زرار (أقصى اليمين): ريفريش الاسم والكلمات والبوستر
-        add(fb("🔄 ريفريش") { refreshAll() })
         add(ui.text("📝 جلب الكلمات", 12.5f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER; setPadding(ui.dp(12), ui.dp(11), ui.dp(12), ui.dp(11)); background = ui.box(BLUE, BLUE, 10)
             setOnClickListener { loadLyrics(force = true, manual = true) }
         })
         add(fb("🔁 إعادة") { redoLyrics(false) })
-        add(fb("❌ الكلمات غلط") { redoLyrics(true) })
-        add(fb("⏱ توقيت") { offsetDialog() })
+        add(ui.text("🚫 كلمات الأغنية غلط", 13.5f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER; setPadding(ui.dp(16), ui.dp(12), ui.dp(16), ui.dp(12)); background = ui.box(0x55E53935, 0x99E53935.toInt(), 10)
+            setOnClickListener { renameSong() }
+        })
         // (v270) دوسة = المصدر اللي بعده، دوسة طويلة = قايمة النسخ + البحث عن نسخ تانية؛ n/N = رقم المصدر من إجمالي المصادر
         srcBtn = fb("🔀 المصدر") { cycleVersion() }.apply { setOnLongClickListener { versionsDialog(); true } }; add(srcBtn!!)
         val fbtn = fb("🔤 خط وحجم") { fontDialog() }; lyrFontBtn = fbtn; add(fbtn)
@@ -984,7 +985,6 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         top.addView(dots, FrameLayout.LayoutParams(ui.dp(56), ui.dp(48), Gravity.END or Gravity.CENTER_VERTICAL))
         // (v241) 🖼↻ ريفريش البوستر: بيدوّر في iTunes ثم Deezer ثم MusicBrainz، ولو الأغنية ملهاش غلاف بيجيب صورة المغني
         val posterBtn = ui.text("🖼↻", 18f, Color.WHITE).apply { gravity = Gravity.CENTER; setOnClickListener { MusicEngine.current?.let { coverChoices(it, HashSet()) } ?: quiet("شغّل أغنية الأول", 1500L) } }
-        top.addView(posterBtn, FrameLayout.LayoutParams(ui.dp(56), ui.dp(48), Gravity.END or Gravity.CENTER_VERTICAL).apply { marginEnd = ui.dp(56) })
         // (v339) ⬇ تحميل الصوت — بيظهر بس لو الأغنية الحالية صوت فيديو يوتيوب
         ytDlBtn = ui.text("⬇", 20f, Color.WHITE).apply { gravity = Gravity.CENTER; visibility = View.GONE
             setOnClickListener { YtAudio.itemOf(MusicEngine.current)?.let { onYtDownload?.invoke(it) } ?: quiet("التحميل متاح لصوت يوتيوب بس", 1600L) } }
@@ -992,10 +992,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         // (v343) 🎬 تحويل صوت → فيديو: بيكمّل نفس الفيديو من نفس المكان (بيظهر لصوت يوتيوب بس)
         ytVidBtn = ui.text("🎬", 20f, Color.WHITE).apply { gravity = Gravity.CENTER; visibility = View.GONE
             setOnClickListener { YtAudio.itemOf(MusicEngine.current)?.let { onYtVideo?.invoke(it, MusicEngine.posMs) } } }
-        top.addView(ytVidBtn, FrameLayout.LayoutParams(ui.dp(56), ui.dp(48), Gravity.END or Gravity.CENTER_VERTICAL).apply { marginEnd = ui.dp(168) })
         // (v811) 🎧 مصدر الصوت: سماعة التلفزيون / سماعة الموبايل (بجنب زرار الإغلاق)
-        top.addView(ui.text("🎧", 20f, Color.WHITE).apply { gravity = Gravity.CENTER; setOnClickListener { AudioBridge.showMenu(act) } },
-            FrameLayout.LayoutParams(ui.dp(56), ui.dp(48), Gravity.START or Gravity.CENTER_VERTICAL).apply { marginStart = ui.dp(56) })
         attachSwipeDown(top)
 
         liveReset(); liveStatus.visibility = View.GONE
@@ -1028,8 +1025,6 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         titleCol.addView(fTitle, LinearLayout.LayoutParams(-1, -2)); titleCol.addView(fArtist, LinearLayout.LayoutParams(-1, -2)); titleCol.addView(idState, LinearLayout.LayoutParams(-1, -2))
         val titleRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(18), 0, ui.dp(14), 0) }
         titleRow.addView(titleCol, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(8) })
-        titleRow.addView(editInfoBtn, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(5) })
-        titleRow.addView(wrongInfoBtn, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ui.dp(8) })
         val rightCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
         rightCol.addView(errBtn, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = ui.dp(4) })
         rightCol.addView(lyrBtn, LinearLayout.LayoutParams(-2, -2))
@@ -1076,7 +1071,6 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
             background = ui.box(0xFF363636.toInt(), 0x55F5F0E7, 24)
             setOnClickListener { YtAudio.itemOf(MusicEngine.current)?.let { onYtVideo?.invoke(it, MusicEngine.posMs) } }
         }
-        col.addView(ytModeBtn, LinearLayout.LayoutParams(-1, ui.dp(48)).apply { setMargins(ui.dp(16), ui.dp(4), ui.dp(16), ui.dp(6)) })
         col.addView(ctl, LinearLayout.LayoutParams(-1, ui.dp(60)).apply { bottomMargin = ui.dp(2) })
         full.post { liftFullCtl() }
         full.addView(col, FrameLayout.LayoutParams(-1, -1))
@@ -1148,10 +1142,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
             quiet(if (danceOn()) "💃 الكلمات هترقص مع إيقاع الأغنية" else "الكلمات هتثبت", 2200L)
         }
         head("🎵 الأغنية")
-        item("🖼 اختار الألبوم / الغلاف") { MusicEngine.current?.let { coverChoices(it, HashSet()) } ?: quiet("شغّل أغنية الأول", 1500L) }
-        item("🖼 البوستر غلط") { wrongPoster() }
-        YtAudio.itemOf(MusicEngine.current)?.let { yi -> item("🎬 كمّل كفيديو (من نفس المكان)") { onYtVideo?.invoke(yi, MusicEngine.posMs) }; item("⬇ تحميل الصوت (من يوتيوب)") { onYtDownload?.invoke(yi) } }
-        item("🎧 تعرّف على أغنية شغّالة في تطبيق تاني") { try { act.startActivity(android.content.Intent(act, SongRequestActivity::class.java)) } catch (_: Throwable) {} }
+        YtAudio.itemOf(MusicEngine.current)?.let { yi -> item("⬇ تحميل الصوت (من يوتيوب)") { onYtDownload?.invoke(yi) } }
         dlg = ui.sheet(act, "⋮ المزيد", listOf<View>(col)); dlg.show()
     }
     private val repeatNames = arrayOf("➡️ تشغيل بالترتيب (من غير تكرار)", "🔁 تكرار الكل", "🔂 تكرار الأغنية دي")
@@ -1709,7 +1700,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
                 if (fm == null && fmsg == FastId.CANCELLED) {   // (v315) اليوزر سابها في النص: نسيب الحالة «ما اتدوّرش» عشان يكمّل (من مرحلة الاسم) لما يرجع لها
                     autoBusy.remove(t.id); Cfg.put("mknown_${t.id}", ""); return@runOnUiThread
                 }
-                if (fm == null || SongId.verified(t.id)) { slowIdentify(t, start); return@runOnUiThread }
+                if (fm == null || SongId.verified(t.id)) { autoBusy.remove(t.id); paintIdState(); if (MusicEngine.current?.id == t.id) { refreshArts(); if (fullOn) loadLyrics() }; return@runOnUiThread }
                 autoBusy.remove(t.id)
                 if (MusicEngine.current?.id == t.id) applyIdentified(t, fm, skipRepair = true)
                 else {
