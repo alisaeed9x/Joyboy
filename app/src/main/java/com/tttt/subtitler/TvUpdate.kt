@@ -211,10 +211,18 @@ object TvUpdate {
             var ok = false; var msg = ""
             downloading = true
             try {
+                // (v1348) التلفزيون بينزّل النسخة المناسبة ليه من النت من نفس فيرجن الموبايل (بطلب علي) — لو النت فشل أو الفيرجن مش موجود: لينك الموبايل على الواي فاي زي الأول
+                var src = o.url
+                h.post { try { tv.text = "⏳ بيجيب لينك نسخة التلفزيون من النت…" } catch (_: Throwable) {} }
+                val np = resolveNet(o)
+                if (np != null) {
+                    src = np.first
+                    h.post { try { tv.text = "⬇ بينزّل نسخة التلفزيون من النت…" } catch (_: Throwable) {} }
+                }
                 try { f.delete() } catch (_: Exception) {}
-                val c = URL(o.url).openConnection() as HttpURLConnection
+                val c = URL(src).openConnection() as HttpURLConnection
                 c.connectTimeout = 6000; c.readTimeout = 15000
-                if (c.responseCode != 200) throw IOException("رد الموبايل " + c.responseCode)
+                if (c.responseCode != 200) throw IOException((if (np != null) "رد النت " else "رد الموبايل ") + c.responseCode)
                 val total = c.contentLengthLong
                 c.inputStream.use { ins ->
                     FileOutputStream(f).use { out ->
@@ -260,6 +268,32 @@ object TvUpdate {
             }
         }.also { it.isDaemon = true }.start()
     }
+
+    /** (v1348) بيدوّر في ريليزات GitHub على نفس فيرجن الموبايل (vname) وبيرجّع لينك وحجم الـAPK المناسب لمعمارية التلفزيون — null لو النت فشل أو الفيرجن مش موجود (بنرجع للينك الموبايل) */
+    private fun resolveNet(o: TvLink.Offer): Pair<String, Long>? {
+        return try {
+            val want = UpdateSheet.verParts(o.vname)
+            if (want.isEmpty()) return null
+            val c = URL("https://api.github.com/repos/alisaeed9x/Joyboy/releases?per_page=30").openConnection() as HttpURLConnection
+            try {
+                c.connectTimeout = 7000; c.readTimeout = 10000
+                c.setRequestProperty("Accept", "application/vnd.github+json"); c.setRequestProperty("User-Agent", "Joyboy")
+                if (c.responseCode != 200) return null
+                val arr = org.json.JSONArray(c.inputStream.bufferedReader().readText())
+                for (i in 0 until arr.length()) {
+                    val rel = arr.optJSONObject(i) ?: continue
+                    if (rel.optBoolean("draft")) continue
+                    val got = UpdateSheet.verParts(rel.optString("name"))
+                    if (got.size < 2 || !sameVer(got, want)) continue
+                    val pick = UpdateSheet.pickApkAsset(rel.optJSONArray("assets"))   // (v1302) اختيار معمارية الجهاز — هنا التلفزيون
+                    if (pick.first.isNotBlank()) return pick
+                }
+                null
+            } finally { try { c.disconnect() } catch (_: Throwable) {} }
+        } catch (_: Throwable) { null }
+    }
+
+    private fun sameVer(a: List<Int>, b: List<Int>): Boolean { val n = maxOf(a.size, b.size); for (i in 0 until n) if (a.getOrElse(i) { 0 } != b.getOrElse(i) { 0 }) return false; return true }
 
     fun install(a: Activity, f: File) {
         PermAsk.installApps(a, { doInstall(a, f) }, { })
