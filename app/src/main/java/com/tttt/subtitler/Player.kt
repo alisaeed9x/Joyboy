@@ -7972,6 +7972,7 @@ open class PlayerActivity : Activity(), Host {
         val unfinished = !incognito && !handedOff && engineStarted && durMs > 0 && PlayerLogic.percent(engine.coveredSec(), durMs / 1000.0) < 99
         val hasKey = Cfg.allMainKeys().isNotEmpty() || conf.keys.isNotEmpty() || conf.backup.isNotEmpty()
         if (unfinished && hasKey && Cfg.bool("ask_bg_exit", true)) { askBgOnExit(); return }
+        if (ytPage && ytTryDock()) return   // (v1356) Back من صفحة المشاهدة = تصغير للدوك العايم زي يوتيوب مش قفل الفيديو (بطلب علي) — لو الدوك مش متاح يكمّل للقفل العادي
         closeNoBg()
     }
     private fun netDialog() {

@@ -1695,6 +1695,8 @@ class MainActivity : Activity() {
             if (toPage) overridePendingTransition(0, 0)   // (v1347) إلغاء كل أنيميشن وترانزيشن في قسم يوتيوب (بطلب علي): الرجوع من الدوك فوري
             return
         }
+        if (ytPipF?.expandIfPlaying(id) == true) return   // (v1356) نفس الفيديو الشغّال في الـPiP: كبّره بدل مشغّل جديد من الصفر (بطلب علي)
+        ytPipF?.dismissIfPlayingOther(id)   // (v1356)
         startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
             putExtra("ytpend", true); putExtra("ytid", id); putExtra("title", title)
             putExtra("ref", "https://www.youtube.com/")
@@ -1704,6 +1706,8 @@ class MainActivity : Activity() {
     /** (v1133) صفحة المشاهدة جوه المشغّل: المشغّل الحقيقي فوق وصفحة الفيديو تحته؛ التكبير بزرار ⛶ في نفس الأكتيفيتي */
     private fun ytStartPage(v: NpItem, startMs: Long, srcRect: android.graphics.Rect? = null, srcThumb: android.graphics.drawable.Drawable? = null) {
         ytLoadLaunched = true
+        if (ytPipF?.expandIfPlaying(v.id) == true) return   // (v1356) نفس الفيديو الشغّال في الـPiP: كبّر المشغّل القائم بدل صفحة جديدة بسبينر (بطلب علي)
+        ytPipF?.dismissIfPlayingOther(v.id)   // (v1356) فيديو مختلف بيتفتح: اقفل الـPiP القديم (بطلب علي)
         if (curTab != 4) showTabFn(4)   // (v1343) صفحة الفيديو بتتسحب لتحت وتكشف اللي وراها — يبقى دايمًا قايمة يوتيوب مش تبويب تاني (بطلب علي)
         val ret = if (curTab == 4) "yt" else ""
         val pi = Intent(this, PlayerYtActivity::class.java).apply {   // (v1351) صفحة يوتيوب بتتفتح بالنسخة الشفافة من المشغّل (ثيم المانيفست الشفاف بيخلّي الفيد ظاهر وراها وقت السحب) — التاسك نفسه زي v1346 (بطلب علي) صفحة يوتيوب بتفتح في نفس تاسك Main (من غير NEW_DOCUMENT): النافذة الشفافة بتكشف الفيد الحقيقي وراها وقت الفتح والسحب زي يوتيوب — التاسك المنفصل كان بيخلّي اللي وراها سواد (بطلب علي)

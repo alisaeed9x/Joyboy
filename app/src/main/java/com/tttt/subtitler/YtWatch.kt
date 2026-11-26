@@ -2212,6 +2212,17 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
         onExpand(vid, ttl, pos, pk)
     }
 
+    /** (v1356) دوسة على نفس الفيديو الشغّال في الـPiP من القايمة: كبّر المشغّل القائم بدل فتح صفحة جديدة من الصفر (بطلب علي). بيرجّع true لو اتعاملت */
+    fun expandIfPlaying(id: String): Boolean {
+        if (id.isBlank() || id != vid || visibility != View.VISIBLE) return false
+        if (exo == null || pick == null) return false
+        expand()
+        return true
+    }
+    /** (v1356) فيديو مختلف بيتفتح والـPiP شغّال بحاجة تانية: اقفله (زي يوتيوب — PiP واحدة بس) بدل ما صوتين يشتغلوا مع بعض (بطلب علي) */
+    fun dismissIfPlayingOther(id: String) {
+        if (id.isNotBlank() && id != vid && visibility == View.VISIBLE && exo != null) dismiss()
+    }
     /** (v606) خرجت من التطبيق والفيديو شغّال في الشريط السفلي: نفس التسليم لمشغّل الكامل + دخول PiP */
     fun pipHandoff(): Boolean {
         val p = exo ?: return false
