@@ -32,6 +32,13 @@ object Upd {
     @Volatile private var checking = false
     @Volatile private var promptedTag = ""
 
+    // (v1339) حجب بوب أب التحديث قدام تحذير الداتا: بنفتكر إيه اللي كان مفتوح (offer · install · download) ونقفله لما الحماية تشتغل، ونرجّعه بعد «إكمال بالداتا»
+    @Volatile private var openKind = ""
+    @Volatile private var guardKind = ""
+    private var curDlg: Dialog? = null
+    private var actRef: java.lang.ref.WeakReference<Activity>? = null
+    @Volatile private var guardPaused = false
+
     val count: Int get() = (if (app != null) 1 else 0)
     fun autoOn(): Boolean = Cfg.bool("upd_auto", false)
 
@@ -92,6 +99,9 @@ object Upd {
     /** بيتنادى من Main.onResume: فحص عند كل فتح (مع فاصل 5 دقايق) وبعدها يقرر يسأل/ينزّل */
     fun onOpen(a: Activity, force: Boolean = false) {
         if (DeviceUi.isTv(a)) return
+        actRef = java.lang.ref.WeakReference(a)
+        MobileDataGuard.onTrip = { main().post { try { guardKind = openKind; curDlg?.dismiss() } catch (_: Throwable) {} } }   // (v1339) التحذير يفضل في الوش لوحده
+        MobileDataGuard.onAllow = { main().post { try { val k = guardKind; guardKind = ""; val x = actRef?.get(); if (x != null && !x.isFinishing && !x.isDestroyed) { promptedTag = ""; if (k == "download") startApp(x) else decide(x) } } catch (_: Throwable) {} } }   // (v1339) البوب أب يكمّل عادي
         val now = System.currentTimeMillis()
         if (checking || (!force && now - lastCheck < 300_000L)) return
         checking = true; lastCheck = now
@@ -105,6 +115,7 @@ object Upd {
 
     private fun decide(a: Activity) {
         val ap = app ?: return
+        if (MobileDataGuard.blocking(a)) return   // (v1339) تحذير الداتا في الوش: البوب أب يستنى «إكمال بالداتا»
         if (a.isFinishing || a.isDestroyed || promptedTag == ap.tag) return
         val f = appFile(a, ap)
         if (appReady(a, f)) { promptedTag = ap.tag; installPrompt(a, ap, f); return }
@@ -120,9 +131,11 @@ object Upd {
         if (ap.size > 0) col.addView(ui.text("حجم التحديث: " + mb(ap.size), 13f, th.muted))
         col.addView(ui.text("إيه اللي اتغيّر:", 15f, th.text, true), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })
         col.addView(Notes.render(a, ui, th, ap.notes), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
-        GAlert(a).setTitle("🔔 فيه تحديث جديد").setView(col)
+        val d = GAlert(a).setTitle("🔔 فيه تحديث جديد").setView(col)
             .setNegativeButton("مش دلوقتي") { _, _ -> Cfg.put("upd_skip", ap.tag) }
             .setPositiveButton("تحديث") { _, _ -> startApp(a) }.show()
+        curDlg = d; openKind = "offer"   // (v1339)
+        try { d.setOnDismissListener { if (curDlg === d) { curDlg = null; openKind = "" } } } catch (_: Throwable) {}
     }
 
     /** (v1327) نسخة من الـAPK الجاهز بتتحفظ في التنزيلات العامة (Download/Joyboy) عشان تلاقيها من أي مدير ملفات (بطلب علي) */
@@ -159,9 +172,11 @@ object Upd {
             val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)) }
             col.addView(TvUpdate.flowView(a, "v" + verName(a), shortVer(ap.name)))
             col.addView(ui.text("التحديث منزّل وجاهز، مش هيتنزّل تاني.", 13f, th.muted))
-            GAlert(a).setTitle("⬆ فيه تحديث، تثبيت؟").setView(col)
+            val d = GAlert(a).setTitle("⬆ فيه تحديث، تثبيت؟").setView(col)
                 .setNegativeButton("لاحقًا", null)
                 .setPositiveButton("تثبيت") { _, _ -> TvUpdate.install(a, f) }.show()
+            curDlg = d; openKind = "install"   // (v1339)
+            try { d.setOnDismissListener { if (curDlg === d) { curDlg = null; openKind = "" } } } catch (_: Throwable) {}
         } catch (e: Throwable) { LogStore.err("Upd:installPrompt", e) }
     }
 
@@ -301,6 +316,10 @@ object Upd {
     }
     private var appCtx: Context? = null
 
+    /** (v1339) حماية الداتا: بتوقّف تنزيل التحديث وهي شغّالة، وبعد «إكمال بالداتا» بيكمّل من نفس النقطة (الجزء المنزّل محفوظ) */
+    fun pauseForGuard() { try { val ap = app; val j = if (ap != null) jobs["app-" + ap.tag] else null; if (j != null && j.running) { guardPaused = true; j.stop = true } } catch (_: Throwable) {} }
+    fun resumeForGuard() { try { if (guardPaused) { guardPaused = false; val ap = app; val j = if (ap != null) jobs["app-" + ap.tag] else null; if (j != null && !j.running && !j.finished) startJob(j) } } catch (_: Throwable) {} }
+
     private fun startJob(j: Job) {
         if (j.running) return
         j.running = true; j.stop = false; j.err = null; j.finished = false; lastResult = null
@@ -385,7 +404,8 @@ object Upd {
         val tick = object : Runnable { override fun run() { if (!shown) return; try { paint() } catch (_: Throwable) {}; hh.postDelayed(this, 400L) } }
         dlg = GAlert(a).setTitle(title).setView(col).setCancelable(false)
             .setNegativeButton("إخفاء") { _, _ -> shown = false }.show()
-        try { dlg.setOnDismissListener { shown = false } } catch (_: Throwable) {}
+        curDlg = dlg; openKind = "download"   // (v1339)
+        try { dlg.setOnDismissListener { shown = false; if (curDlg === dlg) { curDlg = null; openKind = "" } } } catch (_: Throwable) {}
         if (!j.running) startJob(j)
         paint(); hh.postDelayed(tick, 400L)
     }

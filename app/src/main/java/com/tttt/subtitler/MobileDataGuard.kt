@@ -54,6 +54,10 @@ object MobileDataGuard {
     private var overlayHost: Activity? = null
     private var pulse: ObjectAnimator? = null
 
+    // (v1339) خطافات لبوب أب التحديث: نوافذ الـDialog بتترسم فوق الـoverlay ده، فلما الحماية تشتغل بنقفل بوب أب التحديث ونرجّعه بعد «إكمال بالداتا» أو رجوع الواي فاي
+    @Volatile var onTrip: (() -> Unit)? = null
+    @Volatile var onAllow: (() -> Unit)? = null
+
     // اللي إحنا وقّفناه (عشان نكمّل اللي وقّفناه بس — مش اللي المستخدم واقفه بإيده)
     private var pausedMt = false
     private var pausedJoy = false
@@ -98,6 +102,9 @@ object MobileDataGuard {
     }
 
     // ===================== حالة الشبكة =====================
+    /** (v1339) الحماية حاجبة دلوقتي؟ (داتا موبايل + اتخطّى حد الاستهلاك + لسه ماتداسش «إكمال بالداتا») */
+    fun blocking(c: Context): Boolean = try { state(c) == 2 && tripped && !allowed } catch (_: Throwable) { false }
+
     /** 0 = مفيش نت · 1 = واي فاي/إيثرنت · 2 = داتا موبايل (VPN: بنعتمد على «محدودة» من النظام) */
     private fun state(c: Context): Int = try {
         val cm = c.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -128,7 +135,7 @@ object MobileDataGuard {
                 if (!tripped) {
                     if (base < 0L) { base = uidBytes(); return }
                     val cur = uidBytes()
-                    if (cur >= 0L && cur - base >= LIMIT) { tripped = true; pauseEverything() }
+                    if (cur >= 0L && cur - base >= LIMIT) { tripped = true; pauseEverything(); try { onTrip?.invoke() } catch (_: Throwable) {} }
                 }
                 if (tripped) {
                     val act = resumed?.get()
@@ -142,6 +149,7 @@ object MobileDataGuard {
                     resetSpell()
                     removeOverlayView()
                     resumeEverything()
+                    try { onAllow?.invoke() } catch (_: Throwable) {}
                     if (front) bringToFront(a)
                 }
             }
@@ -159,6 +167,7 @@ object MobileDataGuard {
             run.forEach { try { TaskCenter.pause(it, true) } catch (_: Throwable) {} }
         } catch (_: Throwable) {}
         try { if (BgJobs.jobs.any { it.active && !it.paused }) { BgJobs.pauseAll(); pausedBg = true } } catch (_: Throwable) {}
+        try { Upd.pauseForGuard() } catch (_: Throwable) {}   // (v1339) تنزيل التحديث جوه البرنامج كمان بيقف
     }
 
     private fun resumeEverything() {
@@ -169,6 +178,7 @@ object MobileDataGuard {
             pausedTasks.forEach { t -> try { if (t.state == 6 || (t.state == 1 && t.paused) || t.state == 3 || t.state == 5) TaskCenter.pause(t, false) } catch (_: Throwable) {} }
         } catch (_: Throwable) {}
         try { if (pausedBg && a != null) BgJobs.resumeAll(a) } catch (_: Throwable) {}
+        try { Upd.resumeForGuard() } catch (_: Throwable) {}   // (v1339)
         pausedMt = false; pausedJoy = false; pausedWeb = false; pausedBg = false; pausedTasks = emptyList()
     }
 
@@ -261,6 +271,7 @@ object MobileDataGuard {
             try { app?.let { NetGate.allowMobile(it, true) } } catch (_: Throwable) {}
             removeOverlayView()
             resumeEverything()
+            try { onAllow?.invoke() } catch (_: Throwable) {}
         }, lp())
         btns.addView(btn("⛔  خروج من البرنامج", Color.argb(40, 255, 82, 82), Color.rgb(255, 120, 120), Color.rgb(255, 82, 82)) {
             removeOverlayView()
