@@ -151,11 +151,19 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         if (pendingItems != null && st != null && st.tab == pendingTab && st.vid == null && st.q == null && st.chUrl == null) showPill(pillN)
     }
     /** دوسة على الكبسولة: القايمة تتبدّل بالجديد وترجع لفوق */
+    /** (v1336) عند تبديل القايمة: انقل لوجو كل قناة من العناصر القديمة للجديدة بنفس channelId عشان اللوجو ما يختفيش لحد ما يتجلب من الشبكة */
+    private fun carryAvatars(from: List<NpItem>, to: List<NpItem>) {
+        val m = HashMap<String, String>()
+        for (x in from) if (x.avatar.isNotBlank() && x.channelId.isNotBlank()) m[x.channelId] = x.avatar
+        if (m.isEmpty()) return
+        for (x in to) if (x.avatar.isBlank()) { val a = m[x.channelId]; if (!a.isNullOrBlank()) x.avatar = a }
+    }
     private fun applyPending() {
         val p = pendingItems; val t = pendingTab
         hidePill()
         val st = cur ?: return
         if (p == null || st.tab != t || st.vid != null) return
+        carryAvatars(st.items, p)
         st.items.clear(); st.items.addAll(p); st.pos = 0
         if (t == 1) { try { YtNotify.markSeen(p); YtNotify.markOpened(act) } catch (_: Throwable) {} }   // اللي اتعرض ما يجيش عليه عدّاد/إشعار
         animRows = true; h.postDelayed({ animRows = false }, 700L)
@@ -176,6 +184,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val items = if (tab == 0) vids.filter { it.id !in seenIds } else vids
         val newOnes = items.count { it.id !in have }
         if (newOnes < (if (tab == 0) 6 else 1)) return
+        carryAvatars(st.items, items)
         pendingItems = items; pendingTab = tab
         showPill(newOnes)
     }
@@ -2088,7 +2097,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             hd.sub.visibility = if (it.channel.isBlank()) View.GONE else View.VISIBLE
             hd.av.text = if (logged) it.title.trim().take(1).uppercase(Locale.getDefault()) else "👤"
             hd.av.background = GradientDrawable().apply { setShape(GradientDrawable.OVAL); setColor(YtSkin.avatarColor(it.title)) }
-            if (logged && it.avatar.isNotBlank()) {
+            if (it.avatar.isNotBlank()) {   // (v1336) اللوجو يظهر حتى من غير تسجيل دخول
                 hd.avImg.visibility = View.VISIBLE
                 try { Glide.with(act).load(it.avatar).circleCrop().override(ui.dp(112), ui.dp(112)).into(hd.avImg) } catch (_: Throwable) {}
             } else { hd.avImg.visibility = View.GONE; try { Glide.with(act).clear(hd.avImg) } catch (_: Throwable) {} }

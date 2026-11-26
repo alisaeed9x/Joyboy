@@ -114,6 +114,16 @@ object YtMtFeed {
     private val avCache = ConcurrentHashMap<String, String>()
     private val avBusy = ConcurrentHashMap<String, Boolean>()
 
+    // (v1336) كاش اللوجوهات ثابت على القرص (av_cache.json بيتحمّل في attach) + كاش سالب 10 دقايق: القناة اللي فشل جلب لوجوها ميتجربش تاني قبل ما تعدي المدة
+    private val avNeg = ConcurrentHashMap<String, Long>()
+    private const val AV_NEG_MS = 10L * 60 * 1000L
+    private const val AV_MAX = 1000
+    @Volatile private var avSaveAt = 0L
+    private fun avNegHit(cid: String): Boolean { val t = avNeg[cid] ?: return false; if (System.currentTimeMillis() - t > AV_NEG_MS) { avNeg.remove(cid); return false }; return true }
+    private fun avPut(cid: String, url: String) { if (cid.isBlank() || url.isBlank()) return; if (avCache.size >= AV_MAX && !avCache.containsKey(cid)) return; avCache[cid] = url; avNeg.remove(cid); saveAvCache(false) }
+    private fun loadAvCache(d: java.io.File) { try { val f = java.io.File(d, "av_cache.json"); if (!f.isFile) return; val o = org.json.JSONObject(f.readText()); val ks = o.keys(); while (ks.hasNext()) { val k = ks.next(); val v = o.optString(k); if (k.isNotBlank() && v.isNotBlank()) avCache[k] = v } } catch (_: Throwable) {} }
+    private fun saveAvCache(force: Boolean) { val d = dir ?: return; val now = System.currentTimeMillis(); if (!force && now - avSaveAt < 5000L) return; avSaveAt = now; try { val o = org.json.JSONObject(); for (e in avCache.entries) if (e.key.isNotBlank() && e.value.isNotBlank()) o.put(e.key, e.value); val tmp = java.io.File(d, "av_cache.json.tmp"); tmp.writeText(o.toString()); val dst = java.io.File(d, "av_cache.json"); if (!tmp.renameTo(dst)) { try { tmp.copyTo(dst, true); tmp.delete() } catch (_: Throwable) {} } } catch (_: Throwable) {} }
+
     /** (v1144) لوجو قناة من أي مفتاح (رابط/@handle/UC…): كاش ← خريطة اشتراكاتك ← جلب من الخدمة في خيط خلفي. cb بيتنده على خيط خلفي (الـUI يعمل runOnUiThread) */
     private val avWait = ConcurrentHashMap<String, MutableList<(String) -> Unit>>()
     fun avatarAsync(c: android.content.Context, key: String, cb: (String) -> Unit) {
@@ -143,8 +153,8 @@ object YtMtFeed {
                     val sm = YouTubeServiceManager.instance().contentService
                     var u: String? = avCache[cid]
                     if (u.isNullOrBlank()) u = try { sm.subscribedChannelAvatars?.get(cid) } catch (_: Throwable) { null }
-                    if (u.isNullOrBlank()) u = try { sm.getChannelAvatarUrl(cid) } catch (_: Throwable) { null }
-                    if (!u.isNullOrBlank()) { avCache[cid] = u; got = u }
+                    if (u.isNullOrBlank() && !avNegHit(cid)) { u = try { sm.getChannelAvatarUrl(cid) } catch (_: Throwable) { null }; if (u.isNullOrBlank()) avNeg[cid] = System.currentTimeMillis() }
+                    if (!u.isNullOrBlank()) { avPut(cid, u); got = u }
                 }
             } catch (_: Throwable) {}
             val ws = synchronized(avWait) { avWait.remove(wk) }
@@ -157,6 +167,7 @@ object YtMtFeed {
         if (items.isEmpty()) return
         val subsMap = try { YouTubeServiceManager.instance().contentService.subscribedChannelAvatars } catch (_: Throwable) { null }
         var resolved = 0
+        var anyNew = false
         for (x in items) {
             if (x.avatar.isNotBlank()) continue
             val cid = x.channelId
@@ -173,13 +184,17 @@ object YtMtFeed {
                 continue
             }
             if (resolved >= 20) continue
+            if (avNegHit(cid)) continue   // (v1336) فشل قريب: ممنوع ضرب الشبكة تاني قبل 10 دقايق
             resolved++
             val url = try { YouTubeServiceManager.instance().contentService.getChannelAvatarUrl(cid) } catch (_: Throwable) { null }
             if (!url.isNullOrBlank()) {
                 x.avatar = url
                 avCache[cid] = url
-            }
+                avNeg.remove(cid)
+                anyNew = true
+            } else avNeg[cid] = System.currentTimeMillis()
         }
+        if (anyNew) saveAvCache(true)
     }
 
     // ───────── الرئيسية ─────────
@@ -330,7 +345,7 @@ object YtMtFeed {
 
     // ───────── كاش الرئيسية على القرص (عشان تفتح فورًا) ─────────
     @Volatile private var dir: java.io.File? = null
-    fun attach(c: Context) { if (dir == null) { dir = c.applicationContext.filesDir; if (lastShown.isEmpty()) lastShown = try { Cfg.str(VIEWED_KEY, "").split('\n').filter { it.isNotBlank() }.toHashSet() } catch (_: Throwable) { emptySet() } } }
+    fun attach(c: Context) { if (dir == null) { dir = c.applicationContext.filesDir; try { dir?.let { loadAvCache(it) } } catch (_: Throwable) {}; if (lastShown.isEmpty()) lastShown = try { Cfg.str(VIEWED_KEY, "").split('\n').filter { it.isNotBlank() }.toHashSet() } catch (_: Throwable) { emptySet() } } }
     private fun saveHomeSnap(r: YtRes) { try { dir?.let { d -> YtSnapHome.save(d, r.items) } } catch (_: Throwable) {} }
     /** آخر رئيسية محفوظة من المحرك (حتى لو قديمة) — null لو مفيش */
     fun homeStale(): List<NpItem>? = try { dir?.let { YtSnapHome.load(it) } } catch (_: Throwable) { null }
