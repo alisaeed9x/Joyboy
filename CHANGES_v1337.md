@@ -18,17 +18,3 @@
 ✏️ عدّل:   app/src/main/java/com/tttt/subtitler/SongId.kt
 ```
 🔙 نسخة احتياطية قبل التعديل: `backup-v1336-run145` (للرجوع: Actions ← Rollback)
-
-
-## 🗂️ الملفات اللي اتغيّرت (أوتوماتيك)
-```
-➕ أضاف:  CHANGES_v1337.md
-✏️ عدّل:   STATUS.txt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/FastId.kt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/Lyrics.kt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/Main.kt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/MusicUi.kt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/Poster.kt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/SongId.kt
-```
-🔙 نسخة احتياطية قبل التعديل: `backup-v1336-run146` (للرجوع: Actions ← Rollback)
