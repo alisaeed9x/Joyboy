@@ -55,12 +55,12 @@ object SubSel {
 
     /** (v1353) توكن الحلقة في الاسم: S07E04 أو 7x04 ← زوج (الموسم، الحلقة) للمقارنة الصارمة (بطلب علي) */
     fun epToken(x: String): Pair<Int, Int>? {
-        val m = Regex("[sS](\d{1,3})[eE](\d{1,4})").find(x) ?: Regex("(?<!\d)(\d{1,2})x(\d{1,3})(?!\d)").find(x) ?: return null
+        val m = Regex("[sS](\\d{1,3})[eE](\\d{1,4})").find(x) ?: Regex("(?<!\\d)(\\d{1,2})x(\\d{1,3})(?!\\d)").find(x) ?: return null
         val s = m.groupValues[1].toIntOrNull() ?: return null
         val e = m.groupValues[2].toIntOrNull() ?: return null
         return s to e
     }
-    private fun normTok(x: String): String = x.lowercase().replace(Regex("[^\p{L}\p{N}]+"), "")
+    private fun normTok(x: String): String = x.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), "")
     /** (v1353) مطابقة صارمة للاختيار التلقائي الصامت: نفس اسم الفيديو (مع لاحقة لغة زي .ar) أو —لو الفيديو فيه توكن حلقة— نفس التوكن بالظبط؛ لو الفيديو مفيهوش توكن حلقة ← قاعدة الرقم الأخير القديمة (v667/v703) زي ما هي (بطلب علي) */
     fun strictAuto(videoBase: String, subBase: String): Boolean {
         val base = videoBase.lowercase(); val n = subBase.lowercase()
@@ -73,7 +73,7 @@ object SubSel {
         val ev = epToken(videoBase)
         if (ev != null) return epToken(subBase) == ev   // (v1353) فولدر مسلسلات: الحلقة بتتطابق بتوكنها — «720» في آخر الاسم كانت بتخلي كل الحلقات تلقط ترجمات بعض (بطلب علي)
         fun digits(x: String): String = buildString { for (ch in x) append(if (ch in '\u0660'..'\u0669') ('0' + (ch - '\u0660')) else if (ch in '\u06F0'..'\u06F9') ('0' + (ch - '\u06F0')) else ch) }
-        fun lastNum(x: String): Long? = Regex("\d+").findAll(digits(x)).lastOrNull()?.value?.toLongOrNull()
+        fun lastNum(x: String): Long? = Regex("\\d+").findAll(digits(x)).lastOrNull()?.value?.toLongOrNull()
         val vn = lastNum(videoBase) ?: return false
         if (lastNum(subBase) != vn) return false
         val vl = normTok(videoBase.filter { !it.isDigit() })

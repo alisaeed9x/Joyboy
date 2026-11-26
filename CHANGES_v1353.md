@@ -13,12 +13,3 @@
 ```
 ✏️ تعديل: app/src/main/java/com/tttt/subtitler/SubSelect.kt
 ```
-
-
-## 🗂️ الملفات اللي اتغيّرت (أوتوماتيك)
-```
-➕ أضاف:  CHANGES_v1353.md
-✏️ عدّل:   STATUS.txt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/SubSelect.kt
-```
-🔙 نسخة احتياطية قبل التعديل: `backup-v1352-run162` (للرجوع: Actions ← Rollback)
