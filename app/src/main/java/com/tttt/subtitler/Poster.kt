@@ -202,14 +202,6 @@ object Poster {
     }.distinct()
 
     private fun skipKey(title: String, artist: String) = "pskip_" + key(title, artist)
-    /** «البوستر غلط»: ننسى الغلاف الحالي وننزل للي بعده. بيرجّع false لو مفيش تاني */
-    fun reject(ctx: Context, title0: String, artist0: String): Boolean {
-        val title = clean(title0); val artist = artist0.trim()
-        forget(ctx, title, artist)
-        val n = (Cfg.str(skipKey(title, artist), "0").toIntOrNull() ?: 0) + 1
-        Cfg.put(skipKey(title, artist), n.toString())
-        return true
-    }
     fun resetSkip(title0: String, artist0: String) { Cfg.put(skipKey(clean(title0), artist0.trim()), "0") }
 
 
@@ -258,36 +250,5 @@ object Poster {
             none.writeText("x")
         } catch (e: Throwable) { LogStore.err("poster", e) }
         return null
-    }
-
-    /** (v269) غلاف للاختيار: الصورة + اسم الألبوم/المصدر */
-    class CoverOpt(val url: String, val label: String, val bytes: ByteArray)
-
-    /**
-     * (v269) دفعة جديدة (لحد [n]) من الأغلفة المتاحة بالترتيب (iTunes ← Deezer ← MusicBrainz ← YouTube ← Bing ← صورة المغني).
-     * [shown] بتتملي بكل رابط اتجرّب (اتعرض أو مات) عشان ما يتكررش في «خيار آخر». على خيط خلفية.
-     */
-    fun nextOptions(ctx: Context, title0: String, artist0: String, shown: MutableSet<String>, n: Int = 6): List<CoverOpt> {
-        val title = clean(title0); val artist = artist0.trim()
-        val out = ArrayList<CoverOpt>()
-        if (title.length < 2) return out
-        try {
-            for (u in urlSeq(title, artist)) {
-                if (out.size >= n) break
-                if (!shown.add(u)) continue
-                val bytes = http(u) ?: continue
-                val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: continue
-                if (!shapeOk(u, bmp)) continue
-                out.add(CoverOpt(u, labels[u].orEmpty(), bytes))
-            }
-        } catch (e: Throwable) { LogStore.err("poster-opts", e) }
-        return out
-    }
-
-    /** الغلاف اللي اليوزر اختاره: بيتحفظ مكان الغلاف المخزّن للأغنية دي */
-    fun saveChosen(ctx: Context, title0: String, artist0: String, bytes: ByteArray) {
-        val title = clean(title0); val artist = artist0.trim()
-        val k = key(title, artist)
-        try { File(dir(ctx), "$k.none").delete(); File(dir(ctx), "$k.jpg").writeBytes(bytes); resetSkip(title, artist) } catch (e: Throwable) { LogStore.err("poster-save", e) }
     }
 }

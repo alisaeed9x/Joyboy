@@ -965,7 +965,6 @@ class MainActivity : Activity() {
             music.lib.onYtPick = { n -> playYtAudio(n.id, n.title, n.channel, n.thumb) }   // (v344) بحث الموسيقى: اقتراح يوتيوب = صوت
             music.lib.onWebSearch = { q -> webSearch(q) }
             music.lib.onUniSearch = { q -> globalSearch(q) }   // (v469) D4
-            music.onYtVideo = { n, pos -> MusicEngine.pause(); playYt(n.id, n.title, false, false, pos.toLong()) }   // (v343) 🎬 كمّل كفيديو من نفس المكان (من غير ترجمة)
             music.onYtPlay = { n -> playYtAudio(n.id, n.title, n.channel, n.thumb) }   // (v340)   // (v339) ⬇ تحميل صوت يوتيوب من مشغّل الموسيقى
             music.onLoadCancel = { ytAudTok++ }                 // قفلت المشغّل وإحنا بنجيب الصوت: النتيجة المتأخرة تتجاهل
             music.onFullClosed = {                              // (v339) قفلت مشغّل صوت يوتيوب: ارجع لصفحة يوتيوب في نفس المكان

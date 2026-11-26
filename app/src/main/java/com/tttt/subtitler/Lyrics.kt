@@ -25,7 +25,7 @@ class LyricsResult(
  * القايمة بتتحفظ على الجهاز مع الأغنية، واليوزر بيختار منها من «🎼 نسخ بديلة للكلمات».
  */
 class LyrCand(val src: String, val id: String, val title: String, val artist: String,
-              val synced: String, val plain: String, val dur: Double, val score: Double) {
+              val synced: String, val plain: String, val dur: Double, val score: Double, val album: String = "") {
     fun key() = "$src:$id"
 }
 
@@ -104,7 +104,7 @@ object LyricsEngine {
         val out = ArrayList<LyrCand>()
         for (i in 0 until a.length()) {
             val x = a.optJSONObject(i) ?: continue
-            out.add(LyrCand(x.optString("s"), x.optString("i"), x.optString("t"), x.optString("a"), x.optString("sy"), x.optString("pl"), x.optDouble("d", 0.0), x.optDouble("sc", 0.0)))
+            out.add(LyrCand(x.optString("s"), x.optString("i"), x.optString("t"), x.optString("a"), x.optString("sy"), x.optString("pl"), x.optDouble("d", 0.0), x.optDouble("sc", 0.0), x.optString("al")))
         }
         out
     } catch (_: Throwable) { emptyList() }
@@ -116,7 +116,7 @@ object LyricsEngine {
         try {
             val a = JSONArray()
             for (c in list.sortedByDescending { it.score }.take(14)) a.put(JSONObject().put("s", c.src).put("i", c.id).put("t", c.title).put("a", c.artist)
-                .put("sy", c.synced).put("pl", c.plain).put("d", c.dur).put("sc", c.score))
+                .put("sy", c.synced).put("pl", c.plain).put("d", c.dur).put("sc", c.score).put("al", c.album))
             candFile(ctx, t).writeText(JSONObject().put("picked", picked).put("list", a).toString())
         } catch (_: Throwable) {}
     }
@@ -135,6 +135,7 @@ object LyricsEngine {
         save(app, t, M_FULL, res)
         lastId[key(t, M_FULL)] = c.key()
         saveCands(app, t, candidates(app, t), c.key())
+        if (c.album.isNotBlank() && SongId.albumOf(t.id).isBlank()) SongId.saveAlbum(t.id, c.album)
         return res
     }
 
@@ -183,7 +184,7 @@ object LyricsEngine {
         val title = str(o, "trackName").ifBlank { str(o, "name") }; val artist = str(o, "artistName")
         val dur = o.optDouble("duration", 0.0)
         val sc = rate(title, artist, dur, syn.isNotBlank(), x.t, x.wantT, x.wantA, x.maxDiff) ?: return null
-        return LyrCand("lrclib", o.optLong("id", 0L).toString(), title, artist, syn, plain, dur, sc)
+        return LyrCand("lrclib", o.optLong("id", 0L).toString(), title, artist, syn, plain, dur, sc, str(o, "albumName"))
     }
 
     /** سياق بحث واحد: النتايج المتجمّعة، وهل أي مصدر رد فعلًا (عشان نفرّق «مفيش نتيجة» عن «مفيش نت») */
@@ -632,6 +633,7 @@ object LyricsEngine {
         val merged = ArrayList<LyrCand>(x.found)
         for (c in candidates(app, t)) if (merged.none { it.key() == c.key() }) merged.add(c)   // النسخ اللي اتلقت قبل كده (نسخ بديلة) ما بتضيعش
         saveCands(app, t, merged, bf.key())
+        if (bf.album.isNotBlank() && SongId.albumOf(t.id).isBlank()) SongId.saveAlbum(t.id, bf.album)   // (v1337) الألبوم بيتملّى من LRCLIB مع الكلمات — البوستر والبحث بالألبوم بيستخدموه
         save(app, t, M_FULL, res); onDone(res, "")
     }
 

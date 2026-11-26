@@ -118,7 +118,6 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private val artCache = android.util.LruCache<String, Bitmap>(14)
     private val artLoading = HashSet<String>()
     private val artNone = HashSet<String>()
-    private var notifyNoPoster = false
     private var curUri: String? = null
     private var tintBmp: Bitmap? = null
     private var tintDone = false
@@ -198,17 +197,6 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private val orb = OrbView(act).apply { accent = if (Design.isMaterial() || Design.hasAccent()) Design.mint(0xFF) else if (Design.isNew()) 0xFF8B7CFF.toInt() else BLUE }   // (v1226) الجديد: نعناعي
     private val fTitle = ui.text("مفيش حاجة شغّالة", 16f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END }
     private val fArtist = ui.text("", 12f, C_DIM).apply { gravity = Gravity.CENTER; setSingleLine(); ellipsize = android.text.TextUtils.TruncateAt.END }
-    // (v294) زرار واحد بس جنب اسم الأغنية: «المعلومات غلط» ← يدوّر من الأول (الاسم والمغني والألبوم + الغلاف والكلمات). باقي الأزرار القديمة اتشالت.
-    private val wrongInfoBtn: TextView = ui.text("⚠ المعلومات غلط", 11.5f, Color.WHITE, true).apply {
-        gravity = Gravity.CENTER; setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4)); background = ui.box(0x33E5484D, 0x88E5484D.toInt(), 16)
-        visibility = View.GONE   // (v1309) بيظهر بس عند تعارض حقيقي
-        setOnClickListener { editInfoDialog() }
-    }
-    // (v301) ✏️ جنب «المعلومات غلط»: نافذة بتختار منها إيه اللي غلط (الاسم / البوستر / الكلمات) بـ checkbox وبيتصلّح اللي اخترته
-    private val editInfoBtn: TextView = ui.text("✏️", 14f, Color.WHITE, true).apply {
-        gravity = Gravity.CENTER; setPadding(ui.dp(9), ui.dp(3), ui.dp(9), ui.dp(3)); background = ui.box(0x33FFFFFF, 0x66FFFFFF, 16)
-        setOnClickListener { editInfoDialog() }
-    }
     private val idState = ui.text("", 10.5f, C_DIM).apply { gravity = Gravity.CENTER; setSingleLine(); visibility = View.GONE }
     private val bShuffle = GlyphBtn(act, "shuffle", 24)
     private val bPrev = GlyphBtn(act, "prev", 28)
@@ -218,9 +206,6 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     private var fullOn = false
     // (v339) صوت يوتيوب: المشغّل الكامل بيفتح على طول ولودينج مكان الألبوم لحد ما رابط الصوت يوصل · وزرار ⬇ تحميل الصوت
     var onYtDownload: ((NpItem) -> Unit)? = null
-    var onYtVideo: ((NpItem, Int) -> Unit)? = null   // (v343) 🎬 كمّل كفيديو (الـInt = المكان بالمللي ثانية)
-    private lateinit var ytVidBtn: TextView
-    private lateinit var ytModeBtn: TextView   // (v459) زرار عريض «مشاهدة الفيديو» بدل الأيقونة الصغيرة اللي فوق بس
     var onYtPlay: ((NpItem) -> Unit)? = null     // (v340) اختيار فيديو من لوحة «التالي» = يشتغل كصوت
     var onFullClosed: (() -> Unit)? = null       // المشغّل الكامل اتقفل (رجوع/⌄/سحب) — Main بيرجّعك للصفحة اللي جيت منها
     var onFullToggle: ((Boolean) -> Unit)? = null   // (v1309) المشغّل الكامل اتفتح/اتقفل — Main بيخفي كبسولة «فيديوهات/موسيقى» عشان متغطّيش شريط التقدّم
@@ -446,28 +431,6 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         try { act.requestPermissions(arrayOf("android.permission.RECORD_AUDIO"), 14) } catch (_: Throwable) {}
     }
 
-
-    /** تقديم/تأخير الكلمات لأغنية واحدة (بيتحفظ لكل أغنية). + = الكلمات تظهر أبكر */
-    private fun offsetDialog() {
-        val t = MusicEngine.current ?: run { quiet("شغّل أغنية الأول", 1800L); return }
-        val lbl = ui.text("", 16f, th.text, true).apply { gravity = Gravity.CENTER }
-        fun paintOff() { lyrOffId = t.id; lbl.text = String.format(java.util.Locale.US, "%+.1f ثانية", lyrOffMs / 1000.0) }
-        lyrOffId = t.id; lyrOffMs = Cfg.int("lyoff_${t.id}", 0); paintOff()
-        fun bump(ms: Int) { lyrOffMs = (lyrOffMs + ms).coerceIn(-10000, 10000); Cfg.put("lyoff_${t.id}", lyrOffMs.toString()); paintOff(); lyrIdx = -2; lyrWordKey = ""; lyricsTick() }
-        fun btn(txt: String, ms: Int) = ui.text(txt, 14f, th.text, true).apply {
-            gravity = Gravity.CENTER; background = ui.box(0x14808080, th.border, 12)
-            setOnClickListener { if (ms == 0) { lyrOffMs = 0; Cfg.put("lyoff_${t.id}", "0"); paintOff(); lyrIdx = -2; lyrWordKey = ""; lyricsTick() } else bump(ms) }
-        }
-        val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-        for ((tx, ms) in listOf("−0.5" to -500, "−0.1" to -100, "+0.1" to 100, "+0.5" to 500))
-            row.addView(btn(tx, ms), LinearLayout.LayoutParams(0, ui.dp(48), 1f).apply { setMargins(ui.dp(3), 0, ui.dp(3), 0) })
-        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(4)) }
-        col.addView(ui.noHint())
-        col.addView(lbl, LinearLayout.LayoutParams(-1, ui.dp(44)))
-        col.addView(row, LinearLayout.LayoutParams(-1, -2))
-        col.addView(btn("↺ صفّر", 0), LinearLayout.LayoutParams(-1, ui.dp(44)).apply { topMargin = ui.dp(8) })
-        GAlert(act).setTitle("⏱ تقديم / تأخير الكلمات").setView(col).setPositiveButton("تمام", null).show()
-    }
 
     /** اكتب اسم الأغنية والفنان بإيدك (لو التعرّف غلط) — بيتحفظ وبيعيد الكلمات والبوستر */
     private fun renameSong() {
@@ -839,7 +802,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
     }
     /** (v331) لسه الأغنية متعرفتش (شغّال دلوقتي أو لسه هيبدأ) — ممنوع جيميناي يولّد الكلمات والبحث بيستنى */
     private fun idPending(t: Track): Boolean {
-        if (idBusy || autoBusy.contains(t.id)) return true
+        if (autoBusy.contains(t.id)) return true
         if (!SongId.autoOn() || SongId.searched(t.id) || SongId.override(t.id) != null || SongId.verified(t.id)) return false
         if (SongId.tagsLookGood(t.title, t.artist)) return false
         return Cfg.allMainKeys().isNotEmpty()
@@ -872,12 +835,14 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         if (LyricsEngine.isRunning(t, m)) { setStatus("🎧 بتتكتب في الخلفية… استنى"); if (lyr == null) bigMsg("بتتكتب… هتظهر هنا أول ما تجهز", true); return }
         if (lyr == null) bigMsg("📝 بجيب الكلمات…", true)
         setStatus("📝 بجهّز الطلب…")
+        val albBefore = SongId.albumOf(t.id)   // (v1337) لو الألبوم اتملّى من LRCLIB أثناء الجلب بنحدّث الغلاف في الرد
         LyricsEngine.start(act, t, m, nameHint(t), retry, fresh, !idPending(t), { stage ->
             act.runOnUiThread { if (fullOn && lyrKey == ck) setStatus(stage) }
         }, { r, msg ->
             act.runOnUiThread {
                 if (act.isDestroyed || act.isFinishing) return@runOnUiThread
                 if (!fullOn || lyrKey != ck) { if (msg.isNotBlank()) errNote("🎤 " + t.title + ": " + msg); return@runOnUiThread }
+                if (SongId.albumOf(t.id) != albBefore) { forgetArt(t); ensureArt(t) }   // (v1337) الألبوم جه من LRCLIB: الغلاف يتجاب تاني باسم الألبوم
                 val c = LyricsEngine.cached(act, t, m)
                 if (msg.isNotBlank()) errNote("🎤 " + t.title + ": " + msg)
                 if (c != null && c.lines.isNotEmpty()) { showLyrics(c); setStatus(""); maybeAutoOpen(ck) }
@@ -983,16 +948,10 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         top.addView(View(act).apply { background = ui.box(0x59FFFFFF, Color.TRANSPARENT, 3) }, FrameLayout.LayoutParams(ui.dp(40), ui.dp(5), Gravity.CENTER))
         val dots = GlyphBtn(act, "dots", 24).apply { setOnClickListener { v -> menu(v) } }
         top.addView(dots, FrameLayout.LayoutParams(ui.dp(56), ui.dp(48), Gravity.END or Gravity.CENTER_VERTICAL))
-        // (v241) 🖼↻ ريفريش البوستر: بيدوّر في iTunes ثم Deezer ثم MusicBrainz، ولو الأغنية ملهاش غلاف بيجيب صورة المغني
-        val posterBtn = ui.text("🖼↻", 18f, Color.WHITE).apply { gravity = Gravity.CENTER; setOnClickListener { MusicEngine.current?.let { coverChoices(it, HashSet()) } ?: quiet("شغّل أغنية الأول", 1500L) } }
         // (v339) ⬇ تحميل الصوت — بيظهر بس لو الأغنية الحالية صوت فيديو يوتيوب
         ytDlBtn = ui.text("⬇", 20f, Color.WHITE).apply { gravity = Gravity.CENTER; visibility = View.GONE
             setOnClickListener { YtAudio.itemOf(MusicEngine.current)?.let { onYtDownload?.invoke(it) } ?: quiet("التحميل متاح لصوت يوتيوب بس", 1600L) } }
         top.addView(ytDlBtn, FrameLayout.LayoutParams(ui.dp(56), ui.dp(48), Gravity.END or Gravity.CENTER_VERTICAL).apply { marginEnd = ui.dp(112) })
-        // (v343) 🎬 تحويل صوت → فيديو: بيكمّل نفس الفيديو من نفس المكان (بيظهر لصوت يوتيوب بس)
-        ytVidBtn = ui.text("🎬", 20f, Color.WHITE).apply { gravity = Gravity.CENTER; visibility = View.GONE
-            setOnClickListener { YtAudio.itemOf(MusicEngine.current)?.let { onYtVideo?.invoke(it, MusicEngine.posMs) } } }
-        // (v811) 🎧 مصدر الصوت: سماعة التلفزيون / سماعة الموبايل (بجنب زرار الإغلاق)
         attachSwipeDown(top)
 
         liveReset(); liveStatus.visibility = View.GONE
@@ -1065,12 +1024,6 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         fullCol = col
         col.addView(top, LinearLayout.LayoutParams(-1, ui.dp(56)))
         col.addView(middle, LinearLayout.LayoutParams(-1, 0, 1f))
-        // (v459) زرار عريض ومكتوب عليه: صوت يوتيوب بيتحوّل لفيديو من نفس المكان (نفس أكشن 🎬 اللي فوق)
-        ytModeBtn = ui.text("🎬 مشاهدة الفيديو (وضع الفيديو)", 15f, Color.WHITE, true).apply {
-            gravity = Gravity.CENTER; visibility = View.GONE
-            background = ui.box(0xFF363636.toInt(), 0x55F5F0E7, 24)
-            setOnClickListener { YtAudio.itemOf(MusicEngine.current)?.let { onYtVideo?.invoke(it, MusicEngine.posMs) } }
-        }
         col.addView(ctl, LinearLayout.LayoutParams(-1, ui.dp(60)).apply { bottomMargin = ui.dp(2) })
         full.post { liftFullCtl() }
         full.addView(col, FrameLayout.LayoutParams(-1, -1))
@@ -1214,20 +1167,6 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         return s
     }
 
-    /** (v1309) بادج «المعلومات غلط» بيظهر بس لما يكون فيه تعارض حقيقي: اسم متعرّف عليه مختلف فعلًا عن تاج الملف. مفيش تاج أو مفيش تعارض = مفيش بادج */
-    private fun hasRealConflict(t: Track): Boolean {
-        val ided = SongId.override(t.id) ?: FastId.partial[t.id] ?: return false
-        val tagT = cleanTagTitle(t.title, t.uri)
-        val tagA = cleanTagArtist(if (SongId.looksLikeSite(t.artist)) "" else t.artist)
-        fun diff(a: String, b: String): Boolean {
-            if (a.isBlank() || b.isBlank()) return false
-            val x = a.lowercase().replace(Regex("\\s+"), " ").trim()
-            val y = b.lowercase().replace(Regex("\\s+"), " ").trim()
-            return x != y && !x.contains(y) && !y.contains(x)
-        }
-        return diff(tagT, ided.first) || diff(tagA, ided.second)
-    }
-
     private fun nameOf(t: Track): Pair<String, String> {
         val o = SongId.override(t.id)
         // (v298) اسم الموقع في التاج (Albumaty.Com…) مش اسم مغني — لو مفيش مغني متعرّف عليه نسيب الخانة فاضية بدل ما نعرض الموقع
@@ -1284,10 +1223,6 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
                 artLoading.remove(k)
                 if (act.isDestroyed || act.isFinishing) return@runOnUiThread
                 if (b != null) artCache.put(k, b) else if (online) artNone.add(k)
-                if (k == MusicEngine.current?.uri) {
-                    if (b == null && online && notifyNoPoster) errNote("🖼 مفيش بوستر تاني — هيفضل شكل الدايرة (🔄 ريفريش يرجّع البحث)")
-                    notifyNoPoster = false
-                }
                 refreshArts()
             }
         }.apply { isDaemon = true }.start()
@@ -1352,10 +1287,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         nowTitle.text = nm?.first ?: ""; nowSub.text = nm?.second ?: ""
         fTitle.text = nm?.first ?: "مفيش حاجة شغّالة"; fArtist.text = nm?.second ?: ""
         orb.initial = (nm?.first ?: "♪").trim().take(1).ifEmpty { "♪" }
-        wrongInfoBtn.visibility = if (t != null && hasRealConflict(t)) View.VISIBLE else View.GONE   // (v1309)
         if (::ytDlBtn.isInitialized) ytDlBtn.visibility = if (YtAudio.itemOf(t) != null) View.VISIBLE else View.GONE
-        if (::ytVidBtn.isInitialized) ytVidBtn.visibility = if (YtAudio.itemOf(t) != null) View.VISIBLE else View.GONE
-        if (::ytModeBtn.isInitialized) ytModeBtn.visibility = if (YtAudio.itemOf(t) != null) View.VISIBLE else View.GONE   // (v459)
         bPrev.visibility = if (YtAudio.itemOf(t) != null) View.GONE else View.VISIBLE   // (v341) صوت يوتيوب: مفيش «سابق»
         if (t?.uri != curUri) {
             curUri = t?.uri
@@ -1409,244 +1341,15 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         load()
     }
     // ===== (v192) التعرف على الأغنية =====
-    private var idBusy = false
     private var genBusy = false
     private val autoBusy = HashSet<Long>()
-    private fun askToken(then: () -> Unit) {
-        val et = android.widget.EditText(act).apply { hint = "توكن AudD"; setSingleLine(); setText(SongId.token()); setTextColor(th.text); setHintTextColor(th.muted) }
-        GAlert(act).setTitle("🔎 توكن خدمة التعرف (AudD)")
-            .setMessage("سجّل في audd.io وخد التوكن وحطه هنا (مرة واحدة). الخدمة ليها حد مجاني وبعده بتتحاسب، والمقطع بيتبعت لسيرفراتهم.")
-            .setView(et)
-            .setPositiveButton("حفظ") { _, _ -> if (et.text.toString().isNotBlank()) { SongId.saveToken(et.text.toString()); then() } }
-            .setNegativeButton("إلغاء", null).show()
-    }
-    /** (v269) 🔎 تعرّف: بيجيب لحد 4 مرشحين وإنت بتختار الصح (➕ خيار آخر = مرشحين جداد من غير ما يتكرروا) ثم بتختار الألبوم/الغلاف */
-    private fun identify(avoid: List<String> = emptyList()) {
-        val t = MusicEngine.current
-        if (t == null) { quiet("شغّل الأغنية الأول وبعدين دوس 🔎", 2400L); return }
-        if (idBusy) { quiet("لسه بدوّر…", 1500L); return }
-        idBusy = true; paintIdState()
-        quiet("🔎 المفاتيح بتسمع أجزاء المقطع مع بعض…", 2500L)
-        // لو الأغنية شغّالة ناخد من مكان التشغيل، وإلا من نص الأغنية
-        val start = if (MusicEngine.posMs > 5000 && avoid.isEmpty()) MusicEngine.posMs / 1000.0 else maxOf(10.0, t.durMs / 2000.0)
-        SongId.smart(act, t, start, avoid) { best, list, msg ->
-            act.runOnUiThread {
-                idBusy = false; paintIdState()
-                if (act.isDestroyed || act.isFinishing) return@runOnUiThread
-                if (list.isEmpty()) {
-                    val g = GAlert(act).setTitle("🔎 ما اتعرفتش").setMessage(msg)
-                    g.setNeutralButton("توكن AudD") { _, _ -> askToken { } }
-                    g.setNegativeButton("✏️ اكتب الاسم") { _, _ -> renameSong() }
-                    g.setPositiveButton("تمام", null).show()
-                } else if (best != null && avoid.isEmpty()) { lastOpts[t.id] = list.toMutableList(); autoApplyName(t, best) }   // (v270) اتفقوا: اسم + غلاف + كلمات أوتوماتيك
-                else if (list.first().conf >= 50) {   // (v306) مفيش اتفاق: من غير قايمة اختيارات — أحسن إجابة بتتطبّق أوتوماتيك والباقي بيتجاب لوحده (✗ لو غلط)
-                    lastOpts[t.id] = list.toMutableList(); val top = list.first()
-                    applyIdentified(t, top); paintIdState()
-                    quiet("🔎 اتعرفت: " + nameLine(top) + " (أحسن تخمين ${top.conf}% — دوس «المعلومات غلط» لو مش صح)", 4200L)
-                } else {
-                    val all = list.toMutableList(); lastOpts[t.id] = list.toMutableList()
-                    val tg = Poster.clean(t.title).trim()
-                    if (SongId.tagsLookGood(t.title, t.artist) && all.none { sameName(it, SongMatch(tg, t.artist, "")) }) all.add(0, SongMatch(tg, t.artist, "", 100))   // (v270) اسم الملف نفسه أول خيار
-                    showNameChoices(t, all)
-                }
-            }
-        }
-    }
-
-    /** (v270) اتفاق على الأغنية: نحفظ الاسم، والغلاف والكلمات بيتجابوا لوحدهم (applyIdentified)، وبنقول لليوزر ✗ لو غلط */
-    private fun autoApplyName(t: Track, m: SongMatch) {
-        applyIdentified(t, m); paintIdState()
-        quiet("✅ " + nameLine(m) + (if (m.votes > 1) "  (${m.votes} مقاطع اتفقوا)" else "") + " — بجيب الغلاف والكلمات…", 3500L)
-    }
-
-    private fun sameName(a: SongMatch, b: SongMatch) = Poster.clean(a.title).lowercase() == Poster.clean(b.title).lowercase() && a.artist.trim().lowercase() == b.artist.trim().lowercase()
     private fun nameLine(m: SongMatch) = listOf(m.title, m.artist).filter { it.isNotBlank() }.joinToString(" — ")
-
-    private fun showNameChoices(t: Track, all: MutableList<SongMatch>) {
-        if (act.isDestroyed || act.isFinishing) return
-        val arr = all.map { m -> nameLine(m) + (if (m.album.isNotBlank()) "\n💿 " + m.album else "") + (if (m.conf in 1..99) "   (${m.conf}%)" else "") + (if (m.votes > 1) "   ✔ ${m.votes} مقاطع متفقة" else "") }.toTypedArray()
-        GAlert(act).setTitle("🔎 اختار الأغنية الصح")
-            .setItems(arr) { _, i -> pickName(t, all[i]) }
-            .setPositiveButton("✏️ كتابة") { _, _ -> renameSong() }
-            .setNeutralButton("🔁 جرّب تاني") { _, _ -> moreNames(t, all) }
-            .setNegativeButton("إلغاء", null).show()
-    }
-
-    /** (v270) 🔁 جرّب تاني: ولا واحد من اللي اتعرضوا صح ← المفاتيح تسمع مقاطع تانية ومحدّش من الأسماء دي (ولا اللي اتقال إنها غلط) يرجع خالص */
-    private fun moreNames(t: Track, all: MutableList<SongMatch>) {
-        if (idBusy) { quiet("لسه بدوّر…", 1500L); return }
-        idBusy = true; paintIdState()
-        quiet("🔎 بدوّر تاني — الأسماء اللي فاتت مش هترجع…", 2500L)
-        val tried = triedNames.getOrPut(t.id) { ArrayList() }
-        all.forEach { n -> listOf(nameLine(n), n.title).filter { it.isNotBlank() && it !in tried }.forEach { tried.add(it) } }
-        val avoid = tried.toList()
-        val start = maxOf(8.0, t.durMs / 1000.0 * (0.15 + 0.6 * Math.random()))
-        SongId.smart(act, t, start, avoid) { best, list, msg ->
-            act.runOnUiThread {
-                idBusy = false; paintIdState()
-                if (act.isDestroyed || act.isFinishing) return@runOnUiThread
-                val fresh = list.filter { n -> all.none { sameName(it, n) } }
-                if (fresh.isEmpty()) {
-                    quiet("مفيش خيارات جديدة" + (if (msg.isNotBlank()) " — " + msg else "") + " · جرّب ✏️ كتابة", 3500L)
-                    showNameChoices(t, all); return@runOnUiThread
-                }
-                lastOpts[t.id] = fresh.toMutableList()
-                if (best != null) autoApplyName(t, best)
-                else if (fresh.first().conf >= 50) { val top = fresh.first(); applyIdentified(t, top); paintIdState(); quiet("🔎 اتعرفت: " + nameLine(top) + " (أحسن تخمين ${top.conf}%)", 4200L) }   // (v306)
-                else showNameChoices(t, fresh.toMutableList())
-            }
-        }
-    }
-
-    /** اليوزر اختار الاسم: بيتحفظ ومؤكَّد، وبعدها شاشة اختيار الألبوم/الغلاف */
-    private fun pickName(t: Track, m: SongMatch) {
-        applyIdentified(t, m); SongId.setVerified(t.id, true); paintIdState()
-        quiet("✅ " + nameLine(m), 2000L)
-        coverChoices(t, HashSet(), true)
-    }
-
-    // ===== (v269) اختيار الألبوم/الغلاف بإيدك =====
-    private fun decodeThumb(b: ByteArray, max: Int): Bitmap? {
-        val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(b, 0, b.size, o)
-        var ss = 1; while (o.outWidth / ss > max * 2 || o.outHeight / ss > max * 2) ss *= 2
-        return BitmapFactory.decodeByteArray(b, 0, b.size, BitmapFactory.Options().apply { inSampleSize = ss })
-    }
-
-    /** بيجيب دفعة أغلفة جديدة (من غير ما يكرّر اللي اتعرض في [shown]) ويعرضها شبكة 3 في الصف. «➕ خيار آخر» = دفعة تانية */
-    private fun coverChoices(t: Track, shown: MutableSet<String>, first: Boolean = false) {
-        if (posterBusy) { quiet("لسه بدوّر… استنى شوية", 1500L); return }
-        posterBusy = true
-        quiet(if (shown.isEmpty()) "🖼 بجيب الألبومات المتاحة…" else "🖼 بجيب صور تانية…", 2500L)
-        val n = nameOf(t)
-        Thread {
-            val fresh = try { Poster.nextOptions(act, n.first, n.second, shown, 6) } catch (_: Throwable) { emptyList<Poster.CoverOpt>() }
-            val thumbs = fresh.map { try { decodeThumb(it.bytes, 300) } catch (_: Throwable) { null } }
-            act.runOnUiThread {
-                posterBusy = false
-                if (act.isDestroyed || act.isFinishing) return@runOnUiThread
-                if (fresh.isEmpty()) {
-                    quiet(if (first) "🖼 ملقيتش ألبومات للأغنية دي" else "🖼 مفيش صور تانية", 2800L)
-                    return@runOnUiThread
-                }
-                val holder = arrayOfNulls<android.app.Dialog>(1)
-                val grid = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-                for (rowStart in fresh.indices step 3) {
-                    val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; weightSum = 3f }
-                    for (k in rowStart until rowStart + 3) {
-                        if (k >= fresh.size) { row.addView(View(act), LinearLayout.LayoutParams(0, 1, 1f)); continue }
-                        val o = fresh[k]
-                        val cell = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(6)); background = ui.box(th.surface, th.border, 12) }
-                        val iv = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; thumbs[k]?.let { setImageBitmap(it) } }
-                        cell.addView(iv, LinearLayout.LayoutParams(-1, ui.dp(104)))
-                        cell.addView(ui.text(o.label.ifBlank { "—" }, 11f, th.muted).apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; gravity = Gravity.CENTER; setPadding(0, ui.dp(3), 0, 0) }, LinearLayout.LayoutParams(-1, -2))
-                        Glass.pressable(cell)
-                        cell.setOnClickListener { holder[0]?.dismiss(); applyCover(t, o) }
-                        row.addView(cell, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3)) })
-                    }
-                    grid.addView(row, LinearLayout.LayoutParams(-1, -2))
-                }
-                holder[0] = GAlert(act).setTitle("🖼 اختار الألبوم / الغلاف الصح").setView(grid)
-                    .setNeutralButton("➕ خيار آخر") { _, _ -> coverChoices(t, shown) }
-                    .setNegativeButton("تخطي", null).show()
-            }
-        }.apply { isDaemon = true }.start()
-    }
-
-    /** الغلاف اللي اليوزر اختاره: بيتحفظ، ومش هيتغيّر لا بالمدمج ولا بالبحث التلقائي */
-    private fun applyCover(t: Track, o: Poster.CoverOpt) {
-        val n = nameOf(t)
-        Poster.saveChosen(act, n.first, n.second, o.bytes)
-        Cfg.put("noemb_${t.id}", "1")
-        val b = (try { decodeThumb(o.bytes, 900) } catch (_: Throwable) { null }) ?: return
-        try { FaceFocus.compute(b) } catch (_: Throwable) {}
-        artCache.put(t.uri, b); artNone.remove(t.uri); tintDone = false
-        refreshArts()
-        quiet("🖼 اتحدّث الغلاف ✅", 1800L)
-    }
-
-    private val triedNames = HashMap<Long, ArrayList<String>>()
-    private val lastOpts = HashMap<Long, MutableList<SongMatch>>()
-    /** ✗ على الاسم: بيعرض النتايج التانية اللي كانت طلعت (من غير الاسم الغلط)؛ ولو مفيش أو ولا واحدة صح ← «🔁 جرّب تاني» بيدوّر من جديد من غير أي اسم اتعرض */
-    private fun wrongSong() {
-        val t = MusicEngine.current ?: run { quiet("شغّل أغنية الأول", 1500L); return }
-        if (idBusy || autoBusy.contains(t.id)) { quiet("لسه بدوّر…", 1500L); return }
-        if (Cfg.allMainKeys().isEmpty()) { noKeysDialog(t); return }              // (v294) من غير مفاتيح: وصّل مفتاح أو اكتب بنفسك
-        val n = nameOf(t)
-        SongId.resetKnown(t.id); paintIdState()
-        val tried = triedNames.getOrPut(t.id) { ArrayList() }
-        listOf(n.first + " — " + n.second, n.first).filter { it.isNotBlank() && it !in tried }.forEach { tried.add(it) }
-        val bad = tried.map { it.trim().lowercase() }
-        val alts = (lastOpts[t.id] ?: mutableListOf()).filter { m -> nameLine(m).trim().lowercase() !in bad && m.title.trim().lowercase() !in bad }.toMutableList()
-        if (alts.isNotEmpty()) showNameChoices(t, alts) else identify(tried.toList())
-    }
-    /**
-     * (v301) ✏️ تعديل: تختار إيه اللي غلط — الاسم/المغني · البوستر · الكلمات — (أكتر من واحد مع بعض) وبيتصلّح اللي اخترته.
-     * الاسم: نفس مسار «المعلومات غلط» (بيعرض الاختيارات التانية أو يدوّر من الأول)، وأول ما الاسم الصح يتحدد بيجيب البوستر والكلمات تاني لوحده.
-     */
-    private fun editInfoDialog() {
-        val t = MusicEngine.current ?: run { quiet("شغّل أغنية الأول", 1500L); return }
-        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(4), ui.dp(2), ui.dp(4), ui.dp(2)) }
-        val n = nameOf(t); val al = SongId.albumOf(t.id)
-        col.addView(ui.noHint().apply { setPadding(ui.dp(4), 0, ui.dp(4), ui.dp(4)) })
-        col.addView(ui.text(n.first + (if (n.second.isNotBlank()) " — " + n.second else "") + (if (al.isNotBlank()) "\n💿 " + al else ""), 12f, th.text).apply { setPadding(ui.dp(4), 0, ui.dp(4), ui.dp(6)) })
-        fun box(label: String) = android.widget.CheckBox(act).apply {
-            text = label; textSize = 15f; setTextColor(th.text); minHeight = ui.dp(44)
-            buttonTintList = android.content.res.ColorStateList.valueOf(BLUE)
-            setPadding(ui.dp(6), 0, ui.dp(6), 0)
-        }
-        val cName = box("🎵 اسم الأغنية غلط"); val cSinger = box("🎤 المغني غلط"); val cAlbum = box("💿 الألبوم غلط"); val cPoster = box("🖼 البوستر (الكفر) غلط"); val cLyr = box("📝 الكلمات غلط")
-        for (c in listOf(cName, cSinger, cAlbum, cPoster, cLyr)) col.addView(c, LinearLayout.LayoutParams(-1, -2))
-        col.addView(ui.noHint().apply { setPadding(ui.dp(4), ui.dp(6), ui.dp(4), 0) })
-        GAlert(act).setTitle("⚠ المعلومات غلط").setView(col)
-            .setPositiveButton("🔄 Regenerate") { _, _ ->
-                if (!cName.isChecked && !cSinger.isChecked && !cAlbum.isChecked && !cPoster.isChecked && !cLyr.isChecked) { quiet("علّم على حاجة واحدة على الأقل", 1800L); return@setPositiveButton }
-                fixSelected(t, cName.isChecked, cSinger.isChecked, cAlbum.isChecked, cPoster.isChecked, cLyr.isChecked)
-            }
-            .setNeutralButton("✍ اكتب بإيدك") { _, _ -> renameSong() }
-            .setNegativeButton("إلغاء", null).show()
-    }
-    private var forceNewPoster = false
-    private fun fixSelected(t: Track, name: Boolean, singer: Boolean, album: Boolean, poster: Boolean, lyrics: Boolean) {
-        if (MusicEngine.current?.id != t.id) { quiet("الأغنية اتغيّرت — افتح التعديل تاني", 2000L); return }
-        if (idBusy || autoBusy.contains(t.id)) { quiet("لسه بدوّر…", 1500L); return }
-        if (name || singer || album) {
-            val n = nameOf(t); val al = SongId.albumOf(t.id)
-            val hasKeys = Cfg.allMainKeys().isNotEmpty()
-            val anchors = (!name && n.first.isNotBlank()) || (!singer && n.second.isNotBlank()) || (!album && al.isNotBlank())
-            if (!hasKeys) { if (name || singer) { noKeysDialog(t) } else quiet("محتاج مفتاح جيميناي — أو دوس ✍ اكتب بإيدك", 2500L); return }
-            if (!anchors) { wrongSong(); return }   // مفيش حاجة صح نبني عليها: تعرّف من الصوت من الأول
-            quiet("🔎 جيميناي بيصحّح على اللي صح…", 2500L)
-            idBusy = true; paintIdState()
-            val tried = triedNames.getOrPut(t.id) { ArrayList() }
-            listOf(n.first + " — " + n.second, n.first).filter { it.isNotBlank() && it !in tried }.forEach { tried.add(it) }
-            SongId.repair(SongMatch(n.first, n.second, al, 100, SongId.alt(t.id)?.first ?: "", SongId.alt(t.id)?.second ?: ""), name, singer, album, t.title, t.durMs / 1000.0) { m, msg ->
-                act.runOnUiThread {
-                    idBusy = false; paintIdState()
-                    if (act.isDestroyed || act.isFinishing) return@runOnUiThread
-                    if (MusicEngine.current?.id != t.id) return@runOnUiThread
-                    if (m == null) {
-                        quiet("🔎 $msg", 3000L)
-                        if (name || singer) wrongSong()   // التصحيح النصي فشل: نرجع للتعرّف من الصوت
-                        else { if (poster) wrongPoster(); if (lyrics) redoLyrics(true) }
-                        return@runOnUiThread
-                    }
-                    forceNewPoster = poster
-                    applyIdentified(t, m); SongId.setVerified(t.id, true); paintIdState()
-                    quiet("✅ اتصحّح: " + nameLine(m) + (if (m.album.isNotBlank()) " · 💿 " + m.album else ""), 3500L)
-                }
-            }
-            return
-        }
-        if (poster) wrongPoster()
-        if (lyrics) redoLyrics(true)
-    }
 
     private fun paintIdState() {
         val t = MusicEngine.current
         val s = when {
             t == null -> ""
-            idBusy || autoBusy.contains(t.id) -> FastId.stage[t.id] ?: "🔎 المفاتيح بتسمع أجزاء مختلفة من الأغنية…"
+            autoBusy.contains(t.id) -> FastId.stage[t.id] ?: "🔎 جيميناي بيسمع الأغنية…"
             SongId.verified(t.id) -> "✔ الاسم مؤكد"
             SongId.known(t.id) -> "✅ اتعرفت قبل كده"
             else -> ""
@@ -1712,84 +1415,15 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
             }
         }
     }
-    /** الطريقة القديمة (مقاطع 30ث موزّعة على كل المفاتيح + اتفاق مقطعين) — احتياطي لو التعرّف السريع فشل */
-    private fun slowIdentify(t: Track, start: Double) {
-        SongId.smart(act, t, start, emptyList()) { m, lst, msg ->
-            act.runOnUiThread {
-                autoBusy.remove(t.id)
-                if (act.isDestroyed || act.isFinishing) return@runOnUiThread
-                if (lst.isNotEmpty()) lastOpts[t.id] = lst.toMutableList()
-                fun goOn() { if (MusicEngine.current?.id == t.id) { refreshArts(); if (fullOn) loadLyrics() } }
-                if (SongId.verified(t.id)) { paintIdState(); goOn(); return@runOnUiThread }
-                var pick = m; var guess = false
-                if (pick == null) { val top = lst.firstOrNull(); if (top != null && top.conf >= 60) { pick = top; guess = true } }
-                if (pick == null) {                                                  // جيميناي معرفش: كمّل بالاسم الحالي من غير ما نطلب منك تكتب
-                    SongId.markTried(t.id); paintIdState(); goOn()
-                    if (msg.isNotBlank()) errNote("🔎 " + msg)
-                    return@runOnUiThread
-                }
-                if (MusicEngine.current?.id == t.id) applyIdentified(t, pick)
-                else {
-                    val old = nameOf(t); SongId.saveOverride(t.id, pick); SongId.markKnown(t.id); Poster.forget(act, old.first, old.second); LyricsEngine.clearAll(act, t)
-                    if (Cfg.str("noemb_${t.id}", "").isEmpty()) Cfg.put("noemb_${t.id}", "2")
-                    if (pick.tLat.isBlank() && pick.aLat.isBlank() && SongId.hasArabic(pick.title + pick.artist)) SongId.latinize(pick.title, pick.artist) { lt, la -> SongId.saveAlt(t.id, lt, la) }   // (v300)
-                }
-                paintIdState()
-                quiet("🔎 اتعرفت: " + nameLine(pick) + (if (guess) " (تخمين — دوس «المعلومات غلط» لو مش صح)" else ""), if (guess) 4200L else 3000L)
-            }
-        }
-    }
-    /** ريفريش: الاسم (لو مش محفوظ يدويًا) والغلاف والكلمات من الأول */
-    private fun refreshAll() {
-        val t = MusicEngine.current ?: return
-        if (LyricsEngine.isRunning(t, LyricsEngine.mode()) || idBusy) { quiet("لسه شغّال… استنى شوية", 1500L); return }
-        val n = nameOf(t)
-        Poster.resetSkip(n.first, n.second); Poster.forget(act, n.first, n.second); Cfg.put("noemb_${t.id}", "")
-        forgetArt(t); refreshNow()
-        LyricsEngine.clearAll(act, t); lyr = null; lyrKey = null
-        if (SongId.override(t.id) == null) {
-            idBusy = true
-            quiet("🔎 بحدّث الاسم والكلمات والبوستر…", 2500L)
-            val st0 = maxOf(10.0, t.durMs / 2000.0)
-            // (v314) التعرّف السريع (مغني ← اسم ← ألبوم) الأول، والقديم الموزّع على المفاتيح احتياطي
-            FastId.run(act, t, st0, { act.runOnUiThread { if (!act.isDestroyed && !act.isFinishing) { refreshNow() } } }) { fm, _ ->
-                act.runOnUiThread {
-                    FastId.clear(t.id)
-                    if (act.isDestroyed || act.isFinishing) { idBusy = false; return@runOnUiThread }
-                    if (fm != null) { idBusy = false; applyIdentified(t, fm, skipRepair = true); return@runOnUiThread }
-                    SongId.smart(act, t, st0, emptyList()) { m, lst, _ ->   // (v293) نفس التعرّف الموزّع على المفاتيح
-                        act.runOnUiThread {
-                            idBusy = false
-                            if (act.isDestroyed || act.isFinishing) return@runOnUiThread
-                            if (lst.isNotEmpty()) lastOpts[t.id] = lst.toMutableList()
-                            if (m != null) applyIdentified(t, m) else if (fullOn) loadLyrics(force = true)
-                        }
-                    }
-                }
-            }
-        } else if (fullOn) loadLyrics(force = true)
-    }
-    private var posterBusy = false
-    /** البوستر غلط: انسى الغلاف ده (حتى لو كان مدمج في الملف) وجرّب اللي بعده (iTunes/Deezer/MusicBrainz/صورة المغني) */
-    private fun wrongPoster() {
-        val t = MusicEngine.current ?: run { quiet("شغّل أغنية الأول", 1500L); return }
-        val n = nameOf(t)
-        Poster.reject(act, n.first, n.second); Cfg.put("noemb_${t.id}", "1")
-        notifyNoPoster = true; forgetArt(t)
-        quiet("🖼 بدوّر على بوستر تاني…", 1800L)
-        refreshNow()
-    }
-
     /** اسم جديد اتأكد: احفظه، صفّر الغلاف القديم وهات الجديد، وعيد الكلمات */
     private fun applyIdentified(t: Track, m: SongMatch, skipRepair: Boolean = false) {
         val old = nameOf(t); val oldAlbum = SongId.albumOf(t.id)
         val keys = Cfg.allMainKeys().isNotEmpty()
-        val needAlbum = m.album.isBlank() && keys && m.title.isNotBlank()
         val needLat = m.tLat.isBlank() && m.aLat.isBlank() && SongId.hasArabic(m.title + m.artist) && keys
-        if (skipRepair || (!needAlbum && !needLat)) { applyNow(t, m, old, oldAlbum); return }   // (v314) skipRepair: التعرّف السريع جاب الألبوم والصيغة الإنجليزي بالفعل
-        // (v305) الألبوم فاضي أو الاسم عربي من غير صيغة إنجليزي: الاسم يظهر على طول، وجيميناي يكمّل الألبوم/السنة/الصيغة الإنجليزي في طلب نصي واحد قبل ما نجيب الغلاف والكلمات
+        if (skipRepair || !needLat) { applyNow(t, m, old, oldAlbum); return }   // (v314) skipRepair: التعرّف السريع جاب الألبوم والصيغة الإنجليزي بالفعل · (v1337) الألبوم الفاضي بيتملّى من LRCLIB مع الكلمات بدل طلب جيميناي
+        // (v305) الاسم عربي من غير صيغة إنجليزي: الاسم يظهر على طول، وجيميناي يكمّل الصيغة الإنجليزي (والألبوم/السنة لو لقاهم) في طلب نصي واحد قبل ما نجيب الغلاف والكلمات
         SongId.saveOverride(t.id, m); refreshNow()
-        quiet("🔎 بجيب الألبوم والمعلومات الكاملة…", 2200L)
+        quiet("🔎 بجيب المعلومات الكاملة…", 2200L)
         SongId.repair(m, false, false, false, "", t.durMs / 1000.0) { r, _ ->
             act.runOnUiThread {
                 if (act.isDestroyed || act.isFinishing) return@runOnUiThread
@@ -1807,7 +1441,6 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         if (changed && Cfg.str("noemb_${t.id}", "").isEmpty()) Cfg.put("noemb_${t.id}", "2")
         Poster.resetSkip(m.title, m.artist)
         Poster.forget(act, old.first, old.second); Poster.forget(act, m.title, m.artist)
-        if (forceNewPoster) { forceNewPoster = false; Poster.reject(act, m.title, m.artist); Cfg.put("noemb_${t.id}", "1") }   // «البوستر غلط» اتعلّم: نرفض الغلاف الحالي حتى لو الاسم والألبوم ما اتغيّروش
         Poster.albumHint(m.title, m.artist, m.album)
         LyricsEngine.clearAll(act, t); lyrKey = null; lyr = null
         forgetArt(t); refreshNow()

@@ -126,6 +126,8 @@ object SongId {
     }
     /** (v294) الألبوم المحفوظ مع الاسم (من التعرّف أو من اليوزر) — "" لو مش معروف */
     fun albumOf(id: Long): String = Cfg.str("malbum_$id", "")
+    /** (v1337) حفظ الألبوم لوحده (بيتملّى من LRCLIB مع الكلمات) */
+    fun saveAlbum(id: Long, album: String) { if (album.isNotBlank()) Cfg.put("malbum_$id", album.trim()) }
 
     // ===== (v251) حالة التعرّف على الأغنية: اتعرفت قبل كده؟ / اليوزر أكّد الاسم؟ =====
     /** "1" = اتعرفت (تلقائي أو يدوي) · "t" = جيميناي سمعها ومش متأكد (ما نعيدش تلقائي) · "" = لسه ما اتدوّرش عليها */
@@ -163,15 +165,6 @@ object SongId {
         if (artist.trim().lowercase() == title.trim().lowercase()) return false   // (v314) بعض المواقع بتكتب نفس الاسم في العنوان والفنان
         if (t.all { it.isDigit() || it == ' ' || it == '-' || it == '.' }) return false
         return !Regex("^(track|audio|aud|vid|video|record(ing)?|new recording|voice|whatsapp|untitled|unknown|مقطع|تسجيل)[ \\-]*\\d*").containsMatchIn(t)
-    }
-
-    /**
-     * (v193) التعرف التلقائي: لو فيه توكن AudD بنجرّبه الأول؛ ولو مفيش توكن (أو ما اتعرفتش، أو اليوزر قال إن الاسم غلط)
-     * بنبعت المقطع لجيميناي يقول اسم الأغنية والفنان. [avoid] = أسماء اتقال إنها غلط ("العنوان — الفنان").
-     */
-    fun auto(ctx: Context, t: Track, startSec: Double, avoid: List<String>, onDone: (SongMatch?, String) -> Unit) {
-        if (token().isEmpty() || avoid.isNotEmpty()) { gemini(ctx, t, startSec, avoid, onDone); return }
-        recognize(ctx, t, startSec) { m, msg -> if (m != null) onDone(m, msg) else gemini(ctx, t, startSec, avoid) { m2, msg2 -> onDone(m2, if (m2 == null) msg2.ifBlank { msg } else "") } }
     }
 
     /** (v267) جيميناي بيسمع جزء كبير (~3 دقايق) من المسار بدل 25 ثانية — كلمات أكتر = اسم وفنان أدق */
@@ -281,106 +274,6 @@ object SongId {
     }
 
 
-    // ===== (v270) تعرّف أوتوماتيك: الـ3 دقايق بتتقسم على المفاتيح بالتوازي، ولو مقطعين اتفقوا = الأغنية الصح =====
-    private fun nk(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
-    private fun sameTitle(a: SongMatch, b: SongMatch): Boolean {
-        val x = nk(a.tLat.ifBlank { a.title }); val y = nk(b.tLat.ifBlank { b.title })
-        if (x.isNotEmpty() && x == y) return true
-        if (nk(a.title) == nk(b.title) && nk(a.title).isNotEmpty()) return true
-        // (v306) عربي عند واحد وإنجليزي عند التاني: نقارن الصيغة اللاتينية بتاعة كل واحد بالأصل التاني
-        if (a.tLat.isNotBlank() && nk(a.tLat) == nk(b.title) && nk(b.title).isNotEmpty()) return true
-        if (b.tLat.isNotBlank() && nk(b.tLat) == nk(a.title) && nk(a.title).isNotEmpty()) return true
-        return ArNorm.sim(a.tLat.ifBlank { a.title }, b.tLat.ifBlank { b.title }) >= 0.85 || ArNorm.sim(a.title, b.title) >= 0.85
-    }
-    private fun sameArtist(a: SongMatch, b: SongMatch): Boolean {
-        if (a.artist.isBlank() || b.artist.isBlank()) return true   // فنان ناقص مايمنعش الاتفاق على الاسم
-        val x = nk(a.aLat.ifBlank { a.artist }); val y = nk(b.aLat.ifBlank { b.artist })
-        if (x == y || (x.length >= 4 && y.length >= 4 && (x.contains(y) || y.contains(x)))) return true
-        return ArNorm.sim(a.aLat.ifBlank { a.artist }, b.aLat.ifBlank { b.artist }) >= 0.7 || ArNorm.sim(a.artist, b.artist) >= 0.7
-    }
-
-    /**
-     * بيقسم النافذة الكبيرة (~3د) على عدد المفاتيح (كل مفتاح ياخد مقطع ~3د÷العدد) ويبعتهم في نفس الوقت.
-     * بعدها بيجمّع الإجابات: نفس اسم الأغنية + نفس المغني (حتى لو واحد عربي والتاني إنجليزي) = اتفاق.
-     * onDone(الأصح لو اتنين اتفقوا أو واحد واثق جدًا وإلا null، كل الخيارات مرتبة، رسالة خطأ). على خيط خلفية.
-     */
-    fun smart(ctx: Context, t: Track, startSec: Double, avoid: List<String>, onDone: (SongMatch?, List<SongMatch>, String) -> Unit) {
-        val app = ctx.applicationContext
-        Thread {
-            try {
-                val keys = Cfg.allMainKeys()
-                if (keys.isEmpty()) { onDone(null, emptyList(), "مفيش مفتاح Gemini — ضيف واحد"); return@Thread }
-                val n = keys.size.coerceIn(1, 6)
-                val src = YtAudio.src(app, t)
-                val slices = ArrayList<WavChunk>()
-                try {
-                    val total = src.durationSec().takeIf { it > 0 } ?: (t.durMs / 1000.0)
-                    // (v295: كل مقطع 30ث بالظبط أو أقل) (v293) كل مفتاح ياخد مقطع مختلف موزّع على الأغنية كلها بدل ما يسمعوا 3 دقايق ورا بعض:
-                    // مفتاح واحد = ~60ث حوالين مكان التشغيل · 6 مفاتيح = 6 مقاطع × 30ث من أماكن مختلفة (مقدمة · مقاطع · كورس)
-                    val len = BIG_SEC.coerceAtMost(total.coerceAtLeast(1.0))
-                    fun one(a: Double): WavChunk? {
-                        val a0 = a.coerceIn(0.0, (total - len).coerceAtLeast(0.0)); val b0 = minOf(a0 + len, total.coerceAtLeast(a0 + 1))
-                        if (b0 - a0 < 4.0) return null
-                        val w = try { src.wav(a0, b0) } catch (_: Throwable) { null }
-                        return if (w != null && !w.silent) w else null
-                    }
-                    fun spread(): List<WavChunk> {
-                        if (n == 1 || total <= len * n) return emptyList()
-                        val from = total * 0.06; val span = (total * 0.94 - len - from).coerceAtLeast(0.0)
-                        return (0 until n).mapNotNull { i -> one(from + span * i / (n - 1)) }
-                    }
-                    fun contiguous(w0: Pair<Double, Double>): List<WavChunk> {
-                        // أغنية قصيرة: مقاطع متجاورة مختلفة، كل واحد ≤30ث (عدد المقاطع = اللي الأغنية تسمح بيه، بحد أقصى عدد المفاتيح)
-                        val out = ArrayList<WavChunk>()
-                        val cnt = ((total / len).toInt()).coerceIn(1, n)
-                        for (i in 0 until cnt) {
-                            val a = (w0.first + i * len).coerceAtMost((total - 4.0).coerceAtLeast(0.0)); val b = minOf(a + len, total)
-                            if (b - a < 4.0) continue
-                            val w = try { src.wav(a, b) } catch (_: Throwable) { null }
-                            if (w != null && !w.silent) out.add(w)
-                        }
-                        return out
-                    }
-                    if (n == 1) { one(startSec - len / 2)?.let { slices.add(it) } }
-                    else slices.addAll(spread().ifEmpty { contiguous(bigWindow(total, startSec)) })
-                    if (slices.isEmpty()) slices.addAll(contiguous(bigWindow(total, 0.0)))   // كله صامت/قصير: الطريقة القديمة من أول المسار
-                } finally { try { src.close() } catch (_: Throwable) {} }
-                if (slices.isEmpty()) { onDone(null, emptyList(), "المقطع ده صامت — شغّل الأغنية لحد جزء فيه صوت وجرّب تاني"); return@Thread }
-
-                val answers = java.util.Collections.synchronizedList(ArrayList<SongMatch>())
-                val errs = java.util.Collections.synchronizedList(ArrayList<String>())
-                val latch = java.util.concurrent.CountDownLatch(slices.size)
-                slices.forEachIndexed { i, w ->
-                    Thread {
-                        try {
-                            val rot = keys.drop(i % keys.size) + keys.take(i % keys.size)   // كل مقطع يبدأ بمفتاح مختلف وبعدها يجرّب اللي بعده لو وقع
-                            val (list, e) = askList(rot, w.bytes, w.durSec, t.title, t.artist, avoid, false, 2, false)
-                            if (e.isNotEmpty()) errs.add(e)
-                            list.firstOrNull { it.conf >= 40 }?.let { answers.add(it) }
-                        } catch (e: Throwable) { LogStore.err("songid-smart", e) } finally { latch.countDown() }
-                    }.apply { isDaemon = true }.start()
-                }
-                latch.await(200, java.util.concurrent.TimeUnit.SECONDS)
-
-                val bad = avoid.map { it.trim().lowercase() }
-                val good = ArrayList(answers).filter { m -> val a = (m.title + " — " + m.artist).trim().lowercase(); a !in bad && m.title.trim().lowercase() !in bad }
-                // تجميع الاتفاقات
-                val groups = ArrayList<ArrayList<SongMatch>>()
-                for (m in good) { val g = groups.firstOrNull { sameTitle(it[0], m) && sameArtist(it[0], m) }; if (g != null) g.add(m) else groups.add(arrayListOf(m)) }
-                val reps = groups.map { g ->
-                    val b = g.maxByOrNull { it.conf }!!
-                    // لو أحسن إجابة مالهاش ألبوم وغيرها له، ناخده
-                    val alb = b.album.ifBlank { g.firstOrNull { it.album.isNotBlank() }?.album ?: "" }
-                    SongMatch(b.title, b.artist.ifBlank { g.firstOrNull { it.artist.isNotBlank() }?.artist ?: "" }, alb, b.conf, b.tLat, b.aLat, g.size)
-                }.sortedWith(compareByDescending<SongMatch> { it.votes }.thenByDescending { it.conf })
-                val top = reps.firstOrNull()
-                val sure = top != null && (top.votes >= 2 || (slices.size == 1 && good.size == 1 && top.conf >= 85))   // لازم مقطعين يتفقوا (إلا لو مفتاح واحد بس وواثق جدًا) — الغلط أسوأ من عدم التغيير
-                if (reps.isEmpty()) onDone(null, emptyList(), errs.firstOrNull()?.let { "جيميناي ما ردّش: $it" } ?: (UNSURE + " — جرّب مقطع تاني أو اكتب الاسم بإيدك"))
-                else onDone(if (sure) top else null, reps, "")
-            } catch (e: Throwable) { LogStore.err("songid-smart", e); onDone(null, emptyList(), "فشل: " + (e.message ?: "")) }
-        }.apply { isDaemon = true }.start()
-    }
-
     /** مقطع كبير حوالين startSec، وبيجرّب أول المسار لو طلع صامت. null لو مفيش صوت */
     private fun loadWindow(app: Context, t: Track, startSec: Double): WavChunk? {
         val src = YtAudio.src(app, t)
@@ -394,36 +287,6 @@ object SongId {
     }
 
 
-    /** على خيط خلفية. startSec = من أنهي ثانية ناخد المقطع. onDone(نتيجة أو null، رسالة خطأ/عدم تطابق) */
-    fun recognize(ctx: Context, t: Track, startSec: Double, onDone: (SongMatch?, String) -> Unit) {
-        val app = ctx.applicationContext
-        val tk = token()
-        if (tk.isEmpty()) { onDone(null, "محتاج توكن AudD"); return }
-        Thread {
-            try {
-                val src = YtAudio.src(app, t)
-                val total = src.durationSec().takeIf { it > 0 } ?: (t.durMs / 1000.0)
-                val a = startSec.coerceIn(0.0, (total - CLIP_SEC).coerceAtLeast(0.0))
-                val w = try { src.wav(a, minOf(a + CLIP_SEC, total.coerceAtLeast(a + 1))) } catch (_: Throwable) { null }
-                try { src.close() } catch (_: Throwable) {}
-                if (w == null || w.silent) { onDone(null, "المقطع ده صامت — شغّل الأغنية لحد جزء فيه صوت وجرّب تاني"); return@Thread }
-                val pk = AudioEnc.pack(w.bytes)
-                val ext = if (pk.mime.contains("wav")) "wav" else "m4a"
-                val body = multipart(tk, pk.bytes, "clip.$ext", pk.mime)
-                val c = URL(ENDPOINT).openConnection() as HttpURLConnection
-                try {
-                    c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 15000; c.readTimeout = 45000
-                    c.setRequestProperty("Content-Type", "multipart/form-data; boundary=$B")
-                    c.outputStream.use { it.write(body) }
-                    val code = c.responseCode
-                    val txt = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
-                    parse(txt, code, onDone)
-                } finally { c.disconnect() }
-            } catch (e: Throwable) { LogStore.err("songid", e); onDone(null, "فشل الاتصال: " + (e.message ?: "")) }
-        }.apply { isDaemon = true }.start()
-    }
-
-    private const val B = "----SubtitlerBoundary7MA4YWxk"
     private fun multipart(token: String, data: ByteArray, name: String, mime: String): ByteArray {
         val o = java.io.ByteArrayOutputStream()
         fun s(x: String) = o.write(x.toByteArray(Charsets.UTF_8))
