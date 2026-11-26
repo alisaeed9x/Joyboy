@@ -71,6 +71,10 @@ object YtAccount {
         }.also { it.isDaemon = true; it.start() }
     }
     fun lastSyncAt(): Long = sp?.getLong("sync_at", 0L) ?: 0L
+    /** (v1354) هل فيه مزامنة اشتراكات شغالة دلوقتي (الواجهة بتستناها قبل ما تقول «مفيش جديد» — بطلب علي) */
+    fun syncingNow(): Boolean = syncing
+    /** (v1354) عدد القنوات الجديدة في آخر مزامنة خلصت (-1 = مفيش مزامنة مسجّلة) */
+    fun lastSyncAdded(): Int = sp?.getInt("sync_added", -1) ?: -1
     fun chanCount(): Int = sp?.getInt("chan_n", 0) ?: 0
 
     // ───────── تسجيل الدخول / الخروج (بالكود) ─────────
@@ -258,8 +262,18 @@ object YtAccount {
         val subs = YtStore.read(YtStore.SUBS); var added = 0
         for (c in chans) if (subs.none { sameChan(it.channelUrl, c.channelUrl) }) { subs.add(c); added++ }
         YtStore.write(YtStore.SUBS, subs)
-        sp?.edit()?.putLong("sync_at", System.currentTimeMillis())?.putInt("chan_n", chans.size)?.apply()
+        sp?.edit()?.putLong("sync_at", System.currentTimeMillis())?.putInt("chan_n", chans.size)?.putInt("sync_added", added)?.apply()
         return added
+    }
+    /** (v1354) مزامنة محروسة لزرار «تحديث»: لو فيه مزامنة شغالة نستنى نهايتها ونرجّع ناتجها الحقيقي بدل ما نشغّل مزامنة تانية على بعض ويطلع توست «0 قناة جديدة» قبل ما الشغل يخلص (بطلب علي) */
+    fun syncSubsGuarded(): Int {
+        if (syncing) {
+            val t0 = System.currentTimeMillis()
+            while (syncing && System.currentTimeMillis() - t0 < 120_000L) try { Thread.sleep(200) } catch (_: InterruptedException) { break }
+            return lastSyncAdded().coerceAtLeast(0)
+        }
+        syncing = true
+        try { return syncSubs() } finally { syncing = false }
     }
 
     // ───────── أفعال على حسابك: اشتراك · لايك · تعليق ─────────

@@ -1142,7 +1142,9 @@ class MainActivity : Activity() {
             else if (t0 == "settings") frame.post { settingsShow?.invoke(null) }
             else if (t0 == null && b == null && !fromTv && intent?.getStringExtra("reopen_tab") == null && (intent?.action == null || intent?.action == Intent.ACTION_MAIN) && NavCustom.startPage().isNotEmpty() && !DeviceUi.isTv(this)) {   // (v1273) صفحة البداية المختارة
                 val sp = NavCustom.startPage()
-                frame.post { try { when (sp) {
+                frame.post { try {
+                    // (v1354) مفيش نت وقت التشغيل وصفحة البداية محتاجة نت (يوتيوب/المتصفح): افتح تبويب الفيديوهات بدل شاشة «مفيش اتصال» (بطلب علي)
+                    if ((sp == "browser" || sp.startsWith("yt_")) && !netUp()) showTabFn(0) else when (sp) {
                     "browser" -> { save(); startActivity(TabNav.front(Intent(this, BrowserActivity::class.java))) }
                     "music" -> showTabFn(1)
                     "settings" -> settingsShow?.invoke(null)
@@ -1160,6 +1162,12 @@ class MainActivity : Activity() {
         // (v727) «وضع الواجهة» القديم اتشال من الموبايل: نرجّعه للأصلي من غير مزامنة   // (v568) مزامنة الإعدادات للتلفزيون من أي شاشة
         frame.post { handleLinkIntent(intent) }; frame.post { handleExternal(intent) }; frame.post { handleClipBubbleIntent(intent) }
     }
+    /** (v1354) هل فيه اتصال إنترنت فعّال دلوقتي (شك = نعتبره شغّال زي الأول) */
+    private fun netUp(): Boolean = try {
+        val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+        val caps = cm?.getNetworkCapabilities(cm.activeNetwork)
+        caps != null && caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    } catch (_: Throwable) { true }
     /** (v345) المرحلة 1 «كتلة واحدة»: أي لينك جاي من برّه (مشاركة أو فتح). لينك يوتيوب ← قايمة «افتحه إزاي؟»، غير كده ← زي زمان */
     private fun ytIdOf(u: String): String? = Regex("(?:youtu\\.be/|youtube\\.com/(?:watch\\?(?:[^\\s#]*&)?v=|shorts/|live/|embed/))([A-Za-z0-9_-]{11})").find(u)?.groupValues?.get(1)
     /** (v729) أزرار ويدجت اللينكات العايمة (LinkWatchService): نفس أزرار دايرة الكليبورد اللي جوه البرنامج، بس جاية من فوق أي تطبيق */

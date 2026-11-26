@@ -4084,6 +4084,43 @@ open class PlayerActivity : Activity(), Host {
             col.addView(r2, LinearLayout.LayoutParams(-1, -2))
             col.addView(shNote("بيستهلك طلبات جيميناي أكتر (باتش واحد = طلبين + سماعات قصيرة للخلافات). محتاج مفتاحين على الأقل."))
         }
+        // (v1354) بند من مراجعة الإعدادات المتقدمة (بطلب علي): صفحة الدبلجة — سلايدر جودة الصوت بوصف حي + صوت الفيديو الأصلي وقت الدبلجة (كان من غير واجهة)
+        fun dubSection() {
+            col.addView(shHead("🎙 جودة صوت الدبلجة", "حرّك السلايدر والوصف بيتغيّر معاك · بتتطبّق من أول قطعة دبلجة جديدة"))
+            val qDesc = ui.text("", 11.5f, 0xFF9AA0A6.toInt()).apply { setPadding(ui.dp(10), ui.dp(2), ui.dp(10), ui.dp(4)) }
+            fun qTxt(q: Int) = when (q) {
+                0 -> "WAV أصلية — أعلى جودة من صوت جيميناي، بس استهلاك نت وتخزين عالي"
+                1 -> "AAC متوسطة — جودة قريبة من الأصلية باستهلاك ومساحة أقل"
+                else -> "AAC صغيرة أوي — أقل استهلاك ممكن، والجودة أقل بس الكلام واضح"
+            }
+            val qSb = SeekBar(this).apply {
+                max = 2; progress = Dub.quality()
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(sb: SeekBar?, pr: Int, fromUser: Boolean) { qDesc.text = qTxt(pr); if (fromUser) Cfg.put("dub_q", pr.toString()) }
+                    override fun onStartTrackingTouch(sb: SeekBar?) {}
+                    override fun onStopTrackingTouch(sb: SeekBar?) {}
+                })
+            }
+            qDesc.text = qTxt(Dub.quality())
+            val qEnds = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
+            qEnds.addView(ui.text("WAV", 11.5f, 0xFF9AA0A6.toInt()), LinearLayout.LayoutParams(0, -2, 1f))
+            qEnds.addView(ui.text("AAC", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
+            qEnds.addView(ui.text("AAC صغير", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.END }, LinearLayout.LayoutParams(0, -2, 1f))
+            col.addView(qSb, LinearLayout.LayoutParams(-1, -2)); col.addView(qEnds, LinearLayout.LayoutParams(-1, -2)); col.addView(qDesc)
+            col.addView(shHead("🔊 صوت الفيديو الأصلي وقت الدبلجة", "الدبلجة بتوطّي صوت الفيديو تحت الكلام — قدّام للتخفيف أكتر"))
+            val vDesc = ui.text("", 11.5f, 0xFF9AA0A6.toInt()).apply { setPadding(ui.dp(10), ui.dp(2), ui.dp(10), ui.dp(4)) }
+            val vSb = SeekBar(this).apply {
+                max = 100; progress = Cfg.int("dub_orig_vol", 12).coerceIn(0, 100)
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(sb: SeekBar?, pr: Int, fromUser: Boolean) { vDesc.text = "صوت الأصلي: " + pr + "%" + (if (pr == 0) " (صامت خالص)" else if (pr <= 15) " (همس تحت الدبلجة)" else if (pr >= 60) " (واضح جنب الدبلجة)" else ""); if (fromUser) Cfg.put("dub_orig_vol", pr.toString()) }
+                    override fun onStartTrackingTouch(sb: SeekBar?) {}
+                    override fun onStopTrackingTouch(sb: SeekBar?) {}
+                })
+            }
+            vDesc.text = "صوت الأصلي: " + Cfg.int("dub_orig_vol", 12).coerceIn(0, 100) + "%"
+            col.addView(vSb, LinearLayout.LayoutParams(-1, -2)); col.addView(vDesc)
+            col.addView(shNote("الدبلجة دلوقتي بجيميناي TTS على مفاتيحك (مش Edge): صوت لكل شخصية حسب جنسها، ونبرة المشاعر من الترجمة، والجمل بتتنطق بالتوازي عشان تمشي لايف ورا الترجمة."))
+        }
         fun keysSection() {
             col.addView(shHead("🔑 مفاتيح جيميناي", "$keysN مفتاح" + (if (mk == "fgem") " · كل مفتاح بيلف على كل الموديلات · ٧٥٪ بتنسخ و٢٥٪ بتترجم بالسياق" else if (mk == "gem") " · ٧٥٪ بتنسخ و٢٥٪ بتترجم بالسياق" else "")))
             col.addView(shRow("➕ ضيف مفتاح جيميناي") {
@@ -4176,6 +4213,7 @@ open class PlayerActivity : Activity(), Host {
                 "txg" -> { hAudio(); hKeys() }
                 else -> { hLang(); hModel() }
             }
+            col.addView(shRow("🎙 الدبلجة", Dub.qLabel() + " · صوت الأصلي " + Cfg.int("dub_orig_vol", 12).coerceIn(0, 100) + "%", true) { go("dub") })   // (v1354) من مراجعة المتقدم (بطلب علي)
         } else {
             // ---- صفحة قسم واحد ----
             col.addView(shRow("→ رجوع للإعدادات") { go(null) })
@@ -4184,6 +4222,7 @@ open class PlayerActivity : Activity(), Host {
                 "model" -> modelSection()
                 "tr" -> translatorSection()
                 "audio" -> audioSection()
+                "dub" -> dubSection()
                 "keys" -> keysSection()
                 "free" -> freeSection()
             }
@@ -6506,7 +6545,7 @@ open class PlayerActivity : Activity(), Host {
         Notice.show(this, "⏳ بجيب الموديلات…", 2300L)
         Thread {
             try {
-                val rows = Api.listModels(k).filter { !Models.JUNK.containsMatchIn(it.id) }   // (v1326) موديلات التفريغ/النص بس — من غير صور/صوت/live/embed زي nano banana
+                val rows = Api.listModels(k).filter { Models.KEEP.containsMatchIn(it.id) && !Models.JUNK.containsMatchIn(it.id) && !Models.JUNK.containsMatchIn(it.display) }   // (v1354) قايمة الترجمة: فلاش/فلاش-لايت/أومني/برو بس (بطلب علي) — من غير صور/TTS/live/embed
                 val fresh = ModelWatch.candidates(rows.map { it.id }).toSet()
                 val sorted = rows.sortedWith(compareBy({ it.id !in fresh }, { !it.id.startsWith("gemini") }, { it.id }))
                 runOnUiThread {

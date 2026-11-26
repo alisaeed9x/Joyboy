@@ -68,10 +68,10 @@ object NavCustom {
         } catch (e: Throwable) { LogStore.err("NavCustom:open", e) }
     }
 
-    private val START_NAMES = listOf("يوتيوب (الرئيسية) - الافتراضي", "اشتراكات يوتيوب", "يوتيوب (أنا)", "الفيديوهات", "المتصفح", "الموسيقى", "الإعدادات")
+    private val START_NAMES = listOf("يوتيوب (الرئيسية)", "اشتراكات يوتيوب - الافتراضي", "يوتيوب (أنا)", "الفيديوهات", "المتصفح", "الموسيقى", "الإعدادات")
     private val START_VALS = listOf("yt_home", "yt_subs", "yt_me", "videos", "browser", "music", "settings")
-    /** (v1274) الافتراضي: يوتيوب الرئيسية */
-    fun startPage(): String = try { Cfg.str(K_START, "").ifEmpty { "yt_home" } } catch (_: Throwable) { "yt_home" }
+    /** (v1274/v1354) الافتراضي: اشتراكات يوتيوب (بتفتح أسرع من الرئيسية — بطلب علي) */
+    fun startPage(): String = try { Cfg.str(K_START, "").ifEmpty { "yt_subs" } } catch (_: Throwable) { "yt_subs" }
 
     /** catalog: (مفتاح البلاطة، إيموجي، اسم) لكل بلاطات «المزيد» الأصلية */
     fun views(act: Activity, ui: Ui, th: Theme, catalog: List<Triple<String, String, String>>): List<View> {

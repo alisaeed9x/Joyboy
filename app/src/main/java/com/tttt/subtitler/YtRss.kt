@@ -234,10 +234,14 @@ object YtRss {
     /** (v354) يحدّث الكاش في الخلفية (القنوات المنتهية بس) من غير ما يعطّل الشاشة — الزيارة الجاية تلاقي فيد جديد */
     /** (v407) بيتنده (من خيط خلفي) لما التحديث الخلفي يخلص — تبويب الاشتراكات بيقارن ويظهر كبسولة «فيديوهات جديدة» */
     @Volatile var onFeed: ((YtRes) -> Unit)? = null
+    /** (v1354) تحديث خلفي شغال دلوقتي (الواجهة بتستناه قبل إعلان «مفيش فيديوهات» — بطلب علي) */
+    @Volatile var refreshingNow = false
     fun refreshAsync(subs: List<NpItem>) {
+        refreshingNow = true
         Thread {
             var r: YtRes? = null
             try { r = feed(subs, false, false) } catch (_: Throwable) {}
+            finally { refreshingNow = false }
             try { onFeed?.invoke(r ?: YtRes(emptyList(), null)) } catch (_: Throwable) {}
         }.apply { isDaemon = true; start() }
     }

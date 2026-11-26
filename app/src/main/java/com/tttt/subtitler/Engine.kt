@@ -50,6 +50,8 @@ class Engine(
         const val TR_ROUNDS = 4          // (v210) جولات إعادة الجمل الناقصة قبل ما الباتش يرجع كطلب كامل (صوت ← ترجمة)
     }
 
+    @Volatile private var engineStartMs = 0L   // (v1354) بداية الإنجن — للوج «أول باتش جه بعد قد إيه من الضغطة» (بطلب علي: الباتشات كانت بتقعد قبل ما تبدأ)
+    @Volatile private var firstReqLogged = false
     private val lock = Any()
     /** المشغّل بيحمّل الترجمة المحفوظة في الخلفية: لحد ما يخلص ممنوع أي حفظ (عشان مانكتبش حالة فاضية فوق الترجمة المحفوظة) */
     @Volatile var persistBlocked = false
@@ -1009,6 +1011,7 @@ class Engine(
         fastLatched = try { Cfg.bool("fastmode", false) } catch (_: Throwable) { false }; rampAllLatched = rampAllWanted(); rampChunk = -1; fastLight.clear(); lightRetry.clear()   // (v1068) الوضع السريع بيتأخد من الإعداد وقت بداية الترجمة (مش وقت فتح المشغّل) — عشان صف «⚡ سريع» في قايمة جيميناي يشتغل على طول
         Api.onSlow = { m -> try { host.status(m) } catch (_: Throwable) {} }   // (v468) مؤشر «باتش بيحاول» في شريط الحالة
         NetWait.reset()
+        engineStartMs = System.currentTimeMillis()   // (v1354) قياس زمن أول باتش من ضغطة الزرار
         val netSink = object : NetWait.Sink {   // (v1101) إشعار واحد لما النت يقع وواحد لما يرجع
             override fun netDown() { host.log("📵 النت واقع — الترجمة واقفة (مفيش فشل ولا تكرار)"); host.notice("📵 النت واقع — الترجمة واقفة وهتكمّل لوحدها لما يرجع") }
             override fun netUp(downMs: Long) { host.log("✅ النت رجع بعد ${downMs / 1000}ث — بكمّل الترجمة"); host.notice("✅ النت رجع — بكمّل الترجمة") ; host.status("✅ النت رجع — بكمّل الترجمة") }
@@ -1104,7 +1107,7 @@ class Engine(
                 if (next < 0 && translateTick(inflight.isEmpty())) { nap(100); continue }   // (v210) مفيش ترانسكريبشن جاي: ابعت اللي اتجمّع للترجمة مهما كان عدده
                 if (next >= 0) {
                     // أول مقطع لوحده (عشان نعرف لغة الفيديو ونختار القالب الصح)، وبعدين بالتوازي — إلا الوضع 2+ (برومبت إنجليزي ثابت: مفيش قالب يتختار)
-                    if (activeInflight() >= cap || (activeMode < KeyMode.ALL_PARALLEL && !anyApplied && inflight.isNotEmpty())) { gapTick(); nap(150); continue }   // (v209) الوضع 2+: كل المفاتيح بالتوازي من الأول من غير ما نستنى أول باتش
+                    if (activeInflight() >= cap || (activeMode < KeyMode.ALL_PARALLEL && !anyApplied && !detDone && inflight.isNotEmpty())) { gapTick(); nap(150); continue }   // (v209) الوضع 2+: كل المفاتيح بالتوازي من الأول · (v1354) وفي كل الأوضاع: أول ما لغة الفيديو تتحدد (detDone) الباتشات كلها بتتبعت بالتوازي — مفيش استنى لحد أول باتش يتطبّق بالكامل (بطلب علي: زرار الباتش كان بيفتح مفتاح واحد ويقعد)
                     dispatch(next, ex); continue
                 }
                 if (inflight.isEmpty() && retryGaps()) continue
@@ -1336,7 +1339,11 @@ class Engine(
 
     private class Prep(val w: WavChunk, val rawStart: Double, val rawEnd: Double)
 
-    private fun translateChunk(i: Int) { prepare(i)?.let { send(i, it) } }
+    private fun translateChunk(i: Int) {
+        val pr = prepare(i) ?: return
+        if (!firstReqLogged && engineStartMs > 0) { firstReqLogged = true; host.log("⏱ أول طلب جيميناي اتبعت بعد ${System.currentTimeMillis() - engineStartMs}ms من ضغطة الزرار") }   // (v1354)
+        send(i, pr)
+    }
 
     /**
      * (v1065) خطوات الباتش الأول في الوضع السريع: 10ث ← 20ث ← 30ث ← الباقي. أول خطوة بتبدأ من مكان التشغيل (مش من أول الباتش)،
@@ -1375,6 +1382,7 @@ class Engine(
         }
         val start = if (i == 0 && rawStart < 0.05) 0.0 else maxOf(0.0, rawStart - OVERLAP)
         host.status("⏳ ترجمة المقطع ${i + 1}…")
+        if (i == 0 && engineStartMs > 0) host.log("⏱ باتش 1 بدأ تجهيز صوته بعد ${System.currentTimeMillis() - engineStartMs}ms من ضغطة الزرار")   // (v1354)
         val t0 = System.currentTimeMillis()
         val s0 = src()
         var w = s0.wav(start, rawEnd)
@@ -2787,6 +2795,7 @@ class Engine(
                 priorityRetry.add(i); host.log("🔎 باتش ${i + 1}: جودة $lastQuality% — إعادة تلقائية مرة واحدة")
             }
         } catch (_: Throwable) {}
+        if (!anyApplied && engineStartMs > 0) host.log("⏱ أول باتش اتطبّق بعد ${System.currentTimeMillis() - engineStartMs}ms من ضغطة الزرار")   // (v1354)
         anyApplied = true
         host.changed()
         Stats.addSec(rawEnd - rawStart)

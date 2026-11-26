@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.media.MediaMuxer
 import android.media.MediaPlayer
 import android.media.PlaybackParams
 import android.os.Handler
@@ -29,9 +30,10 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * (v418) دبلجة عربي على طريقة VideoLingo: كل جملة مترجمة تتحوّل لصوت (Edge TTS — الافتراضي ar-EG-SalmaNeural)،
- * السرعة بتتظبط عشان الجملة تدخل في مكانها (حد أقصى +40%)، والكل بيتجمّع في ملف WAV واحد بنفس توقيت الفيديو.
- * الإعدادات: dub_voice (ar-EG-SalmaNeural | ar-EG-ShakirNeural) · dub_orig_vol (صوت الفيديو الأصلي وقت الدبلجة، 0–100، الافتراضي 12)
+ * (v418) دبلجة عربي على طريقة VideoLingo: كل جملة مترجمة تتحوّل لصوت، السرعة بتتظبط عشان الجملة تدخل في مكانها، والكل بيتجمّع في ملف واحد بنفس توقيت الفيديو.
+ * (v1354) المحرك اتبدّل من Edge TTS لجيميناي TTS (بطلب علي — Edge مات): النطق بمفاتيح جيميناي بترتيب معكوس عن الترجمة (مفاتيح تانية شغالة على موديل الصوت)،
+ * والجمل بتتنطق بالتوازي عشان الدبلجة تمشي لايف ورا الترجمة، وموديل الـTTS بيتكتشف من قائمة موديلات المفتاح نفسه.
+ * الإعدادات: dub_voice (Kore | Charon) · dub_orig_vol (صوت الفيديو الأصلي وقت الدبلجة، 0–100، الافتراضي 12) · dub_q (جودة الملف: 0 WAV · 1 AAC · 2 AAC صغير)
  */
 /**
  * (v1285) توكن Sec-MS-GEC النسخة 2 لخدمة Edge TTS — منقول بالحرف من edge-tts 7.3.1 (drm.py) ومتأكد إنه بيطلع نفس الناتج.
@@ -352,37 +354,103 @@ object Pcm {
             r.write(bb)
         }
     }
+
+    /** (v1354) كتابة AAC في حاوية m4a (MediaCodec + MediaMuxer) — لجودة الدبلجة المتوسطة/الصغيرة أوي */
+    fun writeAac(f: File, data: ShortArray, rate: Int, kbps: Int) {
+        val fmt = MediaFormat.createAudioFormat("audio/mp4a-latm", rate, 1)
+        fmt.setInteger(MediaFormat.KEY_AAC_PROFILE, 2)   // AAC LC
+        fmt.setInteger(MediaFormat.KEY_BIT_RATE, kbps * 1000)
+        val enc = MediaCodec.createEncoderByType("audio/mp4a-latm")
+        enc.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        val mux = MediaMuxer(f.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        enc.start()
+        var track = -1; var muxOn = false
+        val info = MediaCodec.BufferInfo()
+        var pos = 0; var inDone = false; var outDone = false
+        val t0 = System.currentTimeMillis()
+        while (!outDone && System.currentTimeMillis() - t0 < 120_000L) {
+            if (!inDone) {
+                val ib = enc.dequeueInputBuffer(10_000)
+                if (ib >= 0) {
+                    val buf = enc.getInputBuffer(ib)!!
+                    val n = minOf(buf.capacity() / 2, data.size - pos)
+                    if (n <= 0) { enc.queueInputBuffer(ib, 0, 0, pos * 1_000_000L / rate, MediaCodec.BUFFER_FLAG_END_OF_STREAM); inDone = true }
+                    else {
+                        buf.clear()
+                        val bb = ByteArray(n * 2)
+                        for (i in 0 until n) { bb[i * 2] = data[pos + i].toByte(); bb[i * 2 + 1] = (data[pos + i].toInt() shr 8).toByte() }
+                        buf.put(bb)
+                        enc.queueInputBuffer(ib, 0, n * 2, pos * 1_000_000L / rate, 0)
+                        pos += n
+                    }
+                }
+            }
+            val ob = enc.dequeueOutputBuffer(info, 10_000)
+            when {
+                ob == MediaCodec.INFO_TRY_AGAIN_LATER -> {}
+                ob == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> { track = mux.addTrack(enc.outputFormat); mux.start(); muxOn = true }
+                ob >= 0 -> {
+                    if (info.size > 0 && muxOn && (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
+                        val buf = enc.getOutputBuffer(ob)!!
+                        mux.writeSampleData(track, buf, info)
+                    }
+                    enc.releaseOutputBuffer(ob, false)
+                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outDone = true
+                }
+            }
+        }
+        try { enc.stop() } catch (_: Throwable) {}
+        enc.release()
+        if (muxOn) { try { mux.stop() } catch (_: Throwable) {} }
+        mux.release()
+    }
 }
 
 object Dub {
     /** (v1217) voice فاضي = الصوت الافتراضي · rate/pitch/vol = نبرة المشاعر (تسريع %، هرتز، صوت %) */
-    class Seg(val start: Double, val end: Double, val text: String, val voice: String = "", val rate: Int = 0, val pitch: Int = 0, val vol: Int = 0)
+    class Seg(val start: Double, val end: Double, val text: String, val voice: String = "", val rate: Int = 0, val pitch: Int = 0, val vol: Int = 0, val style: String = "")
     const val RATE = 24000
     private const val TOL = 1.5          // أقصى تمديد بعد نهاية الجملة (ثواني) لو الجملة اللي بعدها لسه بعيدة
     private const val MAX_FAST = 40      // أقصى تسريع % (VideoLingo: 1.4×)
 
-    fun voice(): String = Cfg.str("dub_voice", "ar-EG-SalmaNeural")
-    fun toggleVoice(): String { val n = if (voice().contains("Salma")) "ar-EG-ShakirNeural" else "ar-EG-SalmaNeural"; Cfg.put("dub_voice", n); return n }
-    fun voiceLabel(v: String = voice()): String = if (v.contains("Salma")) "سلمى (أنثى)" else "شاكر (ذكر)"
+    fun voice(): String {
+        val v = Cfg.str("dub_voice", "Kore")
+        if (v in FEM || v in MAL) return v
+        val n = if (v.contains("Shakir") || v.contains("Hamed") || v in MAL_LEGACY) "Charon" else "Kore"   // (v1354) ترحيل أصوات Edge القديمة
+        Cfg.put("dub_voice", n); return n
+    }
+    fun toggleVoice(): String { val n = if (voice() in MAL) "Kore" else "Charon"; Cfg.put("dub_voice", n); return n }
+    fun voiceLabel(v: String = voice()): String = if (v in MAL) "شاكر (ذكر)" else "سلمى (أنثى)"
     fun origVol(): Float = (Cfg.int("dub_orig_vol", 12).coerceIn(0, 100)) / 100f
 
-    // (v1217) أصوات عربي لكل جنس (أول واحد = الأساسي). الأسماء متأكدة من قوايم Edge/Azure.
-    private val FEM = listOf("ar-EG-SalmaNeural", "ar-SA-ZariyahNeural", "ar-AE-FatimaNeural", "ar-JO-SanaNeural", "ar-KW-NouraNeural", "ar-LB-LaylaNeural", "ar-QA-AmalNeural", "ar-SY-AmanyNeural")
-    private val MAL = listOf("ar-EG-ShakirNeural", "ar-SA-HamedNeural", "ar-AE-HamdanNeural", "ar-JO-TaimNeural", "ar-KW-FahedNeural", "ar-LB-RamiNeural", "ar-QA-MoazNeural", "ar-SY-LaithNeural")
+    /** (v1354) جودة/حجم ملف الدبلجة: 0 = WAV أصلية (أعلى جودة، أعلى استهلاك) · 1 = AAC متوسطة · 2 = AAC صغيرة أوي (أقل استهلاك، جودة أقل) — سلايدر الإعدادات المتقدمة (بطلب علي) */
+    fun quality(): Int = Cfg.int("dub_q", 0).coerceIn(0, 2)
+    fun qExt(): String = if (quality() == 0) ".wav" else ".m4a"
+    fun qLabel(q: Int = quality()): String = when (q) { 0 -> "WAV أصلية"; 1 -> "AAC متوسطة"; else -> "AAC صغيرة أوي" }
+
+    // (v1354) أصوات جيميناي TTS لكل جنس (أول واحد = الأساسي) — أسماء الأصوات الرسمية الثابتة من جوجل
+    private val FEM = listOf("Kore", "Aoede", "Leda", "Callirrhoe", "Autonoe", "Despina", "Erinome", "Vindemiatrix")
+    private val MAL = listOf("Charon", "Puck", "Fenrir", "Orus", "Iapetus", "Algieba", "Enceladus", "Rasalgethi")
+    private val MAL_LEGACY = listOf("Hamdan", "Taim", "Fahed", "Rami", "Moaz", "Laith")
 
     /** دبلجة بأصوات متعددة (حسب جنس المتكلم واسمه) ونبرة المشاعر. dub_multi=0 يرجّع صوت واحد زي الأول */
     fun multi(): Boolean = Cfg.int("dub_multi", 1) != 0
 
-    /** نبرة من حقل emotion/faint اللي جيميناي بيحدده من نبرة الصوت الحقيقية: (تسريع %، pitch هرتز، صوت %) */
-    private fun tone(s: Sub): Triple<Int, Int, Int> {
-        val t = when (s.emotion) {
-            "shout" -> Triple(8, 6, 30)
-            "surprise" -> Triple(5, 10, 8)
-            "cry" -> Triple(-12, -4, -10)
-            "whisper" -> Triple(-8, 0, -35)
-            else -> Triple(0, 0, 0)
+    /** (v1354) نبرة المشاعر لجيميناي TTS: تعليمة أسلوب بالعربي بتتحط قبل الجملة (الموديل بيمثّلها بطبيعية) */
+    private fun styleOf(s: Sub): String {
+        val b = when (s.emotion) {
+            "shout" -> "بصوت عالي ومنفعل"
+            "surprise" -> "بنبرة متفاجئة ومتحمسة"
+            "cry" -> "بصوت حزين مكسور"
+            "whisper" -> "بهمس هادي جدًا"
+            else -> ""
         }
-        return if (s.faint) Triple(t.first, t.second, minOf(t.third, -40)) else t
+        return if (s.faint) (if (b.isEmpty()) "بصوت خافت جدًا" else b + " وبصوت خافت") else b
+    }
+    /** (v1354) خفض صوت الجمل الخافتة/الهمس في الميكس نفسه (جيميناي TTS ملهوش تحكم فوليوم) */
+    private fun toneGain(s: Sub): Int {
+        val g = when (s.emotion) { "whisper" -> -30; "cry" -> -10; else -> 0 }
+        return if (s.faint) minOf(g, -40) else g
     }
 
     private fun clean(s: String): String =
@@ -403,7 +471,7 @@ object Dub {
         val m = try { JSONObject(Cfg.str(cfgKey, "{}")) } catch (_: Throwable) { JSONObject() }
         val nk = normName(k)
         val legacy = k.trim().lowercase()
-        (m.optJSONObject(nk) ?: m.optJSONObject(legacy))?.let { o -> return Pair(o.optString("v"), o.optInt("p")) }
+        (m.optJSONObject(nk) ?: m.optJSONObject(legacy))?.let { o -> val vv = o.optString("v"); if (vv in FEM || vv in MAL) return Pair(vv, o.optInt("p")) }   // (v1354) صوت متخزّن من زمن Edge مش صالح — الشخصية بتاخد صوت جيميناي جديد
         if (g != "female" && g != "male") return null
         val pool = if (g == "female") FEM else MAL
         var used = 0
@@ -418,7 +486,7 @@ object Dub {
 
     fun segsOf(subs: List<Sub>, vk: String = ""): List<Seg> {
         val list = subs.filter { !it.isSound && it.translated.isNotBlank() }.sortedBy { it.start }
-        if (!multi()) return list.map { Seg(it.start, maxOf(it.end, it.start + 0.4), it.translated.replace(Regex("\\s+"), " ").trim()) }
+        if (!multi()) return list.map { Seg(it.start, maxOf(it.end, it.start + 0.4), it.translated.replace(Regex("\\s+"), " ").trim(), "", 0, 0, toneGain(it), styleOf(it)) }
         fun key(s: Sub) = s.speakerName.trim().ifBlank { s.voice.trim() }
         val fav = HashMap<String, Int>()
         for (s in list) { val k = key(s); if (k.isNotEmpty()) fav[k] = (fav[k] ?: 0) + 1 }
@@ -442,18 +510,17 @@ object Dub {
                 val wrap = idx / pool.size
                 if (wrap > 0) pitchBase = (if (wrap % 2 == 1) -6 else 6) * ((wrap + 1) / 2)   // لو الشخصيات أكتر من الأصوات: نفس الصوت بطبقة مختلفة
             }
-            val (r, pz, v) = tone(s)
-            out.add(Seg(s.start, maxOf(s.end, s.start + 0.4), txt, voice, r, pz + pitchBase, v))
+            out.add(Seg(s.start, maxOf(s.end, s.start + 0.4), txt, voice, 0, pitchBase, toneGain(s), styleOf(s)))   // (v1354) المشاعر = تعليمة أسلوب + خفض فوليوم
         }
         return out
     }
 
-    fun fileFor(ctx: Context, key: String): File = File(File(ctx.filesDir, "dub").also { it.mkdirs() }, key + ".wav")
+    fun fileFor(ctx: Context, key: String): File = File(File(ctx.filesDir, "dub").also { it.mkdirs() }, key + qExt())   // (v1354) الامتداد حسب جودة dub_q
 
     private fun hashOf(segs: List<Seg>, voice: String): String {
         val md = MessageDigest.getInstance("MD5")
         md.update(voice.toByteArray())
-        for (s in segs) md.update("${(s.start * 100).toLong()}|${(s.end * 100).toLong()}|${s.voice}|${s.rate}|${s.pitch}|${s.vol}|${s.text}\n".toByteArray())
+        for (s in segs) md.update("${(s.start * 100).toLong()}|${(s.end * 100).toLong()}|${s.voice}|${s.rate}|${s.pitch}|${s.vol}|${s.style}|${s.text}\n".toByteArray())
         return md.digest().joinToString("") { String.format(Locale.US, "%02x", it) }
     }
 
@@ -461,100 +528,225 @@ object Dub {
     fun build(ctx: Context, key: String, segs: List<Seg>, totalSec: Double, progress: (Int, Int) -> Unit, cancelled: () -> Boolean): File? {
         if (segs.isEmpty()) return null
         val voice = voice()
+        val q = quality()
         val out = fileFor(ctx, key)
         val meta = File(out.path + ".meta")
-        val h = hashOf(segs, voice) + (if (Tashkeel.enabled()) "|tsk1" else "")
+        val h = hashOf(segs, voice) + (if (Tashkeel.enabled()) "|tsk1" else "") + "|gem1|q" + q   // (v1354) الكاش مربوط بالمحرك والجودة
         if (out.exists() && meta.exists() && meta.readText() == h) return out
         val tmp = File(ctx.cacheDir, "dub_tts").also { it.mkdirs() }
         val say = if (Tashkeel.enabled()) { try { Tashkeel.apply(ctx, segs.map { it.text }, cancelled) } catch (_: Throwable) { segs.map { it.text } } } else segs.map { it.text }   // (v1229) نص النطق (مشكّل) — الجمل المعروضة زي ما هي
         val total = maxOf(totalSec, (segs.last().end + 1.0))
         val mix = ShortArray((total * RATE).toInt() + RATE)
+        val clips = fetchClips(tmp, segs, say, cancelled) { d -> progress(d, segs.size) } ?: return null   // (v1354) النطق بالتوازي على مفاتيح الدبلجة
         var fails = 0
-        for ((i, s) in segs.withIndex()) {
+        for ((i, sg) in segs.withIndex()) {
             if (cancelled()) return null
-            progress(i, segs.size)
             val nextStart = if (i + 1 < segs.size) segs[i + 1].start else total
-            val slot = minOf(s.end - s.start + TOL, nextStart - s.start).coerceAtLeast(0.7)
-            val sv = s.voice.ifBlank { voice }
-            val base = s.rate
-            val said = say.getOrNull(i) ?: s.text
-            var clip = clipFor(tmp, said, sv, base, s.pitch, s.vol)
-            if (clip == null) { if (fails == 0) DubLog.add("❌ Edge TTS ماردّش: " + EdgeTts.lastErr); if (++fails >= 6 && i < 7) return null; continue }   // أول جمل كلها فاشلة = مفيش نت/الخدمة واقفة
-            var dur = clip.data.size.toDouble() / clip.rate
-            if (dur > slot * 1.03) {
-                val pct = Math.ceil(((1.0 + base / 100.0) * (dur / slot) - 1.0) * 100.0).toInt().coerceIn(maxOf(5, base), MAX_FAST + maxOf(base, 0))
-                val c2 = clipFor(tmp, said, sv, pct, s.pitch, s.vol)
-                if (c2 != null) { clip = c2; dur = clip.data.size.toDouble() / clip.rate }
-            }
-            val pcm = Pcm.resample(clip, RATE)
-            val at = (s.start * RATE).toInt().coerceAtLeast(0)
-            val limit = if (i + 1 < segs.size) (nextStart * RATE).toInt() else mix.size
-            val n = minOf(pcm.size, (limit - at).coerceAtLeast(0), mix.size - at)
-            for (k in 0 until n) {
-                var v = mix[at + k] + pcm[k]
-                if (k >= n - 480 && n < pcm.size) v = mix[at + k] + (pcm[k] * ((n - k) / 480.0)).toInt()   // فيد قصير لو اتقطعت عند الجملة اللي بعدها
-                mix[at + k] = v.coerceIn(-32768, 32767).toShort()
-            }
+            val slot = minOf(sg.end - sg.start + TOL, nextStart - sg.start).coerceAtLeast(0.7)
+            var clip = clips[i]
+            if (clip == null) { if (fails == 0) DubLog.add("❌ جيميناي TTS ماردّش: " + GemTts.lastErr); if (++fails >= 6 && i < 7) return null; continue }   // أول جمل كلها فاشلة = مفيش نت/مفاتيح
+            clip = fitSlot(tmp, say.getOrNull(i) ?: sg.text, sg.voice.ifBlank { voice }, sg.style, slot, clip)
+            mixIn(mix, clip, sg, (sg.start * RATE).toInt().coerceAtLeast(0), if (i + 1 < segs.size) (nextStart * RATE).toInt() else mix.size)
         }
         progress(segs.size, segs.size)
-        Pcm.writeWav(out, mix, RATE)
+        writeOut(out, mix, q)
         meta.writeText(h)
         return out
     }
 
-    /** (v1232) دبلجة مجموعة جمل متتالية (باتش) في ملف WAV صغير لوحده بتوقيت نسبي لأول جملة. بيرجّع القطعة أو null لو فشل/اتلغى. الملف بيتعاد استخدامه لو نفس الجمل */
+    /** (v1232) دبلجة مجموعة جمل متتالية (باتش) في ملف صغير لوحده بتوقيت نسبي لأول جملة. بيرجّع القطعة أو null لو فشل/اتلغى. الملف بيتعاد استخدامه لو نفس الجمل */
     fun buildChunk(ctx: Context, key: String, segs: List<Seg>, cancelled: () -> Boolean): DubPlay.Chunk? {
         if (segs.isEmpty()) return null
         val voice = voice()
+        val q = quality()
         val dir = File(File(ctx.filesDir, "dub"), "live_" + key).also { it.mkdirs() }
-        val h = hashOf(segs, voice) + (if (Tashkeel.enabled()) "|tsk1" else "")
-        val f = File(dir, MessageDigest.getInstance("MD5").digest(h.toByteArray()).joinToString("") { String.format(Locale.US, "%02x", it) } + ".wav")
+        val h = hashOf(segs, voice) + (if (Tashkeel.enabled()) "|tsk1" else "") + "|gem1|q" + q
+        val f = File(dir, MessageDigest.getInstance("MD5").digest(h.toByteArray()).joinToString("") { String.format(Locale.US, "%02x", it) } + qExt())
         val t0 = segs.first().start
-        if (f.exists() && f.length() > 1000) return DubPlay.Chunk(t0, t0 + (f.length() - 44) / 2.0 / RATE, f)
+        if (f.exists() && f.length() > 500) { val dd = durOf(f); if (dd > 0.2) return DubPlay.Chunk(t0, t0 + dd, f) }
         val tmp = File(ctx.cacheDir, "dub_tts").also { it.mkdirs() }
         val say = if (Tashkeel.enabled()) { try { Tashkeel.apply(ctx, segs.map { it.text }, cancelled) } catch (_: Throwable) { segs.map { it.text } } } else segs.map { it.text }
+        val clips = fetchClips(tmp, segs, say, cancelled) ?: return null
         val mix = ShortArray(((segs.last().end - t0 + 6.0) * RATE).toInt() + RATE)
         var fails = 0; var ok = 0; var endIdx = 0
-        for ((i, s) in segs.withIndex()) {
+        for ((i, sg) in segs.withIndex()) {
             if (cancelled()) return null
-            val nextStart = if (i + 1 < segs.size) segs[i + 1].start else s.end + TOL
-            val slot = minOf(s.end - s.start + TOL, nextStart - s.start).coerceAtLeast(0.7)
-            val sv = s.voice.ifBlank { voice }
-            val base = s.rate
-            val said = say.getOrNull(i) ?: s.text
-            var clip = clipFor(tmp, said, sv, base, s.pitch, s.vol)
-            if (clip == null) { if (fails == 0) DubLog.add("❌ Edge TTS ماردّش: " + EdgeTts.lastErr); fails++; if (fails >= 4 && ok == 0) return null; continue }
+            val nextStart = if (i + 1 < segs.size) segs[i + 1].start else sg.end + TOL
+            val slot = minOf(sg.end - sg.start + TOL, nextStart - sg.start).coerceAtLeast(0.7)
+            var clip = clips[i]
+            if (clip == null) { if (fails == 0) DubLog.add("❌ جيميناي TTS ماردّش: " + GemTts.lastErr); fails++; if (fails >= 4 && ok == 0) return null; continue }
             ok++
-            var dur = clip.data.size.toDouble() / clip.rate
-            if (dur > slot * 1.03) {
-                val pct = Math.ceil(((1.0 + base / 100.0) * (dur / slot) - 1.0) * 100.0).toInt().coerceIn(maxOf(5, base), MAX_FAST + maxOf(base, 0))
-                val c2 = clipFor(tmp, said, sv, pct, s.pitch, s.vol)
-                if (c2 != null) { clip = c2; dur = clip.data.size.toDouble() / clip.rate }
-            }
-            val pcm = Pcm.resample(clip, RATE)
-            val at = ((s.start - t0) * RATE).toInt().coerceAtLeast(0)
-            val limit = if (i + 1 < segs.size) ((nextStart - t0) * RATE).toInt() else mix.size
-            val n = minOf(pcm.size, (limit - at).coerceAtLeast(0), mix.size - at)
-            for (k in 0 until n) {
-                var v = mix[at + k] + pcm[k]
-                if (k >= n - 480 && n < pcm.size) v = mix[at + k] + (pcm[k] * ((n - k) / 480.0)).toInt()
-                mix[at + k] = v.coerceIn(-32768, 32767).toShort()
-            }
-            if (at + n > endIdx) endIdx = at + n
+            clip = fitSlot(tmp, say.getOrNull(i) ?: sg.text, sg.voice.ifBlank { voice }, sg.style, slot, clip)
+            val endU = mixIn(mix, clip, sg, ((sg.start - t0) * RATE).toInt().coerceAtLeast(0), if (i + 1 < segs.size) ((nextStart - t0) * RATE).toInt() else mix.size)
+            if (endU > endIdx) endIdx = endU
         }
         if (ok == 0 || endIdx <= 0) return null
-        Pcm.writeWav(f, mix.copyOf(endIdx), RATE)
+        writeOut(f, mix.copyOf(endIdx), q)
         return DubPlay.Chunk(t0, t0 + endIdx.toDouble() / RATE, f)
     }
 
-    private fun clipFor(dir: File, text: String, voice: String, pct: Int, pitch: Int = 0, vol: Int = 0): Pcm.Clip? {
-        val name = MessageDigest.getInstance("MD5").digest("$voice|$pct|$pitch|$vol|$text".toByteArray()).joinToString("") { String.format(Locale.US, "%02x", it) } + ".mp3"
-        val f = File(dir, name)
-        if (!f.exists() || f.length() < 200) {
-            val b = EdgeTts.synth(text, voice, pct, pitch, vol) ?: return null
-            f.writeBytes(b)
+    /** (v1354) خلط جملة في الميكس عند مكانها مع خفض فوليومها (همس/إغماءة). بيرجّع آخر عيّنة اتكتبت */
+    private fun mixIn(mix: ShortArray, clip: Pcm.Clip, sg: Seg, at0: Int, limit0: Int): Int {
+        var pcm = Pcm.resample(clip, RATE)
+        if (sg.vol < 0) { val g = (1.0 + sg.vol / 100.0).coerceIn(0.1, 1.0); pcm = ShortArray(pcm.size) { ix -> (pcm[ix] * g).toInt().toShort() } }
+        val at = at0.coerceAtLeast(0)
+        val n = minOf(pcm.size, (limit0 - at).coerceAtLeast(0), mix.size - at)
+        for (k in 0 until n) {
+            var v = mix[at + k] + pcm[k]
+            if (k >= n - 480 && n < pcm.size) v = mix[at + k] + (pcm[k] * ((n - k) / 480.0)).toInt()   // فيد قصير لو اتقطعت عند الجملة اللي بعدها
+            mix[at + k] = v.coerceIn(-32768, 32767).toShort()
         }
-        return Pcm.decode(f)
+        return at + n
+    }
+
+    /** (v1354) الجملة أطول من مكانها؟ إعادة نطق بتعليمة «أسرع»، ولو لسه: تسريع من العيّنة لحد 20% والفيد عند الحد بيكمّل */
+    private fun fitSlot(tmp: File, said: String, voice: String, style: String, slot: Double, clip0: Pcm.Clip): Pcm.Clip {
+        var clip = clip0
+        var dur = clip.data.size.toDouble() / clip.rate
+        if (dur > slot * 1.03) {
+            val c2 = clipForGem(tmp, said, voice, style, true)
+            if (c2 != null) { clip = c2; dur = clip.data.size.toDouble() / clip.rate }
+        }
+        if (dur > slot * 1.03) {
+            val need = (dur / (slot * 1.03) - 1.0).coerceAtMost(0.20)
+            if (need > 0.02) clip = Pcm.Clip((clip.rate * (1.0 + need)).toInt(), clip.data)
+        }
+        return clip
+    }
+
+    private val keyIdx = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** (v1354) مفاتيح الدبلجة: مفاتيح جيميناي الحقيقية بترتيب معكوس — الترجمة بتبدأ من أول القايمة فالدبلجة بتاخد من آخرها (بطلب علي: «مفاتيح تانية شغالة على موديل الصوت») */
+    fun dubKeys(): List<String> = try { SubFileTr.realGemKeys().asReversed() } catch (_: Throwable) { emptyList() }
+
+    /** (v1354) نطق كل الجمل بالتوازي على مفاتيح الدبلجة (لحد 3 خيوط). بيرجّع null لو اتلغى */
+    private fun fetchClips(tmp: File, segs: List<Seg>, say: List<String>, cancelled: () -> Boolean, onOne: (Int) -> Unit = {}): Array<Pcm.Clip?>? {
+        val keys = dubKeys()
+        if (keys.isEmpty()) { DubLog.add("❌ مفيش مفاتيح جيميناي للدبلجة — ضيف مفتاح API من الإعدادات"); return arrayOfNulls(segs.size) }
+        val model = GemTts.model(keys.first())
+        val clips = arrayOfNulls<Pcm.Clip>(segs.size)
+        val nextI = java.util.concurrent.atomic.AtomicInteger(0)
+        val doneN = java.util.concurrent.atomic.AtomicInteger(0)
+        val defVoice = voice()
+        val workers = minOf(3, keys.size)
+        val ths = (0 until workers).map {
+            Thread {
+                while (!cancelled()) {
+                    val i = nextI.getAndIncrement()
+                    if (i >= segs.size) break
+                    val sg = segs[i]
+                    clips[i] = clipForGem(tmp, say.getOrNull(i) ?: sg.text, sg.voice.ifBlank { defVoice }, sg.style, false, keys, model)
+                    onOne(doneN.incrementAndGet())
+                }
+            }.apply { isDaemon = true; start() }
+        }
+        ths.forEach { try { it.join() } catch (_: InterruptedException) {} }
+        return if (cancelled()) null else clips
+    }
+
+    /** (v1354) نطق جملة بجيميناي TTS مع كاش على الجهاز وتدوير المفاتيح عند الفشل. fast = إعادة بتعليمة سرعة عشان الجملة تدخل مكانها */
+    private fun clipForGem(dir: File, text: String, voice: String, style: String, fast: Boolean, keys: List<String> = dubKeys(), model: String? = null): Pcm.Clip? {
+        if (keys.isEmpty()) return null
+        val mdl = model ?: GemTts.model(keys.first())
+        val st = if (fast) (if (style.isBlank()) "اقرأ بسرعة واضحة ومن غير توقفات" else style + "، وبسرعة واضحة ومن غير توقفات") else style
+        val name = MessageDigest.getInstance("MD5").digest((mdl + "|" + voice + "|" + st + "|" + text).toByteArray()).joinToString("") { String.format(Locale.US, "%02x", it) } + ".pcm"
+        val f = File(dir, name)
+        if (f.exists() && f.length() > 200) readPcm(f)?.let { return it }
+        var err = ""
+        val tries = minOf(keys.size * 2, 6)
+        for (t in 0 until tries) {
+            val key = keys[(keyIdx.getAndIncrement() and Int.MAX_VALUE) % keys.size]
+            try {
+                val c = GemTts.synth(text, voice, key, mdl, st)
+                if (c != null && c.data.isNotEmpty()) { writePcm(f, c.data); return c }
+            } catch (e: Throwable) {
+                err = (e.message ?: e.javaClass.simpleName).take(120)
+                if (e is ApiErr && e.code == 404) GemTts.resetModel()   // الموديل اتشال: اكتشاف جديد من قائمة موديلات المفتاح
+            }
+        }
+        if (err.isNotEmpty()) GemTts.lastErr = err
+        return null
+    }
+
+    private fun readPcm(f: File): Pcm.Clip? {
+        val b = try { f.readBytes() } catch (_: Throwable) { return null }
+        val n = b.size / 2; if (n <= 0) return null
+        return Pcm.Clip(RATE, ShortArray(n) { ix -> ((b[ix * 2].toInt() and 255) or (b[ix * 2 + 1].toInt() shl 8)).toShort() })
+    }
+    private fun writePcm(f: File, data: ShortArray) {
+        val bb = ByteArray(data.size * 2)
+        for (i in data.indices) { bb[i * 2] = data[i].toByte(); bb[i * 2 + 1] = (data[i].toInt() shr 8).toByte() }
+        try { f.writeBytes(bb) } catch (_: Throwable) {}
+    }
+
+    /** مدة ملف صوتي (wav/m4a) بالثواني — للقطع المتخزّنة */
+    private fun durOf(f: File): Double = try {
+        val r = android.media.MediaMetadataRetriever()
+        r.setDataSource(f.absolutePath)
+        val d = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toDoubleOrNull() ?: 0.0
+        r.release(); d / 1000.0
+    } catch (_: Throwable) { 0.0 }
+
+    /** (v1354) كتابة ملف الدبلجة بالجودة المختارة: WAV أصلية أو AAC (متوسط 96k / صغير أوي 40k) */
+    private fun writeOut(out: File, mix: ShortArray, q: Int) {
+        if (q == 0) Pcm.writeWav(out, mix, RATE) else Pcm.writeAac(out, mix, RATE, if (q == 1) 96 else 40)
+    }
+}
+
+/** (v1354) نطق جيميناي TTS (بديل Edge): generateContent بـ responseModalities=AUDIO بيرجّع PCM 24kHz · الموديل بيتكتشف من قائمة موديلات مفتاح المستخدم نفسه (بطلب علي — اسم الموديل مش ثابت عنده) */
+object GemTts {
+    @Volatile var lastErr: String = ""
+    @Volatile private var modelCached: String? = null
+    private const val FALLBACK_MODEL = "gemini-2.5-flash-preview-tts"
+
+    /** موديل الـTTS المتاح للمفتاح: من قائمة موديلاته الحقيقية (يفضّل فلاش) وإلا الاحتياطي الثابت */
+    fun model(key: String): String {
+        modelCached?.let { return it }
+        val saved = try { Cfg.str("dub_tts_model", "") } catch (_: Throwable) { "" }
+        if (saved.isNotEmpty()) { modelCached = saved; return saved }
+        val id = try {
+            Api.listModels(key).map { it.id }.filter { it.contains("tts", ignoreCase = true) }
+                .sortedWith(compareBy({ !it.contains("flash", ignoreCase = true) }, { it.contains("pro", ignoreCase = true) }, { it }))
+                .firstOrNull()
+        } catch (_: Throwable) { null }
+        val m = id ?: FALLBACK_MODEL
+        modelCached = m
+        try { Cfg.put("dub_tts_model", m) } catch (_: Throwable) {}
+        DubLog.add("🎙 موديل الدبلجة: " + m)
+        return m
+    }
+    fun resetModel() { modelCached = null; try { Cfg.put("dub_tts_model", "") } catch (_: Throwable) {} }
+
+    /** نطق نص بصوت معيّن — بيرجّع PCM (16-bit mono) أو null. style = تعليمة أداء بالعربي بتتحط قبل النص */
+    fun synth(text: String, voice: String, key: String, model: String, style: String): Pcm.Clip? {
+        val prompt = (if (style.isBlank()) "" else style.trim() + ":\n") + text
+        val body = "{\"contents\":[{\"parts\":[{\"text\":" + JSONObject.quote(prompt) + "}]}]," +
+            "\"generationConfig\":{\"responseModalities\":[\"AUDIO\"],\"speechConfig\":{\"voiceConfig\":{\"prebuiltVoiceConfig\":{\"voiceName\":" + JSONObject.quote(voice) + "}}}}}"
+        val bytes = body.toByteArray(Charsets.UTF_8)
+        Quota.hit(model); Stats.req(model, key)
+        val c = java.net.URL(Api.base + "/models/" + model + ":generateContent").openConnection() as java.net.HttpURLConnection
+        try {
+            c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 20000; c.readTimeout = 90000
+            c.setRequestProperty("Content-Type", "application/json"); c.setRequestProperty("x-goog-api-key", key); c.setFixedLengthStreamingMode(bytes.size)
+            c.outputStream.use { it.write(bytes) }
+            val code = c.responseCode
+            val txt = (if (code < 300) c.inputStream else c.errorStream)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+            NetUse.api(bytes.size.toLong(), txt)
+            if (code >= 300) throw ApiErr(code, try { JSONObject(txt).getJSONObject("error").getString("message") } catch (_: Exception) { "HTTP " + code })
+            val cand = JSONObject(txt).optJSONArray("candidates")?.optJSONObject(0) ?: return null
+            val parts = cand.optJSONObject("content")?.optJSONArray("parts") ?: return null
+            for (i in 0 until parts.length()) {
+                val po = parts.optJSONObject(i) ?: continue
+                val inline = po.optJSONObject("inlineData") ?: po.optJSONObject("inline_data") ?: continue
+                val b64 = inline.optString("data"); if (b64.isEmpty()) continue
+                val raw = java.util.Base64.getDecoder().decode(b64)
+                val mime = inline.optString("mimeType", inline.optString("mime_type", ""))
+                val rate = Regex("rate=(\\d+)").find(mime)?.groupValues?.get(1)?.toIntOrNull() ?: Dub.RATE
+                val n = raw.size / 2; if (n <= 0) continue
+                return Pcm.Clip(rate, ShortArray(n) { ix -> ((raw[ix * 2].toInt() and 255) or (raw[ix * 2 + 1].toInt() shl 8)).toShort() })
+            }
+            return null
+        } finally { c.disconnect() }
     }
 }
 

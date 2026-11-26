@@ -175,10 +175,14 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         if (act.isFinishing || act.isDestroyed) return
         bgLine(false)
         val st = cur ?: return
-        if (st.tab != tab || st.vid != null || st.q != null || st.chUrl != null || st.items.isEmpty()) return
+        if (st.tab != tab || st.vid != null || st.q != null || st.chUrl != null) return
         if (tab == 0 && chipSel != 0) return
         val vids = fresh.filter { it.kind == 0 }
         if (vids.isEmpty()) return
+        if (st.items.isEmpty()) {   // (v1354) الصفحة فاضية والتحديث الخلفي جاب فيديوهات: اعرضها فورًا بدل ما النتيجة تترمي والمستخدم يفضل قاعد على «لسه ما اتزامنتش» (بطلب علي)
+            if (tab == 1) act.runOnUiThread { if (!act.isFinishing && !act.isDestroyed && cur?.tab == 1 && cur?.items?.isEmpty() != false) openSubs(false) }
+            return
+        }
         if (tab == 1) YtSnap.save(act, 1, vids)   // (v472) آخر نسخة سليمة للاشتراكات
         val have = HashSet<String>(); for (x in st.items) have.add(x.id)
         val seenIds: Set<String> = if (tab == 0) YtStore.read(YtStore.HIST).map { it.id }.toHashSet() else emptySet()
@@ -1123,10 +1127,10 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         Notice.show(act, "🔄 بجيب اشتراكاتك من يوتيوب…", 2000L)
         Thread {
             try {
-                val n = YtAccount.syncSubs()
+                val n = YtAccount.syncSubsGuarded()   // (v1354) بيستنى أي مزامنة شغالة بدل ما يتسابق معاها — التوست بيبقى ناتج مزامنة خلصت فعلًا (بطلب علي)
                 act.runOnUiThread {
                     if (act.isFinishing || act.isDestroyed) return@runOnUiThread
-                    Notice.show(act, "✅ اتضاف $n قناة جديدة (الإجمالي " + YtStore.read(YtStore.SUBS).size + ")", 3500L)
+                    Notice.show(act, if (n == 0) "✅ مفيش قنوات جديدة — اشتراكاتك متزامنة للآخر (الإجمالي " + YtStore.read(YtStore.SUBS).size + ")" else "✅ اتضاف $n قناة جديدة (الإجمالي " + YtStore.read(YtStore.SUBS).size + ")", 3500L)
                     when (cur?.tab) { 0 -> openTab(0); 1 -> openSubs(false); 4 -> openTab(4) }
                 }
             } catch (e: Throwable) {
@@ -1240,6 +1244,15 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                     val vids = a.items.filter { it.kind == 0 }
                     if (vids.isNotEmpty()) { r = YtRes(vids, a.next); more = { p -> val x = YtAccount.listMore(p); YtRes(x.items.filter { it.kind == 0 }, x.next) } }
                 } catch (e: Throwable) { if (syncErr == null) syncErr = e.message ?: e.javaClass.simpleName }
+            }
+            // (v1354) لسه فيه مزامنة/تحديث شغال؟ استنّاه (لحد 20 ثانية) قبل ما نعلن الصفحة فاضية — «مفيش جديد» مابيتقالش غير بعد ما الشغل يخلص فعلًا (بطلب علي)
+            if (r.items.isEmpty() && (YtAccount.syncingNow() || YtRss.refreshingNow)) {
+                val t0w = System.currentTimeMillis()
+                while ((YtAccount.syncingNow() || YtRss.refreshingNow) && System.currentTimeMillis() - t0w < 20_000L) try { Thread.sleep(300) } catch (_: InterruptedException) { break }
+                if (r.items.isEmpty()) {
+                    val rr = try { YtRss.feed(YtStore.read(YtStore.SUBS), false, true) } catch (_: Throwable) { null }
+                    if (rr != null && rr.items.isNotEmpty()) r = rr
+                }
             }
             if (r.items.isEmpty() && syncErr != null) throw RuntimeException(syncErr)
             if (r.items.isNotEmpty()) { YtNotify.noteNewTs(r.items); YtNotify.markSeen(r.items); YtNotify.markOpened(act) }   // اللي اتعرض ما يجيش عليه إشعار ولا عدّاد

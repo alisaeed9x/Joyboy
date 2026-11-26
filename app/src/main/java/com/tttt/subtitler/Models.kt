@@ -23,7 +23,9 @@ object Models {
         try { avail = Api.listModels(key).map { it.id } } catch (_: Throwable) {}
     }
     /** (v1326) موديلات مش ليها لازمة في التفريغ/الترجمة (صور/فيديو/صوت/live/تضمين…): بتتستبعد من قايمة الاختيار ومن الاحتياطي */
-    val JUNK = Regex("image|imagen|veo|tts|live|audio|native|embed|robotics|computer|aqa")
+    val JUNK = Regex("image|imagen|veo|tts|live|audio|native|embed|robotics|computer|aqa|banana")
+    /** (v1354) قايمة اختيار موديل الترجمة: عائلات الترجمة بس (بطلب علي: فلاش وفلاش-لايت وأومني وبرو «سيبهم» — موديلات الصور والـTTS اتشالت من القايمة) */
+    val KEEP = Regex("flash|omni|pro")
     /** (v1241) الموديل الاحتياطي لما الأساسي 503: بيتختار من الموديلات الموجودة فعلًا لمفتاحك (GET /models) ومش من الميتة */
     fun alt(cur: String, key: String = ""): String {
         discover(key)
