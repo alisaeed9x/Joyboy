@@ -1930,7 +1930,7 @@ class PlayerActivity : Activity(), Host {
         } catch (e: Throwable) { LogStore.err("Tv:vol", e) }
     }
     @Volatile private var replacedByNew = false   // (v1147) اتقفل لأن فيديو جديد فتح مكانه: لازم حركة القفل تساعد حركة الدخول (من تحت لفوق) مش تلغيها
-    override fun finish() { super.finish(); if (dockedAway) { try { overridePendingTransition(0, 0) } catch (_: Throwable) {}; return }; if (gone) { try { overridePendingTransition(0, 0) } catch (_: Throwable) {}; return }; try { if (ytPage) overridePendingTransition(0, 0) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_close_enter, R.anim.player_close_exit) else overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:725", e) }   // (v1347) يوتيوب: قفل فوري (بطلب علي) }
+    override fun finish() { super.finish(); if (dockedAway) { try { overridePendingTransition(0, 0) } catch (_: Throwable) {}; return }; if (gone) { try { overridePendingTransition(0, 0) } catch (_: Throwable) {}; return }; try { if (ytPage) overridePendingTransition(0, 0) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_close_enter, R.anim.player_close_exit) else overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:725", e) } }   // (v1347) يوتيوب: قفل فوري (بطلب علي)
     @Volatile var cur = 0L
     @Volatile var durMs = 0L
     @Volatile var status = ""

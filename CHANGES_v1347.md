@@ -24,14 +24,3 @@
 ✏️ تعديل: app/src/main/java/com/tttt/subtitler/Player.kt
 ✏️ تعديل: app/src/main/java/com/tttt/subtitler/YtWatch.kt
 ```
-
-
-## 🗂️ الملفات اللي اتغيّرت (أوتوماتيك)
-```
-➕ أضاف:  CHANGES_v1347.md
-✏️ عدّل:   STATUS.txt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/Main.kt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/Player.kt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/YtWatch.kt
-```
-🔙 نسخة احتياطية قبل التعديل: `backup-v1346-run156` (للرجوع: Actions ← Rollback)
