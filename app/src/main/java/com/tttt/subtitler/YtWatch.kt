@@ -997,9 +997,36 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     var link: YtPageLink? = null
 
     /** (v1288) الوصف: الروابط تتفتح، والتوقيتات (1:23 / 1:02:03) بتنقّل الفيديو للثانية دي */
-    private fun linkDesc(t: String): CharSequence {
+    private fun linkDesc(t0: String): CharSequence {
+        // (v1343) وصف يوتيوب بيرجع أحيانًا بوسوم HTML خام (<a href=...>#tag</a>) — بتتقري كليك نضيفة مش كود ظاهر (بطلب علي)
+        val t1 = t0.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&amp;", "&")
+        val out = StringBuilder(t1.length)
+        val lnks = ArrayList<Triple<Int, Int, String>>()
+        val tagRx = Regex("<a\\s+[^>]*?href=\"([^\"]+)\"[^>]*>([\\s\\S]*?)</a>|<[^>]+>")
+        var last = 0
+        for (m in tagRx.findAll(t1)) {
+            out.append(t1, last, m.range.first)
+            val v = m.value
+            if (v.length > 3 && v[1] == 'a' && (v[2] == ' ' || v[2] == '\t')) {
+                val label = m.groupValues[2].replace(Regex("<[^>]+>"), "")
+                val s = out.length; out.append(label)
+                val u = m.groupValues[1]
+                if (u.isNotBlank() && label.isNotEmpty()) lnks.add(Triple(s, out.length, u))
+            }
+            last = m.range.last + 1
+        }
+        out.append(t1, last, t1.length)
+        val t = out.toString()
         val sp = android.text.SpannableStringBuilder(t)
         try {
+            for (l in lnks) {
+                if (l.first < 0 || l.second > sp.length || l.first >= l.second) continue
+                val u = l.third
+                sp.setSpan(object : android.text.style.ClickableSpan() {
+                    override fun onClick(w: View) { try { act.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(u))) } catch (_: Throwable) {} }
+                    override fun updateDrawState(ds: android.text.TextPaint) { ds.color = YtSkin.accent; ds.isUnderlineText = true }
+                }, l.first, l.second, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
             val link = YtSkin.accent
             for (m in Regex("(?<![\\d:])(?:(\\d{1,2}):)?(\\d{1,2}):(\\d{2})(?![\\d:])").findAll(t)) {
                 val h = m.groupValues[1].toIntOrNull() ?: 0; val mi = m.groupValues[2].toInt(); val se = m.groupValues[3].toInt()
@@ -1448,22 +1475,35 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
     }
     private fun fmtDur(s: Long): String = if (s <= 0) "" else if (s >= 3600) String.format(Locale.US, "%d:%02d:%02d", s / 3600, s % 3600 / 60, s % 60) else String.format(Locale.US, "%d:%02d", s / 60, s % 60)
 
+    /** (v1343) تحميل لوجو بفول باك مضمون: الحرف يفضل ظاهر لو التحميل فشل أو الصورة لون واحد فاضي */
+    private fun glideAvatar(url: String, sizeDp: Int, iv: ImageView, letter: TextView) {
+        try {
+            Glide.with(act).load(url).circleCrop().override(ui.dp(sizeDp), ui.dp(sizeDp))
+                .listener(object : com.bumptech.glide.request.RequestListener<android.graphics.drawable.Drawable> {
+                    override fun onLoadFailed(e: com.bumptech.glide.load.engine.GlideException?, model: Any?, target: com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable>?, isFirstResource: Boolean): Boolean {
+                        iv.visibility = View.GONE; letter.visibility = View.VISIBLE; return false
+                    }
+                    override fun onResourceReady(res: android.graphics.drawable.Drawable?, model: Any?, target: com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable>?, dataSource: com.bumptech.glide.load.DataSource?, isFirstResource: Boolean): Boolean {
+                        iv.visibility = View.VISIBLE; letter.visibility = if (YtSkin.solidish(res)) View.VISIBLE else View.GONE
+                        return false
+                    }
+                }).into(iv)
+        } catch (_: Throwable) { iv.visibility = View.GONE; letter.visibility = View.VISIBLE }
+    }
+
     private fun avatar(name: String, sizeDp: Int, url: String, key: String = ""): View {
         val colors = intArrayOf(0xFFE53935.toInt(), 0xFF8E24AA.toInt(), 0xFF3949AB.toInt(), 0xFFF4511E.toInt(), 0xFF6D4C41.toInt(), 0xFF1E88E5.toInt(), 0xFF5E35B1.toInt())
         val c = colors[(name.hashCode() and 0x7fffffff) % colors.size]
         val f = FrameLayout(act)
-        f.addView(TextView(act).apply {
+        val iv = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+        val letter = TextView(act).apply {
             text = name.trim().take(1).uppercase(); gravity = Gravity.CENTER; setTextColor(Color.WHITE); textSize = if (sizeDp >= 40) 17f else 14f; typeface = medium
             background = GradientDrawable().apply { setShape(GradientDrawable.OVAL); setColor(c) }
-        }, FrameLayout.LayoutParams(-1, -1))
-        if (url.isNotBlank()) {
-            val iv = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-            f.addView(iv, FrameLayout.LayoutParams(-1, -1))
-            try { Glide.with(act).load(url).circleCrop().override(ui.dp(sizeDp), ui.dp(sizeDp)).into(iv) } catch (_: Throwable) {}
-        } else if (key.isNotBlank()) {   // (v1144) لوجو القناة ناقص ← جلب في الخلفية
-            val iv = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-            f.addView(iv, FrameLayout.LayoutParams(-1, -1))
-            YtMtFeed.avatarAsync(act, key) { u -> act.runOnUiThread { try { if (f.isAttachedToWindow) Glide.with(act).load(u).circleCrop().override(ui.dp(sizeDp), ui.dp(sizeDp)).into(iv) } catch (_: Throwable) {} } }
+        }
+        f.addView(iv, FrameLayout.LayoutParams(-1, -1)); f.addView(letter, FrameLayout.LayoutParams(-1, -1))   // (v1343) الحرف فوق الصورة: بيختفي بس لما صورة حقيقية توصل
+        if (url.isNotBlank()) glideAvatar(url, sizeDp, iv, letter)
+        else if (key.isNotBlank()) {   // (v1144) لوجو القناة ناقص ← جلب في الخلفية
+            YtMtFeed.avatarAsync(act, key) { u -> act.runOnUiThread { try { if (f.isAttachedToWindow) glideAvatar(u, sizeDp, iv, letter) } catch (_: Throwable) {} } }
         }
         return f
     }

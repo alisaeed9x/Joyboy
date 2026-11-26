@@ -1686,6 +1686,7 @@ class MainActivity : Activity() {
     /** (v1133) صفحة المشاهدة جوه المشغّل: المشغّل الحقيقي فوق وصفحة الفيديو تحته؛ التكبير بزرار ⛶ في نفس الأكتيفيتي */
     private fun ytStartPage(v: NpItem, startMs: Long) {
         ytLoadLaunched = true
+        if (curTab != 4) showTabFn(4)   // (v1343) صفحة الفيديو بتتسحب لتحت وتكشف اللي وراها — يبقى دايمًا قايمة يوتيوب مش تبويب تاني (بطلب علي)
         val ret = if (curTab == 4) "yt" else ""
         startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
             putExtra("ytpend", true)

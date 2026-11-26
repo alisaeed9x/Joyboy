@@ -70,6 +70,24 @@ object YtSkin {
     }
 
     /** لون دايرة الأفاتار الافتراضي من اسم القناة */
+    /** (v1343) الصورة لون واحد فاضي (لوجو تلقائي من يوتيوب من غير حرف)؟ — عشان حرف القناة يفضل ظاهر فوقها بدل دايرة فاضية (بطلب علي) */
+    fun solidish(d: android.graphics.drawable.Drawable?): Boolean {
+        val b = (d as? android.graphics.drawable.BitmapDrawable)?.bitmap ?: return false
+        return try {
+            val s = android.graphics.Bitmap.createScaledBitmap(b, 6, 6, true)
+            var r0 = -1; var g0 = -1; var b0 = -1; var seen = 0
+            for (y in 0 until 6) for (x in 0 until 6) {
+                val px = s.getPixel(x, y)
+                if (((px ushr 24) and 255) < 128) continue
+                val r = (px shr 16) and 255; val g = (px shr 8) and 255; val bb = px and 255
+                if (r0 < 0) { r0 = r; g0 = g; b0 = bb }
+                else if (kotlin.math.abs(r - r0) > 24 || kotlin.math.abs(g - g0) > 24 || kotlin.math.abs(bb - b0) > 24) return false
+                seen++
+            }
+            seen > 0
+        } catch (_: Throwable) { false }
+    }
+
     fun avatarColor(name: String): Int {
         val pal = intArrayOf(0xFF5C6BC0.toInt(), 0xFF26A69A.toInt(), 0xFFEF6C00.toInt(), 0xFF8E24AA.toInt(), 0xFF00838F.toInt(),
             0xFFC2185B.toInt(), 0xFF6D4C41.toInt(), 0xFF3949AB.toInt(), 0xFF546E7A.toInt(), 0xFFD84315.toInt())

@@ -7355,7 +7355,7 @@ class PlayerActivity : Activity(), Host {
         vb.scaleX = sc; vb.scaleY = sc; vb.translationY = p * ytMiniTy(); vb.translationX = p * (pg.width - vb.width * s)   // (v1162) يلزق يمين زي الدوك
         extras.translationY = p * (ytPageH() - vb.height)
         extras.alpha = (1f - p * 1.7f).coerceIn(0f, 1f)
-        try { pg.background.mutate().alpha = 255 } catch (_: Throwable) {}   // (v1340) السحب للتصغير: الخلفية بتفضل سودا ثابتة — الشاشة/الصورة اللي ورا الصفحة متظهرش تاني
+        try { pg.background.mutate().alpha = (255f * (1f - (p * 1.4f).coerceAtMost(1f))).toInt() } catch (_: Throwable) {}   // (v1343) السحب للتصغير: الصفحة بتشف تدريجي وتكشف قايمة يوتيوب اللي وراها (رجوع لسلوك v1161) — اللي وراها دايمًا الفيد بعد v1343 (بطلب علي)
     }
     private fun ytAnimTo(target: Float, then: (() -> Unit)? = null) {
         ytAnim?.cancel()

@@ -195,19 +195,33 @@ class YtChannelPage(private val act: Activity, private val ui: Ui, private val h
     }
     private fun fmtDur(s: Long): String = if (s <= 0) "" else if (s >= 3600) String.format(Locale.US, "%d:%02d:%02d", s / 3600, s % 3600 / 60, s % 60) else String.format(Locale.US, "%d:%02d", s / 60, s % 60)
 
+    /** (v1343) تحميل لوجو بفول باك مضمون: الحرف يفضل ظاهر لو التحميل فشل أو الصورة لون واحد فاضي */
+    private fun glideAvatar(url: String, sizeDp: Int, iv: ImageView, letter: TextView) {
+        try {
+            Glide.with(act).load(url).circleCrop().override(ui.dp(sizeDp), ui.dp(sizeDp))
+                .listener(object : com.bumptech.glide.request.RequestListener<android.graphics.drawable.Drawable> {
+                    override fun onLoadFailed(e: com.bumptech.glide.load.engine.GlideException?, model: Any?, target: com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable>?, isFirstResource: Boolean): Boolean {
+                        iv.visibility = View.GONE; letter.visibility = View.VISIBLE; return false
+                    }
+                    override fun onResourceReady(res: android.graphics.drawable.Drawable?, model: Any?, target: com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable>?, dataSource: com.bumptech.glide.load.DataSource?, isFirstResource: Boolean): Boolean {
+                        iv.visibility = View.VISIBLE; letter.visibility = if (YtSkin.solidish(res)) View.VISIBLE else View.GONE
+                        return false
+                    }
+                }).into(iv)
+        } catch (_: Throwable) { iv.visibility = View.GONE; letter.visibility = View.VISIBLE }
+    }
+
     private fun avatar(name: String, sizeDp: Int, url: String): View {
         val colors = intArrayOf(0xFFE53935.toInt(), 0xFF8E24AA.toInt(), 0xFF3949AB.toInt(), 0xFFF4511E.toInt(), 0xFF6D4C41.toInt(), 0xFF1E88E5.toInt(), 0xFF5E35B1.toInt())
         val c = colors[(name.hashCode() and 0x7fffffff) % colors.size]
         val f = FrameLayout(act)
-        f.addView(TextView(act).apply {
+        val iv = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+        val letter = TextView(act).apply {
             text = name.trim().take(1).uppercase(); gravity = Gravity.CENTER; setTextColor(Color.WHITE); textSize = if (sizeDp >= 60) 28f else 15f; typeface = medium
             background = GradientDrawable().apply { setShape(GradientDrawable.OVAL); setColor(c) }
-        }, FrameLayout.LayoutParams(-1, -1))
-        if (url.isNotBlank()) {
-            val iv = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-            f.addView(iv, FrameLayout.LayoutParams(-1, -1))
-            try { Glide.with(act).load(url).circleCrop().override(ui.dp(sizeDp), ui.dp(sizeDp)).into(iv) } catch (_: Throwable) {}
         }
+        f.addView(iv, FrameLayout.LayoutParams(-1, -1)); f.addView(letter, FrameLayout.LayoutParams(-1, -1))   // (v1343) الحرف فوق الصورة
+        if (url.isNotBlank()) glideAvatar(url, sizeDp, iv, letter)
         return f
     }
 

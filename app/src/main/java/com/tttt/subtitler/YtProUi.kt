@@ -1980,6 +1980,22 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
 
     private class Cell(val root: LinearLayout, val thumb: ImageView, val dur: TextView, val title: TextView, val meta: TextView)
 
+    /** (v1343) تحميل لوجو قناة بفول باك مضمون (بطلب علي): الحرف يفضل ظاهر لو التحميل فشل أو الصورة طلعت لون واحد فاضي — مفيش دايرة برتقالي فاضية تاني */
+    private fun glideAvatar(url: String, sizeDp: Int, iv: ImageView, letter: TextView) {
+        try {
+            Glide.with(act).load(url).circleCrop().override(ui.dp(sizeDp), ui.dp(sizeDp))
+                .listener(object : com.bumptech.glide.request.RequestListener<android.graphics.drawable.Drawable> {
+                    override fun onLoadFailed(e: com.bumptech.glide.load.engine.GlideException?, model: Any?, target: com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable>?, isFirstResource: Boolean): Boolean {
+                        iv.visibility = View.GONE; letter.visibility = View.VISIBLE; return false
+                    }
+                    override fun onResourceReady(res: android.graphics.drawable.Drawable?, model: Any?, target: com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable>?, dataSource: com.bumptech.glide.load.DataSource?, isFirstResource: Boolean): Boolean {
+                        iv.visibility = View.VISIBLE; letter.visibility = if (YtSkin.solidish(res)) View.VISIBLE else View.GONE
+                        return false
+                    }
+                }).into(iv)
+        } catch (_: Throwable) { iv.visibility = View.GONE; letter.visibility = View.VISIBLE }
+    }
+
     private class Card(val root: LinearLayout, val thumb: ImageView, val dur: TextView, val prog: View, val av: TextView, val avImg: ImageView,
                         val title: TextView, val meta: TextView, val more: View, val dub: TextView, val dl: View, val aud: View, val newB: TextView)
 
@@ -2014,7 +2030,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         val av = TextView(act).apply { gravity = Gravity.CENTER; textSize = 15f; setTextColor(Color.WHITE); includeFontPadding = false; typeface = medium }
         val avImg = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP; visibility = View.GONE }
         val avBox = FrameLayout(act)
-        avBox.addView(av, FrameLayout.LayoutParams(-1, -1)); avBox.addView(avImg, FrameLayout.LayoutParams(-1, -1))
+        avBox.addView(avImg, FrameLayout.LayoutParams(-1, -1)); avBox.addView(av, FrameLayout.LayoutParams(-1, -1))   // (v1343) الحرف فوق الصورة: بيختفي بس لما صورة حقيقية توصل
         val title = TextView(act).apply { textSize = if (DeviceUi.isTv(act)) 16f else 14f; setTextColor(YtSkin.text); maxLines = 2; ellipsize = TextUtils.TruncateAt.END; typeface = medium }
         val meta = TextView(act).apply { textSize = if (DeviceUi.isTv(act)) 13f else 12f; setTextColor(YtSkin.sub); maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
@@ -2070,7 +2086,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 val av = ui.text("", 22f, Color.WHITE, true).apply { gravity = Gravity.CENTER }
                 val avImg = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
                 val avBox = FrameLayout(act)
-                avBox.addView(av, FrameLayout.LayoutParams(-1, -1)); avBox.addView(avImg, FrameLayout.LayoutParams(-1, -1))
+                avBox.addView(avImg, FrameLayout.LayoutParams(-1, -1)); avBox.addView(av, FrameLayout.LayoutParams(-1, -1))   // (v1343) الحرف فوق الصورة
                 val name = ui.text("", 17f, th.text, true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
                 val sub = ui.text("", 12f, th.muted).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
                 val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
@@ -2096,10 +2112,11 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             hd.sub.text = it.channel + if (it.chanVerified) " ✔" else ""   // (v1303) ✔ التوثيق
             hd.sub.visibility = if (it.channel.isBlank()) View.GONE else View.VISIBLE
             hd.av.text = if (logged) it.title.trim().take(1).uppercase(Locale.getDefault()) else "👤"
+            hd.av.visibility = View.VISIBLE   // (v1343) إعادة التدوير
             hd.av.background = GradientDrawable().apply { setShape(GradientDrawable.OVAL); setColor(YtSkin.avatarColor(it.title)) }
             if (it.avatar.isNotBlank()) {   // (v1336) اللوجو يظهر حتى من غير تسجيل دخول
                 hd.avImg.visibility = View.VISIBLE
-                try { Glide.with(act).load(it.avatar).circleCrop().override(ui.dp(112), ui.dp(112)).into(hd.avImg) } catch (_: Throwable) {}
+                glideAvatar(it.avatar, 112, hd.avImg, hd.av)   // (v1343)
             } else { hd.avImg.visibility = View.GONE; try { Glide.with(act).clear(hd.avImg) } catch (_: Throwable) {} }
             if (logged) {
                 hd.chip1.text = "🔄 مزامنة الاشتراكات"; hd.chip1.setOnClickListener { openAcc(yrow("", "", "!sync")) }
@@ -2137,7 +2154,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                     val letter = ui.text("", 18f, Color.WHITE, true).apply { gravity = Gravity.CENTER }
                     val avImg = ImageView(act).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
                     val avBox = FrameLayout(act)
-                    avBox.addView(letter, FrameLayout.LayoutParams(-1, -1)); avBox.addView(avImg, FrameLayout.LayoutParams(-1, -1))
+                    avBox.addView(avImg, FrameLayout.LayoutParams(-1, -1)); avBox.addView(letter, FrameLayout.LayoutParams(-1, -1))   // (v1343) الحرف فوق الصورة
                     val nm = ui.text("", 10.5f, th.text, false).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER_HORIZONTAL }
                     val cell = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; foreground = YtSkin.ripple(true) }
                     cell.addView(avBox, LinearLayout.LayoutParams(ui.dp(56), ui.dp(56)))
@@ -2148,8 +2165,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                     nm.text = cname
                     val av0 = if (vi.avatar.isNotBlank()) vi.avatar else vi.thumb
                     avImg.tag = vi.channelUrl
-                    if (av0.isNotBlank()) { try { Glide.with(act).load(av0).circleCrop().override(ui.dp(112), ui.dp(112)).into(avImg) } catch (_: Throwable) {} }
-                    else YtMtFeed.avatarAsync(act, vi.channelUrl) { u -> vi.avatar = u; act.runOnUiThread { try { if (avImg.tag === vi.channelUrl || avImg.tag == vi.channelUrl) Glide.with(act).load(u).circleCrop().override(ui.dp(112), ui.dp(112)).into(avImg) } catch (_: Throwable) {} } }
+                    if (av0.isNotBlank()) glideAvatar(av0, 112, avImg, letter)   // (v1343)
+                    else YtMtFeed.avatarAsync(act, vi.channelUrl) { u -> vi.avatar = u; act.runOnUiThread { try { if (avImg.tag === vi.channelUrl || avImg.tag == vi.channelUrl) glideAvatar(u, 112, avImg, letter) } catch (_: Throwable) {} } }   // (v1343)
                     cell.setOnClickListener { openChannel(vi.channelUrl, vi.title, vi.avatar) }
                     cell.setOnLongClickListener { x -> menu(x, vi); true }
                     hd.row.addView(cell, LinearLayout.LayoutParams(ui.dp(64), -2).apply { marginEnd = ui.dp(6) })
@@ -2262,17 +2279,18 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             if (fr > 0.01) { c.prog.layoutParams.width = (sw * fr).toInt(); c.prog.requestLayout(); c.prog.visibility = View.VISIBLE } else c.prog.visibility = View.GONE
             val nm = vi.channel.trim()
             c.av.text = if (nm.isEmpty()) "▶" else nm.substring(0, nm.offsetByCodePoints(0, 1)).uppercase(Locale.getDefault())
+            c.av.visibility = View.VISIBLE   // (v1343) الكارت بيتعاد تدويره — الحرف يرجع ظاهر لحد ما الصورة توصل
             c.av.background = GradientDrawable().apply { setShape(GradientDrawable.OVAL); setColor(YtSkin.avatarColor(nm)) }
             if (vi.avatar.isNotBlank()) {
                 c.avImg.visibility = View.VISIBLE
-                try { Glide.with(act).load(vi.avatar).circleCrop().override(ui.dp(72), ui.dp(72)).into(c.avImg) } catch (_: Throwable) {}
+                glideAvatar(vi.avatar, 72, c.avImg, c.av)   // (v1343)
             } else {
                 c.avImg.visibility = View.GONE
                 try { Glide.with(act).clear(c.avImg) } catch (_: Throwable) {}
                 // (v1144) لوجو القناة ناقص (RSS/بحث/مقترحات) ← نجيبه في الخلفية ونحطه
                 YtMtFeed.avatarAsync(act, vi.channelId.ifBlank { vi.channelUrl }) { u ->
                     vi.avatar = u
-                    act.runOnUiThread { try { if (items.getOrNull(p) === vi && c.title.text.toString() == vi.title) { c.avImg.visibility = View.VISIBLE; Glide.with(act).load(u).circleCrop().override(ui.dp(72), ui.dp(72)).into(c.avImg) } } catch (_: Throwable) {} }
+                    act.runOnUiThread { try { if (items.getOrNull(p) === vi && c.title.text.toString() == vi.title) glideAvatar(u, 72, c.avImg, c.av) } catch (_: Throwable) {} }   // (v1343)
                 }
             }
             try {
