@@ -13,13 +13,6 @@ import android.widget.TextView
  * الريبو والتوكن جوه البرنامج (GhCi) — مفيش حاجة بتتكتب هنا.
  */
 object GhCiUi {
-    private fun fmtEvery(m: Long): String = when {
-        m < 60L -> "$m دقيقة"
-        m == 60L -> "ساعة"
-        m == 120L -> "ساعتين"
-        m / 60L > 10L -> (m / 60L).toString() + " ساعة"
-        else -> (m / 60L).toString() + " ساعات"
-    }
 
     fun show(a: Activity) {
         Cfg.ensure(a)
@@ -34,7 +27,6 @@ object GhCiUi {
         var appInd: TextView? = null
         var tvInd: TextView? = null
         var setInd: TextView? = null
-        var appArt: GhCi.Art? = null
 
         // ───── آخر 3 بيلدات + ريفريش صغير ─────
         val head = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
@@ -81,35 +73,30 @@ object GhCiUi {
             return ind
         }
         fun setApp(m: String) = onUi { appInd?.let { LoadUi.set(it, m) } }
-        fun askInstall(art: GhCi.Art) {
-            val mb = (art.size / 1048576L).toString()
-            Thread {
-                val have = try { GhCi.localUpdate(a, art.id) != null } catch (_: Throwable) { false }   // (v870) نازلة قبل كده (كاش/تنزيلات)؟
-                onUi {
-                    GAlert(a).setTitle("⬆ تحديث جديد")
-                        .setMessage(if (have) "النسخة الجديدة منزّلة عندك في التنزيلات ومتثبتتش. تثبّتها دلوقتي (من غير تنزيل تاني)؟" else "في نسخة أحدث ($mb MB). تنزّلها وتثبّتها؟")
-                        .setPositiveButton(if (have) "ثبّت" else "نزّل وثبّت") { _, _ -> download(a, art) { m -> setApp(m) } }
-                        .setNegativeButton("لاحقًا", null).show()
-                }
-            }.apply { isDaemon = true; start() }
+        fun askInstall() {
+            val ap = Upd.app ?: return
+            val mb = (ap.size / 1048576L).toString()
+            onUi {
+                GAlert(a).setTitle("⬆ تحديث جديد")
+                    .setMessage("في نسخة أحدث ($mb MB). تنزّلها وتثبّتها؟")
+                    .setPositiveButton("نزّل وثبّت") { _, _ -> try { Upd.startApp(a) } catch (e: Throwable) { LogStore.err("GhCiUi:upd2", e) } }   // (v1357) نفس تنزيل مستطيل التحديث: per-ABI من الريليز بشريط تقدّم قابل للاستكمال (بطلب علي)
+                    .setNegativeButton("لاحقًا", null).show()
+            }
         }
         fun checkApp(userTap: Boolean) {
             val cur = "النسخة " + LinkVer.name(a)
-            if (GhCi.token().isBlank()) { setApp("$cur · ⚠ مش متظبّط"); return }
             setApp("$cur · ⏳ بفحص...")
             Thread {
                 try {
-                    val art = GhCi.findUpdate(a); appArt = art
-                    if (art == null) setApp("$cur · ✓ آخر نسخة")
-                    else { setApp("$cur · ⬆ في نسخة أحدث (" + (art.size / 1048576L) + " MB)"); if (userTap) askInstall(art) }
+                    Upd.refreshNow(a)   // (v1357) «فحص» موحّد على مسار الريليزات (نفس مصدر مستطيل التحديث وبوب أب الفتح ونفس الحجم per-ABI) — مسار الـartifacts القديم اتحذف (بطلب علي)
+                    val ap = Upd.app
+                    if (ap == null) setApp("$cur · ✓ آخر نسخة")
+                    else { setApp("$cur · ⬆ في نسخة أحدث (" + (ap.size / 1048576L) + " MB)"); if (userTap) askInstall() }
                 } catch (e: Throwable) { LogStore.err("GhCiUi:upd", e); setApp("$cur · ⚠ " + GhCi.explain(e)) }
             }.apply { isDaemon = true; start() }
         }
         fun paintTv() = onUi { tvInd?.text = RemoteClient.tvStatus(a) }
-        fun summary(): String = listOfNotNull(
-            if (GhCi.watchOn()) "مراقبة الفشل" else null, if (GhCi.autoUpd()) "تحديث تلقائي" else null,
-            if (GhCi.wifiOnly()) "واي فاي بس" else null, "كل " + fmtEvery(GhCi.everyMin())
-        ).joinToString(" · ")
+        fun summary(): String = if (GhCi.watchOn()) "مراقبة فشل البيلدات شغّالة" else ""
 
         if (!DeviceUi.isTv(a)) {
             tvInd = block("📺 تحديث التلفزيون", false) {
@@ -123,7 +110,7 @@ object GhCiUi {
         appInd = ui.text("", 12f, th.muted).apply { setPadding(0, ui.dp(2), ui.dp(8), ui.dp(2)) }
         val chk = ui.text("🔍 فحص", 12f, if (th.isLight) android.graphics.Color.WHITE else android.graphics.Color.BLACK, true).apply {
             background = ui.box(th.primary, th.primary, 14); setPadding(ui.dp(12), ui.dp(5), ui.dp(12), ui.dp(5))
-            setOnClickListener { val k = appArt; if (k != null) askInstall(k) else checkApp(true) }
+            setOnClickListener { if (Upd.app != null) askInstall() else checkApp(true) }
         }
         topRow.addView(chk, LinearLayout.LayoutParams(-2, -2))
         topRow.addView(appInd, LinearLayout.LayoutParams(0, -2, 1f))
@@ -149,7 +136,7 @@ object GhCiUi {
         GAlert(a).setTitle("🔄 مركز التحديث").setView(sv).setNegativeButton("إغلاق", null).show()
     }
 
-    /** (v864) كل إعدادات التحديث — مستخبية هنا بدل ما تبقى ظاهرة في المركز. بتتحفظ أول ما تغيّرها */
+    /** (v864) إعدادات مراقبة بيلدات GitHub (الفشل) — (v1357) إعدادات مسار التحديث القديم (الفحص الدوري/التنزيل التلقائي/واي فاي/الشحن/فرع main) اتحذفت كلها مع المسار نفسه (بطلب علي) */
     fun settings(a: Activity, onChange: () -> Unit) {
         val th = Themes.current()
         val ui = Ui(a, th)
@@ -161,23 +148,9 @@ object GhCiUi {
         fun sw(label: String, key: String, def: Boolean, after: () -> Unit = {}) =
             col.addView(ui.switchRow(label, Cfg.bool(key, def)) { v -> Cfg.put(key, if (v) "1" else "0"); after(); onChange() })
 
-        head("الفحص")
+        head("مراقبة البيلدات")
         sw("🔔 راقب فشل الورك فلوهات", "gh_watch", true) { GhCi.schedule(a) }
-        sw("⬆ دوّر على تحديث ونزّله تلقائي", "gh_autoupd", true) { GhCi.schedule(a) }
-        val opts = listOf(15L, 30L, 60L, 180L, 360L, 720L)
-        var evBtn: TextView? = null
-        evBtn = ui.button("⏱ تكرار الفحص: كل " + fmtEvery(GhCi.everyMin())) {
-            val cur = GhCi.everyMin(); val nx = opts.firstOrNull { it > cur } ?: opts.first()
-            Cfg.put("gh_every", nx.toString()); GhCi.reschedule(a)
-            evBtn?.text = "⏱ تكرار الفحص: كل " + fmtEvery(nx); onChange()
-        }
-        col.addView(evBtn, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(6) })
-        head("التنزيل")
-        sw("📶 التنزيل التلقائي على الواي فاي بس", "gh_wifi", true)
-        sw("🔌 التنزيل التلقائي وهو بيشحن بس", "gh_charging", false)
-        sw("🌿 فرع main بس", "gh_main_only", false)
-        head("الإشعارات")
-        sw("🔔 إشعارات (تحديث جديد / بيلد فشل)", "gh_notify", true)
+        sw("🔔 إشعار لما بيلد يفشل", "gh_notify", true)
         sw("📥 نزّل لوج الفشل مقدمًا", "gh_prelog", true)
         if (!DeviceUi.isTv(a)) {
             head("التلفزيون")
@@ -185,29 +158,5 @@ object GhCiUi {
         }
         val sv = ScrollView(a).apply { isVerticalScrollBarEnabled = false; addView(col) }
         GAlert(a).setTitle("⚙ إعدادات التحديث").setView(sv).setNegativeButton("إغلاق", null).show()
-    }
-
-    private fun download(a: Activity, art: GhCi.Art, say: (String) -> Unit) {
-        Thread {
-            try {
-                val local = GhCi.localUpdate(a, art.id)   // (v870) لو نازلة في التنزيلات ← ثبّتها من غير تنزيل
-                if (local != null) {
-                    Cfg.put("gh_upd_id", art.id.toString()); Cfg.put("gh_upd_asked", art.id.toString())
-                    say("✓ لقيت النسخة في التنزيلات — بفتح التثبيت")
-                    a.runOnUiThread { try { TvUpdate.install(a, local) } catch (e: Throwable) { LogStore.err("GhCiUi:install", e) } }
-                    return@Thread
-                }
-                var lastPct = -1
-                val f = GhCi.downloadUpdate(a, art) { done, total ->
-                    if (total > 0L) { val p = (done * 100L / total).toInt(); if (p != lastPct) { lastPct = p; say("⏳ تنزيل التحديث… $p%") } }
-                    else say("⏳ تنزيل التحديث… " + (done / 1048576L) + " MB")
-                }
-                Cfg.put("gh_upd_id", art.id.toString()); Cfg.put("gh_upd_asked", art.id.toString())
-                say("✓ التنزيل خلص (واتحفظ في Download/Joyboy) — بفتح التثبيت")
-                a.runOnUiThread { try { TvUpdate.install(a, f) } catch (e: Throwable) { LogStore.err("GhCiUi:install", e) } }
-            } catch (e: GhCi.NoNewer) {
-                say("✓ أنت على آخر نسخة (" + LinkVer.name(a) + ")")
-            } catch (e: Throwable) { LogStore.err("GhCiUi:dl", e); say("⚠ التنزيل فشل: " + GhCi.explain(e)) }
-        }.apply { isDaemon = true; start() }
     }
 }

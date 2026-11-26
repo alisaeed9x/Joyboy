@@ -60,10 +60,6 @@ object Upd {
 
     private fun verName(c: Context): String = try { c.packageManager.getPackageInfo(c.packageName, 0).versionName ?: "" } catch (_: Throwable) { "" }
 
-    private fun netOk(c: Context): Boolean {
-        if (!GhCi.wifiOnly()) return true
-        return try { !(c.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).isActiveNetworkMetered } catch (_: Throwable) { true }
-    }
 
     /** ملفات التحديث القديمة (اللي بقت هي المثبّتة أو أقدم) بتتمسح */
     private fun cleanOld(c: Context) {
@@ -96,6 +92,14 @@ object Upd {
         } catch (e: Throwable) { LogStore.err("Upd:app", e) }
     }
 
+    /** (v1357) فحص فوري متزامن من الريليزات (بيتنادى من خيط خلفي): بيوحّد زرار «فحص» في مركز التحديث مع بوب أب الفتح على نفس المصدر ونفس الحجم per-ABI (بطلب علي) */
+    fun refreshNow(c: Context) {
+        var w = 0
+        while (checking && w < 40) { try { Thread.sleep(250L) } catch (_: InterruptedException) { break }; w++ }
+        if (!checking && System.currentTimeMillis() - lastCheck >= 60_000L) { lastCheck = System.currentTimeMillis(); try { cleanOld(c); fetchAll(c) } catch (e: Throwable) { LogStore.err("Upd:refresh", e) } }
+        changed()
+    }
+
     /** بيتنادى من Main.onResume: فحص عند كل فتح (مع فاصل 5 دقايق) وبعدها يقرر يسأل/ينزّل */
     fun onOpen(a: Activity, force: Boolean = false) {
         if (DeviceUi.isTv(a)) return
@@ -121,7 +125,7 @@ object Upd {
         if (appReady(a, f)) { promptedTag = ap.tag; installPrompt(a, ap, f); return }
         if (Cfg.str("upd_skip") == ap.tag) return
         promptedTag = ap.tag
-        if (autoOn() && netOk(a)) startApp(a) else offerPrompt(a, ap)
+        if (autoOn()) startApp(a) else offerPrompt(a, ap)   // (v1357) إعداد «واي فاي بس» اتحذف مع المسار القديم — التنزيل التلقائي اختيارك من المفتاح الجديد (بطلب علي)
     }
 
     private fun offerPrompt(a: Activity, ap: AppInfo) {

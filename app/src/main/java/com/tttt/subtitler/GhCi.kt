@@ -29,9 +29,9 @@ import java.util.zip.ZipFile
 
 /**
  * (v856) مراقبة GitHub Actions + تحديث من جوه البرنامج:
- *  1) كل ورك فلو في الريبو بيفشل ← إشعار أندرويد + سؤال جوه البرنامج «📥 تحميل اللوج» (واللوج بيتنزّل مسبقًا لو التوكن موجود)
- *  2) بيدوّر على نسخة أحدث (artifact الـAPK من آخر بيلد ناجح) ← ينزّلها ويطلّع شاشة التثبيت.
- * ملاحظة: الـAPK عندك artifact مش Release، وGitHub بيطلب توكن لتنزيل الـartifacts والـlogs حتى في الريبو العام.
+ *  كل ورك فلو في الريبو بيفشل ← إشعار أندرويد + سؤال جوه البرنامج «📥 تحميل اللوج» (واللوج بيتنزّل مسبقًا لو التوكن موجود)
+ * (v1357) مسار التحديث القديم (artifact + الفحص الدوري + التنزيل التلقائي وإعداداته) اتحذف بالكامل — التحديث كله من مسار الريليزات (Upd) بس (بطلب علي)
+ * ملاحظة: GitHub بيطلب توكن لتنزيل اللوجات حتى في الريبو العام.
  * التوكن: Fine-grained PAT على الريبو ده بصلاحية Actions = Read-only (أو Classic بصلاحية repo).
  * الفحص: JobScheduler كل 30 دقيقة (GhCiJob) + كل ما تفتح البرنامج (بحد أدنى 3 دقايق بين فحص والتاني).
  */
@@ -40,7 +40,6 @@ object GhCi {
     private const val CH = "gh_ci"
     private const val JOB = 32710
     private const val N_FAIL = 32711
-    private const val N_UPD = 32712
     private const val UA = "Joyboy-App"
     private const val DAY = 24L * 3600L * 1000L
 
@@ -71,13 +70,9 @@ object GhCi {
         }
     }
     fun watchOn(): Boolean = Cfg.bool("gh_watch", true)
-    fun autoUpd(): Boolean = Cfg.bool("gh_autoupd", true)
-    fun wifiOnly(): Boolean = Cfg.bool("gh_wifi", true)
 
     class Run(val id: Long, val name: String, val num: Int, val conclusion: String, val status: String, val branch: String, val startedMs: Long, val url: String)
-    class Art(val id: Long, val name: String, val size: Long, val runId: Long, val branch: String, val createdMs: Long)
     class GhErr(val code: Int, msg: String) : Exception(msg)
-    class NoNewer : Exception("أنت على آخر نسخة")
 
     // ───────── HTTP ─────────
     private fun s(j: JSONObject, k: String): String = if (j.isNull(k)) "" else j.optString(k, "")
@@ -277,209 +272,12 @@ object GhCi {
         }.apply { isDaemon = true; start() }
     }
 
-    // ───────── التحديث ─────────
-    fun apkFile(c: Context): File = File(c.cacheDir, "gh_new.apk")
-
-    // ───────── (v870) نسخة التحديث في التنزيلات ─────────
-    // بعد ما التحديث ينزل بيتحفظ كمان في Download/Joyboy باسم Joyboy_update_<artId>_v<code>.apk
-    // ولو نزل ومتثبتش، أول ما تدوس «تحديث» بيستعمل اللي في التنزيلات بدل ما ينزّل تاني.
-    private const val UPD_PREFIX = "Joyboy_update_"
-    private const val APK_MIME = "application/vnd.android.package-archive"
-    private val updNameRe = Regex("^" + UPD_PREFIX + "(\\d+)_v(\\d+)\\.apk$")
-
-    private fun validApk(c: Context, f: File): Boolean = try {
-        val pi = c.packageManager.getPackageArchiveInfo(f.path, 0)
-        pi != null && pi.packageName == c.packageName && vcode(pi) > LinkVer.code(c)
-    } catch (_: Throwable) { false }
-
-    private class DlItem(val name: String, val uri: android.net.Uri?, val file: File?)
-
-    private fun listDownloadedApks(c: Context): List<DlItem> {
-        val out = ArrayList<DlItem>()
-        try {
-            if (Build.VERSION.SDK_INT >= 29) {
-                val col = MediaStore.Downloads.EXTERNAL_CONTENT_URI
-                c.contentResolver.query(col, arrayOf(MediaStore.Downloads._ID, MediaStore.Downloads.DISPLAY_NAME),
-                    MediaStore.Downloads.DISPLAY_NAME + " LIKE ?", arrayOf(UPD_PREFIX + "%.apk"), MediaStore.MediaColumns.DATE_ADDED + " DESC")?.use { cu ->
-                    while (cu.moveToNext()) {
-                        val nm = cu.getString(1) ?: continue
-                        if (!updNameRe.matches(nm)) continue
-                        out.add(DlItem(nm, android.content.ContentUris.withAppendedId(col, cu.getLong(0)), null))
-                    }
-                }
-            } else {
-                val d = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Joyboy")
-                d.listFiles()?.filter { it.isFile && updNameRe.matches(it.name) }?.sortedByDescending { it.lastModified() }?.forEach { out.add(DlItem(it.name, null, it)) }
-            }
-        } catch (e: Throwable) { try { LogStore.err("GhCi:listDl", e) } catch (_: Throwable) {} }
-        return out
-    }
-
-    /** يحفظ نسخة من الـAPK في Download/Joyboy (لو مش موجودة). بترجّع المسار أو "" */
-    fun saveApkToDownloads(c: Context, src: File, artId: Long, code: Long): String {
-        val name = UPD_PREFIX + artId + "_v" + code + ".apk"
-        if (listDownloadedApks(c).any { it.name == name }) return "Download/Joyboy/" + name
-        if (Build.VERSION.SDK_INT >= 29) {
-            val cv = ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, name)
-                put(MediaStore.Downloads.MIME_TYPE, APK_MIME)
-                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Joyboy")
-            }
-            val uri = c.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv) ?: throw IOException("مقدرتش أكتب في التنزيلات")
-            c.contentResolver.openOutputStream(uri)?.use { o -> src.inputStream().use { it.copyTo(o) } }
-        } else {
-            val d = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Joyboy")
-            d.mkdirs()
-            src.copyTo(File(d, name), true)
-        }
-        return "Download/Joyboy/" + name
-    }
-
-    /** أحدث APK تحديث صالح في التنزيلات (لو artId > 0 لازم يطابقه) ← بيتنسخ لـ apkFile ويترجّع، أو null */
-    fun findDownloadedApk(c: Context, artId: Long): File? {
-        for (it in listDownloadedApks(c)) {
-            try {
-                val m = updNameRe.matchEntire(it.name) ?: continue
-                if (artId > 0L && m.groupValues[1] != artId.toString()) continue
-                if ((m.groupValues[2].toLongOrNull() ?: 0L) <= LinkVer.code(c)) continue
-                val out = apkFile(c)
-                val tmp = File(c.cacheDir, "gh_dl_tmp.apk")
-                if (it.uri != null) (c.contentResolver.openInputStream(it.uri) ?: continue).use { ins -> FileOutputStream(tmp).use { o -> ins.copyTo(o) } }
-                else it.file!!.inputStream().use { ins -> FileOutputStream(tmp).use { o -> ins.copyTo(o) } }
-                if (!validApk(c, tmp)) { tmp.delete(); continue }
-                if (out.exists()) out.delete()
-                if (!tmp.renameTo(out)) { tmp.copyTo(out, true); tmp.delete() }
-                Cfg.put("gh_upd_id", m.groupValues[1])
-                return out
-            } catch (e: Throwable) { try { LogStore.err("GhCi:findDl", e) } catch (_: Throwable) {} }
-        }
-        return null
-    }
-
-    /** تحديث جاهز محليًا (الكاش أو التنزيلات) من غير تنزيل؟ */
-    fun localUpdate(c: Context, artId: Long): File? {
-        try {
-            val f = apkFile(c)
-            if (f.isFile && validApk(c, f) && (artId <= 0L || Cfg.str("gh_upd_id", "") == artId.toString())) return f
-            return findDownloadedApk(c, artId)
-        } catch (e: Throwable) { try { LogStore.err("GhCi:local", e) } catch (_: Throwable) {} }
-        return null
-    }
-
-    /** يمسح نسخ التحديث اللي في التنزيلات وبقت هي المثبّتة أو أقدم */
-    private fun cleanDownloadedApks(c: Context) {
-        try {
-            val cur = LinkVer.code(c)
-            for (it in listDownloadedApks(c)) {
-                val code = updNameRe.matchEntire(it.name)?.groupValues?.get(2)?.toLongOrNull() ?: continue
-                if (code > cur) continue
-                try { if (it.uri != null) c.contentResolver.delete(it.uri, null, null) else it.file?.delete() } catch (_: Throwable) {}
-            }
-        } catch (_: Throwable) {}
-    }
-
-    private fun vcode(pi: android.content.pm.PackageInfo): Long =
-        if (Build.VERSION.SDK_INT >= 28) pi.longVersionCode else @Suppress("DEPRECATION") pi.versionCode.toLong()
-
-    /** أحدث artifact للـAPK (يفضّل فرع main)، ولو بيلده بدأ بعد بيلد النسخة المثبّتة بدقيقة+ يبقى تحديث (versionCode = دقيقة البيلد) */
-    fun findUpdate(c: Context): Art? {
-        val arr = getJson("/repos/" + repo() + "/actions/artifacts?per_page=40").optJSONArray("artifacts") ?: return null
-        val all = ArrayList<Art>()
-        for (i in 0 until arr.length()) {
-            val o = arr.getJSONObject(i)
-            if (o.optBoolean("expired", false)) continue
-            val name = s(o, "name")
-            if (name.contains("plugin", true) || name.contains("aniyomi", true)) continue
-            if (!name.contains("universal-debug", true) && !name.contains("apk", true)) continue
-            val wr = o.optJSONObject("workflow_run")
-            all.add(Art(o.optLong("id"), name, o.optLong("size_in_bytes"), wr?.optLong("id") ?: 0L, if (wr != null) s(wr, "head_branch") else "", ms(s(o, "created_at"))))
-        }
-        val pool = if (Cfg.bool("gh_main_only", false)) all.filter { it.branch == "main" } else all.filter { it.branch == "main" }.ifEmpty { all }   // (v864) «فرع main بس» من الإعدادات
-        val best = pool.maxByOrNull { it.createdMs } ?: return null
-        var startMs = best.createdMs
-        if (best.runId > 0L) {
-            try { val st = ms(s(getJson("/repos/" + repo() + "/actions/runs/" + best.runId), "run_started_at")); if (st > 0L) startMs = st } catch (_: Throwable) {}
-        }
-        return if (startMs / 60000L - LinkVer.code(c) >= 1L) best else null
-    }
-
-    fun downloadUpdate(c: Context, art: Art, progress: ((Long, Long) -> Unit)?): File {
-        val z = File(c.cacheDir, "gh_upd.zip")
-        fetchTo("/repos/" + repo() + "/actions/artifacts/" + art.id + "/zip", z, progress)
-        val out = apkFile(c)
-        var ok = false
-        try {
-            ZipFile(z).use { zf ->
-                val en = zf.entries()
-                while (en.hasMoreElements()) {
-                    val e = en.nextElement()
-                    if (!e.isDirectory && e.name.endsWith(".apk", true)) {
-                        zf.getInputStream(e).use { ins -> FileOutputStream(out).use { o -> ins.copyTo(o) } }
-                        ok = true
-                        break
-                    }
-                }
-            }
-        } finally { z.delete() }
-        if (!ok) throw IOException("مفيش APK جوه الملف المنزّل")
-        val pi = c.packageManager.getPackageArchiveInfo(out.path, 0)
-        if (pi == null) { out.delete(); throw IOException("الـAPK بايظ") }
-        if (pi.packageName != c.packageName) { out.delete(); throw IOException("الـAPK لحزمة تانية") }
-        if (vcode(pi) <= LinkVer.code(c)) { out.delete(); throw NoNewer() }
-        try { saveApkToDownloads(c, out, art.id, vcode(pi)) } catch (e: Throwable) { try { LogStore.err("GhCi:saveApk", e) } catch (_: Throwable) {} }   // (v870) نسخة في التنزيلات
-        return out
-    }
-
-    private fun charging(c: Context): Boolean = try {
-        val i = c.registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        val st = i?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1) ?: -1
-        st == android.os.BatteryManager.BATTERY_STATUS_CHARGING || st == android.os.BatteryManager.BATTERY_STATUS_FULL
-    } catch (_: Throwable) { false }
-    private fun metered(c: Context): Boolean = try { (c.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).isActiveNetworkMetered } catch (_: Throwable) { false }
-
-    private fun autoUpdate(c: Context) {
-        val art = findUpdate(c) ?: return
-        val key = art.id.toString()
-        if (Cfg.str("gh_upd_skip", "") == key) return
-        if (Cfg.str("gh_upd_id", "") == key && apkFile(c).isFile) return
-        if (findDownloadedApk(c, art.id) != null) { notify(c, N_UPD, "⬆ تحديث جاهز للتثبيت", "النسخة في التنزيلات — افتح البرنامج وادوس «تثبيت»", "", false); return }   // (v870)
-        val mb = (art.size / 1048576L).toString() + " MB"
-        if (token().isBlank()) {
-            if (Cfg.str("gh_upd_told", "") != key) { Cfg.put("gh_upd_told", key); notify(c, N_UPD, "⬆ في نسخة جديدة", "افتح «مركز التحديث» عشان تنزّلها ($mb)", "", false) }
-            return
-        }
-        if (wifiOnly() && metered(c)) {
-            if (Cfg.str("gh_upd_told", "") != key) { Cfg.put("gh_upd_told", key); notify(c, N_UPD, "⬆ في نسخة جديدة ($mb)", "هتتنزّل أول ما تتوصّل بواي فاي", "", false) }
-            return
-        }
-        if (Cfg.bool("gh_charging", false) && !charging(c)) return   // (v864) «وهو بيشحن بس»
-        try {
-            downloadUpdate(c, art, null)
-            Cfg.put("gh_upd_id", key)
-            notify(c, N_UPD, "⬆ تحديث جاهز للتثبيت", "افتح البرنامج وادوس «تثبيت»", "", false)
-        } catch (_: NoNewer) { Cfg.put("gh_upd_skip", key) }
-    }
-
-    /** تنضيف: لو الـAPK المنزّل بقى هو المثبّت أو أقدم ← يتمسح */
-    private fun cleanApk(c: Context) {
-        cleanDownloadedApks(c)   // (v870)
-        val f = apkFile(c)
-        if (!f.isFile) return
-        try {
-            val pi = c.packageManager.getPackageArchiveInfo(f.path, 0)
-            if (pi == null || pi.packageName != c.packageName || vcode(pi) <= LinkVer.code(c)) { f.delete(); Cfg.put("gh_upd_id", "") }
-        } catch (_: Throwable) {}
-    }
-
     // ───────── الفحص (Job + عند فتح البرنامج) ─────────
     fun tick(c: Context) {
         Cfg.ensure(c)
         if (DeviceUi.isTv(c)) return
         if (watchOn()) {
             try { checkFailures(c) } catch (e: Throwable) { LogStore.add("GhCi: فحص الورك فلو — " + explain(e)) }
-        }
-        if (autoUpd()) {
-            try { cleanApk(c); autoUpdate(c) } catch (e: Throwable) { LogStore.add("GhCi: فحص التحديث — " + explain(e)) }
         }
     }
 
@@ -490,7 +288,7 @@ object GhCi {
     fun schedule(c: Context) {
         try {
             val js = c.getSystemService(Context.JOB_SCHEDULER_SERVICE) as JobScheduler
-            if (DeviceUi.isTv(c) || !(watchOn() || autoUpd())) { js.cancel(JOB); return }
+            if (DeviceUi.isTv(c) || !watchOn()) { js.cancel(JOB); return }
             if (js.getPendingJob(JOB) != null) return
             js.schedule(JobInfo.Builder(JOB, ComponentName(c, GhCiJob::class.java))
                 .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPersisted(true).setPeriodic(everyMin() * 60L * 1000L).build())
@@ -507,7 +305,7 @@ object GhCi {
             schedule(a)
             // (v1311) الإشعار العائم القديم (ورك فلو فشل / في تحديث جديد + أزرار) اتشال بطلب علي — مركز التحديث والجرس هما البديل
             val now = System.currentTimeMillis()
-            if (now - lastFg < 180_000L || !(watchOn() || autoUpd())) return
+            if (now - lastFg < 180_000L || !watchOn()) return
             lastFg = now
             val app = a.applicationContext
             Thread {
