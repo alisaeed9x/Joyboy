@@ -1564,6 +1564,10 @@ class MainActivity : Activity() {
     /** (v606) PiP من صفحة يوتيوب: لو خرجت (Home/Recents) والفيديو شغّال في صفحة المشاهدة (بورتريه) أو الشريط السفلي، يتسلّم للمشغّل الكامل ويدخل PiP تلقائيًا */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
+        // (v1344) رجّعنا استدعاء PiP: الفيديو الشغّال في صفحة المشاهدة أو الدوك بيتسلّم للمشغّل الكامل ويدخل PiP تلقائيًا (كان متشال فكان الفيديو بيقف)
+        if (!fromPlayer && !isFinishing && !DeviceUi.isTv(this) && Build.VERSION.SDK_INT >= 26 && packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+            try { ytUi?.leaveForPip() } catch (e: Throwable) { LogStore.err("Main:leaveForPip", e) }
+        }
     }
     override fun onStop() { super.onStop(); stoppedAt = System.currentTimeMillis(); WebMute.pauseAll(); try { ytUi?.onPause() } catch (_: Throwable) {}; if (ytLoadLaunched) { ytLoadLaunched = false } }   // (v339) المشغّل ظهر فوقنا: شيل صفحة اللودينج
     // (v339) الأكتيفيتي بقت بتتحمّل الدوران بنفسها (من غير إعادة إنشاء) — كانت بتتعمل لها إعادة إنشاء لما المشغّل يلفّ الشاشة فنرجع للفيديوهات بدل يوتيوب

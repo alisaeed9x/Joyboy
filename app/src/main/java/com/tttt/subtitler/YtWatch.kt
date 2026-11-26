@@ -2020,7 +2020,9 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
     init {
         layoutDirection = View.LAYOUT_DIRECTION_LTR
         visibility = View.GONE
-        setBackgroundColor(YtSkin.surface)
+        // (v1344) زجاج ثابت زي شريط الأدوات: نفس التنت والإطار والحواف المدورة (من غير بلور حي — ممنوع بلور من مصدر الزجاج اللي الدوك مرسوم جواه، سبب كراش v1333)
+        if (MtGlass.on()) try { background = android.graphics.drawable.GradientDrawable().apply { setColor(MtGlass.ak(MeeRes.color("meetube_glass_tint", 0x66FAFAFA, 0x66000000))); cornerRadius = ui.dp(18).toFloat(); setStroke(ui.dp(1), MtGlass.ak(MeeRes.color("meetube_glass_rim", 0x3DFFFFFF, 0x1F000000))) } } catch (_: Throwable) { setBackgroundColor(YtSkin.surface) } else setBackgroundColor(YtSkin.surface)
+        clipToOutline = true; outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         isClickable = true
         elevation = ui.dp(6).toFloat()
         val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }

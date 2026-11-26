@@ -7706,13 +7706,7 @@ class PlayerActivity : Activity(), Host {
     } catch (_: Exception) { null }
     fun canOverlay() = Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(this)
     fun enterPip(fromUser: Boolean = true) {
-        // شريط الترجمة بره نافذة PiP محتاج إذن "العرض فوق التطبيقات" (مرة واحدة)
-        // (v1010) الصورة المصغّرة محتاجة إذن «العرض فوق التطبيقات»: بيتشرح ويتسأل وقت الحاجة بس (مش أول تثبيت)
-        if (!DeviceUi.isTv(this) && !canOverlay()) {
-            if (fromUser) PermAsk.overlay(this, { enterPip(true) }, { try { moveTaskToBack(true) } catch (_: Throwable) {} })   // «لا» = خروج عادي من غير صورة مصغّرة
-            else Cfg.put("pip_hint_pending", "1")   // خروج تلقائي: يطلع عادي من غير PiP، وفي الفتحة الجاية للمشغّل بيتسأل
-            return
-        }
+        // (v1344) الدخول في PiP مش محتاج إذن «العرض فوق التطبيقات» (أندرويد مش بيطلبه) — الإذن ده لشريط الترجمة الطافي بس، وبيظهر لو الإذن ممنوح
         if ((vidW <= 0 || vidH <= 0) && ::player.isInitialized) { try { val vs = player.videoSize(); if (vs.first > 0 && vs.second > 0) { vidW = vs.first; vidH = vs.second } } catch (_: Throwable) {} }   // (v606) تسليم من يوتيوب: المقاس لسه ماوصلش للـlistener
         if (Build.VERSION.SDK_INT >= 26) try {
             val pb = PictureInPictureParams.Builder()
@@ -7724,7 +7718,7 @@ class PlayerActivity : Activity(), Host {
             } catch (_: Throwable) {}
             if (Build.VERSION.SDK_INT >= 31) try { pb.setSeamlessResizeEnabled(true) } catch (e: Throwable) { LogStore.err("Main:2234", e) }
             enterPictureInPictureMode(pb.build())
-        } catch (_: Exception) { Notice.show(this, ("PiP مش مدعوم على الجهاز ده").toString(), 2300L) }
+        } catch (_: Exception) { if (fromUser) Notice.show(this, ("PiP مش مدعوم على الجهاز ده").toString(), 2300L) }
     }
     private var internalNav = false
     override fun startActivity(i: Intent?) { internalNav = true; super.startActivity(i) }
@@ -7734,7 +7728,7 @@ class PlayerActivity : Activity(), Host {
         super.onUserLeaveHint()
         if (gone) return
         if (!internalNav && !isFinishing && Build.VERSION.SDK_INT >= 26 && !isInPictureInPictureMode && try { player.isPlaying } catch (_: Exception) { false }) {
-            if (!DeviceUi.isTv(this) && !remote && ytPage && !audioOnlyMode && !canOverlay()) {
+            if (!DeviceUi.isTv(this) && !remote && ytPage && !audioOnlyMode && (!packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE) || Cfg.str("yt_auto_pip", "1") == "0")) {   // (v1344) الدوك الداخلي بقى بس لو الجهاز مابيدعمش PiP أو المستخدم قافل «يكمّل في نافذة صغيرة»
                 if (!ytTryDock(true)) try { player.pause() } catch (_: Throwable) {}
                 return
             }
