@@ -77,15 +77,15 @@ jobs:
         run: |
           VER=$(ls CHANGES_v*.md | sed -E 's/CHANGES_v([0-9]+)\.md/\1/' | sort -n | tail -1)
           NAME="$((VER / 100)).$(printf '%02d' $((VER % 100)))"
-          # (v1302) كل الـAPKs (arm64-v8a · armeabi-v7a · universal) بتترفع على الريليز باسم فيه المعمارية
+          # (v1339) علي: اليونيفرسال ميترفعش على الريليز، arm64-v8a و armeabi-v7a بس
           OUTS=()
           for APK in app/build/outputs/apk/debug/*.apk; do
             B=$(basename "$APK")
             SUF=""
             case "$B" in
+              *universal*) continue;;
               *arm64-v8a*) SUF="arm64-v8a";;
               *armeabi-v7a*) SUF="armeabi-v7a";;
-              *universal*) SUF="universal";;
             esac
             OUT="Joyboy-v${NAME}-build${{ github.run_number }}${SUF:+-$SUF}.apk"
             cp "$APK" "$OUT"
