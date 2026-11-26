@@ -168,6 +168,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
 
     // ===== المشغّل الكامل =====
     // (v357) سحب لفوق من أي مكان في المشغّل الكامل = لوحة «التالي» (بنتجاهل السحب جوه الكلمات عشان سكرول الكلمات يفضل شغّال)
+    private var fullCtl: LinearLayout? = null   // (v1327) صف أزرار التحكم في المشغّل الكامل (بيترفع فوق الشريط العايم)
     private val full = object : FrameLayout(act) {
         private var x0 = 0f; private var y0 = 0f; private var armed = false
         override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
@@ -1007,6 +1008,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
 
         // الأزرار
         val ctl = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(14), 0, ui.dp(14), 0) }
+        fullCtl = ctl
         bShuffle.setOnClickListener { val on = MusicEngine.toggleShuffle(); paintMode(); quiet(if (on) "🔀 العشوائي شغّال" else "➡️ العشوائي اتقفل", 1300L) }
         bRepeat.setOnClickListener { cycleMode() }
         bPrev.setOnClickListener { if (MusicEngine.current != null) orb.commit(-1) }
@@ -1076,6 +1078,7 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         }
         col.addView(ytModeBtn, LinearLayout.LayoutParams(-1, ui.dp(48)).apply { setMargins(ui.dp(16), ui.dp(4), ui.dp(16), ui.dp(6)) })
         col.addView(ctl, LinearLayout.LayoutParams(-1, ui.dp(60)).apply { bottomMargin = ui.dp(2) })
+        full.post { liftFullCtl() }
         full.addView(col, FrameLayout.LayoutParams(-1, -1))
         // (v339) طبقة «بجيب الصوت…»: ⌄ فوق، ودايرة بلودينج في نفس مكان الدواير/الألبوم، واسم الفيديو تحتها
         ytLoadV = FrameLayout(act).apply { visibility = View.GONE; isClickable = true }
@@ -1161,9 +1164,18 @@ class MusicUi(private val act: Activity, private val ui: Ui, private val th: The
         val m = MusicEngine.mode
         bRepeat.set(if (m == 2) "repeat1" else "repeat", if (m == 0) OFF else BLUE)
     }
+    /** (v1327) بيرفع صف أزرار التشغيل فوق الشريط الزجاجي العايم مسافة صغيرة (بطلب علي: أي زرار مستخبي ورا الشريط يترفع، مش لأعلى الشاشة) */
+    private fun liftFullCtl() {
+        val c = fullCtl ?: return
+        val lp = c.layoutParams as? LinearLayout.LayoutParams ?: return
+        val m = ui.dp(8) + (try { MtFloat.barTop(act) } catch (_: Throwable) { 0 })
+        if (lp.bottomMargin != m) { lp.bottomMargin = m; c.layoutParams = lp }
+    }
+
     fun showFull() {
         if (MusicEngine.current == null) return
         fullOn = true; full.visibility = View.VISIBLE; onNavTint(navCol(bgColor)); onFullToggle?.invoke(true)   // (v1309)
+        full.post { liftFullCtl() }   // (v1327) الأزرار بتترفع فوق الشريط كل مرة يتفتح فيها المشغّل
         if (!canEq() && Cfg.str("eq_asked", "") != "1") {
             Cfg.put("eq_asked", "1"); quiet("📊 المؤثر الموسيقي محتاج إذن «تسجيل الصوت» (للتحليل بس، مفيش تسجيل)", 3200L); askEq()
         }

@@ -2,9 +2,12 @@ package com.tttt.subtitler
 
 import android.app.Activity
 import android.app.Dialog
+import android.content.ContentValues
 import android.content.Context
 import android.net.ConnectivityManager
 import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -122,8 +125,36 @@ object Upd {
             .setPositiveButton("تحديث") { _, _ -> startApp(a) }.show()
     }
 
+    /** (v1327) نسخة من الـAPK الجاهز بتتحفظ في التنزيلات العامة (Download/Joyboy) عشان تلاقيها من أي مدير ملفات (بطلب علي) */
+    private fun copyToDownloads(c: Context, src: File, name: String): String {
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                val cv = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, name)
+                    put(MediaStore.Downloads.MIME_TYPE, "application/vnd.android.package-archive")
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Joyboy")
+                }
+                val uri = c.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv) ?: return ""
+                c.contentResolver.openOutputStream(uri)?.use { o -> src.inputStream().use { it.copyTo(o) } } ?: return ""
+                return "Download/Joyboy/" + name
+            }
+            val dd = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Joyboy")
+            dd.mkdirs()
+            src.copyTo(File(dd, name), true)
+            return "Download/Joyboy/" + name
+        } catch (e: Throwable) { LogStore.err("Upd:toDownloads", e); return "" }
+    }
+
     private fun installPrompt(a: Activity, ap: AppInfo, f: File) {
         try {
+            // (v1327) حفظ نسخة في التنزيلات في الخلفية (مرة واحدة لكل نسخة)
+            val saveKey = "upd_saved_" + ap.tag
+            if (Cfg.str(saveKey, "") != "1") {
+                Thread {
+                    val pth = copyToDownloads(a.applicationContext, f, "Joyboy-" + ap.tag.filter { it.isLetterOrDigit() || it == '.' || it == '-' } + ".apk")
+                    if (pth.isNotEmpty()) { Cfg.put(saveKey, "1"); a.runOnUiThread { try { Notice.show(a, "📁 نسخة من التحديث في: " + pth, 3200L) } catch (_: Throwable) {} } }
+                }.also { it.isDaemon = true }.start()
+            }
             val th = Themes.current(); val ui = Ui(a, th)
             val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)) }
             col.addView(TvUpdate.flowView(a, "v" + verName(a), shortVer(ap.name)))

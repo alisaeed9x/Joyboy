@@ -288,7 +288,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private val navLabs = ArrayList<TextView>()
     private val navBars = ArrayList<View>()   // (v472) خط التمييز تحت التبويب النشط
     private val railLabs = ArrayList<TextView>()   // (v1323) ليبلات الريل الجانبي الشمال (الرئيسية · الاشتراكات · أنا)
-    private var ytRail: LinearLayout? = null
+    private var ytRail: View? = null
     private val chanRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE }
     private val chanName: TextView
     private val subBtn: TextView
@@ -620,26 +620,33 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         ytDock = YtDock(act, ui) { id, t, pos, pk -> val f = onPlayAt; if (f != null) f(id, t, false, pos, pk) else onPlay(id, t, false) }   // (v417)
         content.addView(ytDock, FrameLayout.LayoutParams(-1, ui.dp(58), Gravity.BOTTOM))
 
-        // (v1323) ريل جانبي شمال صغير لتبويبات يوتيوب (الرئيسية · الاشتراكات · أنا) بدل تبديل خلايا شريط البرنامج السفلي (بطلب علي) — على الشمال عشان ما يزحمش أدوات التلفزيون اللي على اليمين. التلفزيون عنده تبويباته فوق واللايت خلاياه تحت زي ما هما
+        // (v1327) ريل تبويبات يوتيوب (الرئيسية · الاشتراكات · أنا) نزل تحت فوق الشريط الأساسي وبقى كبسولة جلاسي زيه بالظبط، وبيترفع فوق الدوك لما فيديو يتصغّر (بطلب علي). التلفزيون عنده تبويباته فوق واللايت خلاياه تحت زي ما هما
         if (!DeviceUi.isTv(act) && !act.packageName.endsWith(".lite")) {
-            val rr = LinearLayout(act).apply {
-                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
-                background = GradientDrawable().apply { setColor(YtSkin.surface); cornerRadius = ui.dp(20).toFloat() }
-                alpha = 0.94f
-                setPadding(ui.dp(3), ui.dp(6), ui.dp(3), ui.dp(6))
+            val rr = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            val cap: ViewGroup = if (MtGlass.on()) {
+                // كبسولة GlassView من غير setSource: نفس تنت زجاج الشريط الأساسي (setSource هنا هيسجّل المصدر جوه نفسه ويكرش)
+                val g = MeeGlass.bar(act, th)
+                g.addView(rr, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+                g
+            } else {
+                rr.background = GradientDrawable().apply { setColor(MtGlass.barSolid(th)); cornerRadius = ui.dp(34).toFloat(); setStroke(ui.dp(1), MtGlass.rim(th)) }
+                rr.setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6))
+                rr
             }
             val railNames = listOf("الرئيسية", "الاشتراكات", "أنا"); val railEmos = listOf("🏠", "📺", "👤")
             for (i in 0..2) {
                 val cell = TextView(act).apply {
-                    text = railEmos[i] + "\n" + railNames[i]; textSize = 10.5f; gravity = Gravity.CENTER; setTextColor(YtSkin.sub); typeface = YtSkin.medium
-                    setPadding(ui.dp(6), ui.dp(7), ui.dp(6), ui.dp(7)); foreground = YtSkin.ripple(true)
+                    text = railTxt(railEmos[i], railNames[i], 0); textSize = 11f; gravity = Gravity.CENTER; setTextColor(YtSkin.sub); typeface = YtSkin.medium
+                    setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4)); foreground = YtSkin.ripple(true)
                     setOnClickListener { tapTab(i) }
                 }
                 railLabs.add(cell)
-                rr.addView(cell, LinearLayout.LayoutParams(ui.dp(54), -2).apply { setMargins(0, ui.dp(2), 0, ui.dp(2)) })
+                rr.addView(cell, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) })
             }
-            ytRail = rr
-            content.addView(rr, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_VERTICAL or Gravity.LEFT).apply { leftMargin = ui.dp(5) })
+            ytRail = cap
+            content.addView(cap, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.LEFT).apply { leftMargin = ui.dp(16) })
+            ytDock.onVis = { ytDock.post { railInset() } }   // post: الظهور بيتظبط في آخر show() فلازم نقراه بعدها
+            cap.post { railInset() }
         }
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         navBar = null; navLine = null   // (v472) الشريط السفلي الخاص بيوتيوب اتشال (التبويبات فوق)
@@ -860,14 +867,34 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             if (on && b.visibility != View.VISIBLE) { b.visibility = View.VISIBLE; b.scaleX = 0.2f; b.animate().cancel(); b.animate().scaleX(1f).setDuration(Skins.dur(200L)).start() }
             else if (!on) { b.animate().cancel(); b.visibility = View.INVISIBLE }
         }
-        for (i in railLabs.indices) railLabs[i].setTextColor(if (i == navSel) YtSkin.accent else YtSkin.sub)   // (v1323) تفعيل التاب في الريل الجانبي
+        for (i in railLabs.indices) {   // (v1327) تفعيل التاب في الريل: لون + كبسولة تحديد زي الشريط الأساسي
+            val on = i == navSel
+            railLabs[i].setTextColor(if (on) YtSkin.accent else YtSkin.sub)
+            railLabs[i].background = if (on) GradientDrawable().apply { setColor(MtGlass.selected(th)); cornerRadius = ui.dp(22).toFloat(); setStroke(1, MtGlass.rim(th)) } else null
+        }
         railSubsBadge()
     }
     /** (v1323) عدّاد «جديد» على زرار الاشتراكات في الريل الجانبي (موبايل) — نفس فكرة بادج التلفزيون */
     private fun railSubsBadge() {
         val lab = railLabs.getOrNull(1) ?: return
         val n = if (navSel == 1) 0 else try { YtNotify.badgeCount() } catch (_: Throwable) { 0 }
-        lab.text = if (n <= 0) "📺\nالاشتراكات" else "📺\nالاشتراكات (" + (if (n > 99) "99+" else n.toString()) + ")"
+        lab.text = railTxt("📺", "الاشتراكات", n)
+    }
+    /** (v1327) نص خلية الريل: إيموجي أكبر من الليبل (زي خلايا الشريط الأساسي 16/11) */
+    private fun railTxt(emo: String, lab: String, badge: Int): CharSequence {
+        val s = emo + "\n" + lab + if (badge > 0) " (" + (if (badge > 99) "99+" else badge.toString()) + ")" else ""
+        val sp = android.text.SpannableString(s)
+        sp.setSpan(android.text.style.RelativeSizeSpan(1.45f), 0, emo.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        return sp
+    }
+    /** (v1327) الريل فوق الشريط العايم، وفوق الدوك لما يكون ظاهر: مفيش عنصر يغطّي التاني (بطلب علي) */
+    private fun railInset() {
+        val r = ytRail ?: return
+        val lp = r.layoutParams as? FrameLayout.LayoutParams ?: return
+        val bt = try { MtFloat.barTop(act) } catch (_: Throwable) { 0 }
+        val dock = if (::ytDock.isInitialized && ytDock.visibility == View.VISIBLE) ui.dp(58) + ui.dp(8) else 0
+        val b = (if (bt > 0) bt + ui.dp(8) else ui.dp(12)) + dock
+        if (lp.bottomMargin != b) { lp.bottomMargin = b; r.layoutParams = lp }
     }
     // ───────── (v1291) «أنت»: زي صفحة You في يوتيوب الرسمي — كارت الحساب فوق، أرفف أفقية بالصور (السجل · أكمل · المحفوظات)، وتحتها قوايمك والتحميلات والإعدادات ─────────
     private fun yrow(title: String, sub: String, key: String) = NpItem("act", title, sub, "", "", -1L, -1L, "", 2, "yta:$key")

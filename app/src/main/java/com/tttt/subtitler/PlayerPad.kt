@@ -121,11 +121,11 @@ object PlayerPad {
             val d = Dialog(act, android.R.style.Theme_Translucent_NoTitleBar)   // (v782) ورقة بتطلع من تحت فوق الريموت بدل صفحة كاملة
             val root = FrameLayout(act).apply {
                 layoutDirection = View.LAYOUT_DIRECTION_LTR
-                background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadii = floatArrayOf(dpf(28f), dpf(28f), dpf(28f), dpf(28f), 0f, 0f, 0f, 0f); setColor(MtGlass.pf(0xFF0F1830.toInt())); setStroke(dp(1), MtGlass.ps(0xFF2B3C60.toInt())) }
+                background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadii = floatArrayOf(dpf(28f), dpf(28f), dpf(28f), dpf(28f), 0f, 0f, 0f, 0f); setColor(MtGlass.pf(th.card)); setStroke(dp(1), MtGlass.ps(th.border)) }   // (v1327) لون الصفحة من ثيم البرنامج (بطلب علي)
             }
 
-            val cCard = 0xFF14203A.toInt(); val cLine = 0xFF2B3C60.toInt(); val cOn = 0xFF2563EB.toInt(); val cOnLine = 0xFF3B82F6.toInt()
-            val cDim = 0xFF8FA0BC.toInt()
+            val cCard = th.card; val cLine = th.border; val cOn = th.primary; val cOnLine = th.primary   // (v1327) ألوان الريموت من ثيم البرنامج (بطلب علي)
+            val cDim = th.muted
 
             // ── حالة الصفحة (بتتحدّث من render) ──
             var st: JSONObject = JSONObject()
@@ -162,7 +162,7 @@ object PlayerPad {
                 if (bold) typeface = android.graphics.Typeface.DEFAULT_BOLD
                 layoutDirection = View.LAYOUT_DIRECTION_RTL
             }
-            fun btn(t: String, sp: Float = 14f, fill: Int = cCard, stroke: Int = cLine, tap: (TextView) -> Unit): TextView = label(t, sp).apply {
+            fun btn(t: String, sp: Float = 14f, fill: Int = cCard, stroke: Int = cLine, tap: (TextView) -> Unit): TextView = label(t, sp, if (Theme.lum(fill) > 0.55) 0xFF1A1A1A.toInt() else Color.WHITE).apply {   // (v1327) لون النص على قدر لون الزرار
                 background = bg(fill, stroke, 14f); setPadding(dp(6), dp(8), dp(6), dp(8)); isClickable = true
                 setOnClickListener { v ->
                     Haptic.tap(v)
@@ -237,14 +237,14 @@ object PlayerPad {
                 val panel = LinearLayout(act).apply {
                     orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
                     setPadding(dp(16), dp(14), dp(16), dp(20))
-                    background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(MtGlass.pf(0xFF1C2A4A.toInt()), MtGlass.pf(0xFF121C34.toInt()))).apply {
+                    background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(MtGlass.pf(th.card), MtGlass.pf(th.surface))).apply {
                         shape = GradientDrawable.RECTANGLE
                         cornerRadii = floatArrayOf(dpf(26f), dpf(26f), dpf(26f), dpf(26f), 0f, 0f, 0f, 0f)
                         setStroke(dp(1), cLine)
                     }
                 }
-                panel.addView(View(act).apply { background = pill(0xFF3A4C73.toInt(), 3f) }, lp(dp(42), dp(5)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(12) })
-                panel.addView(label(title, 18f), lp(-1, -2).apply { bottomMargin = dp(2) })
+                panel.addView(View(act).apply { background = pill(MtGlass.ps(th.border), 3f) }, lp(dp(42), dp(5)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(12) })
+                panel.addView(label(title, 18f, th.text), lp(-1, -2).apply { bottomMargin = dp(2) })
                 val body = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
                 // (v999 ملاحظة 5) السكرول بار بقى ظاهر عشان المستخدم يعرف إن فيه أزرار تحت (زي «▶ ترجم» و«🔁 طبّق…»)
                 val scroll = MaxHeightScroll(act, (dm.heightPixels * 0.72f).toInt()).apply { isVerticalScrollBarEnabled = true; addView(body) }
@@ -295,7 +295,7 @@ object PlayerPad {
                 body.addView(row, lp(-1, -2).apply { topMargin = dp(14) })
             }
             /** (v688) كارت معلومة/حالة جوه الورقة */
-            fun infoCard(body: LinearLayout, t: String, col: Int = 0xFFBBD0FF.toInt(), fill: Int = 0xFF1B2B52.toInt(), line: Int = 0xFF3B5A99.toInt()) {
+            fun infoCard(body: LinearLayout, t: String, col: Int = th.text, fill: Int = cCard, line: Int = cLine) {
                 body.addView(label(t, 12.5f, col, false).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL; background = bg(fill, line, 14f); setPadding(dp(12), dp(10), dp(12), dp(10)) }, lp(-1, -2).apply { topMargin = dp(10) })
             }
 
@@ -316,9 +316,9 @@ object PlayerPad {
                 }, lp(0, dp(46), 1f).apply { marginStart = dp(4) })
                 body.addView(r2, lp(-1, -2).apply { topMargin = dp(8) })
                 if (logSrc == 0 && !LinkSession.connected) infoCard(body, "مفيش اتصال بالتلفزيون دلوقتي — سطور التلفزيون بتوصل وانت متصل بس.")
-                body.addView(label(if (txt.isEmpty()) "مفيش سطور لسه" + (if (logSrc == 0) " — شغّل فيديو على التلفزيون وسيبه يشتغل وارجع دوس 🔄" else "") else txt, 11f, 0xFFD6E2FF.toInt(), false).apply {
+                body.addView(label(if (txt.isEmpty()) "مفيش سطور لسه" + (if (logSrc == 0) " — شغّل فيديو على التلفزيون وسيبه يشتغل وارجع دوس 🔄" else "") else txt, 11f, th.text, false).apply {
                     typeface = android.graphics.Typeface.MONOSPACE; setTextIsSelectable(true); gravity = Gravity.START; textDirection = View.TEXT_DIRECTION_ANY_RTL
-                    background = bg(0xFF0F1830.toInt(), 0xFF2B3F6E.toInt(), 14f); setPadding(dp(10), dp(8), dp(10), dp(8))
+                    background = bg(cCard, cLine, 14f); setPadding(dp(10), dp(8), dp(10), dp(8))
                 }, lp(-1, -2).apply { topMargin = dp(10) })
             }
             fun sheetSpeed() = sheet("⏩ سرعة التشغيل") { body, _, close ->
@@ -654,10 +654,10 @@ object PlayerPad {
             headRow.addView(logTop, lp(dp(66), dp(44)).apply { leftMargin = dp(6) })
 
             // ── عدّاد الجمل (صوتي أو بصري) — دوسة = لوج الترجمة على التلفزيون ──
-            val cntTv = label("—", 28f)
-            val modeTv = label("", 12f, 0xFF9FB3D6.toInt(), false)
+            val cntTv = label("—", 28f, th.text)
+            val modeTv = label("", 12f, cDim, false)
             val cntCard = LinearLayout(act).apply {
-                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = bg(0xFF18284A.toInt(), 0xFF3B5A99.toInt(), 22f); setPadding(dp(8), dp(12), dp(8), dp(12))
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = bg(cCard, cLine, 22f); setPadding(dp(8), dp(12), dp(8), dp(12))
                 isClickable = true; setOnClickListener { Haptic.tap(it); go("log") }
             }
             cntCard.addView(cntTv, lp(-2, -2)); cntCard.addView(modeTv, lp(-2, -2).apply { topMargin = dp(3) })
@@ -690,7 +690,7 @@ object PlayerPad {
             fun newBody(): LinearLayout = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; visibility = View.GONE }
             fun stepRow(body: LinearLayout, minus: () -> Unit, plus: () -> Unit): TextView {
                 val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER_VERTICAL; background = bg(cCard, cLine, 16f) }
-                val v = label("", 13f).apply { maxLines = 1 }
+                val v = label("", 13f, th.text).apply { maxLines = 1 }
                 row.addView(btn("−", 22f) { minus() }, lp(dp(50), dp(46)))
                 row.addView(v, lp(0, -2, 1f))
                 row.addView(btn("+", 22f) { plus() }, lp(dp(50), dp(46)))
@@ -771,7 +771,7 @@ object PlayerPad {
             fun selectTab(i: Int) {
                 curTab = i
                 bodies.forEachIndexed { k, b -> b.visibility = if (k == i) View.VISIBLE else View.GONE }
-                tabBtns.forEachIndexed { k, b -> b.background = bg(if (k == i) cOn else cCard, if (k == i) cOnLine else cLine, 12f) }
+                tabBtns.forEachIndexed { k, b -> b.background = bg(if (k == i) cOn else cCard, if (k == i) cOnLine else cLine, 12f); b.setTextColor(if (k == i) (if (Theme.lum(th.primary) > 0.6) 0xFF111111.toInt() else Color.WHITE) else th.text) }
             }
             val tabBar = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; layoutDirection = View.LAYOUT_DIRECTION_RTL }
             tabNames.forEachIndexed { k, n ->

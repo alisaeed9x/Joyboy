@@ -491,21 +491,29 @@ object ControllerPad {
                 // ⛶ (تكبير الشاشة) آخر زرار في صف الترجمة: بعرض عمود الصوت بالظبط عشان السلايدر يكمّل تحته على نفس الخط
                 (P.tr as? android.view.ViewGroup)?.let { g -> if (g.childCount > 0) g.getChildAt(g.childCount - 1).layoutParams = android.widget.LinearLayout.LayoutParams(stripW, dp(46)).apply { marginStart = dp(6) } }
 
-                if (onNav != null) {   // (v1316) شريط أدوات البرنامج مرفوع فوق الريموت: نفس أزرار الشريط السفلي بنفس الثيم (دوسة تقفل الريموت وتفتح القسم)
-                    val barRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER
-                        background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(18f)); setColor(MtGlass.pf(th.card)); setStroke(dp(1), MtGlass.ps(th.border)) }
-                        elevation = dpf(4f) }
+                // (v1327) شريط البرنامج في الريموت نزل تحت الصفحة وبقى كبسولة جلاسي زي الشريط الأساسي بالظبط (بطلب علي): دوسة تقفل الريموت وتفتح القسم
+                val appBar: View? = if (onNav != null) {
                     val ids = (try { NavCustom.barIds() } catch (_: Throwable) { null } ?: BottomNav.BAR_ORDER).filter { it != BottomNav.REMOTE && it != BottomNav.MORE && it >= 0 && it < BottomNav.DEFS.size && BottomNav.DEFS[it].first.isNotEmpty() }
-                    ids.forEachIndexed { i, id ->
+                    val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; gravity = Gravity.CENTER }
+                    ids.forEach { id ->
                         val (em, lab) = BottomNav.DEFS[id]
-                        val cell = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
-                            addView(TextView(act).apply { text = em; textSize = 15f; gravity = Gravity.CENTER })
-                            addView(TextView(act).apply { text = lab; textSize = 9f; setTextColor(th.muted); gravity = Gravity.CENTER; maxLines = 1; includeFontPadding = false }) }
+                        val cell = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(0, dp(3), 0, dp(2))
+                            addView(TextView(act).apply { text = em; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false })
+                            addView(TextView(act).apply { text = lab; textSize = 11f; setTextColor(th.muted); gravity = Gravity.CENTER; maxLines = 1; includeFontPadding = false }) }
                         cell.setOnClickListener { v -> Haptic.tap(v); try { d.dismiss() } catch (_: Throwable) {}; onNav.invoke(id) }
-                        barRow.addView(cell, LinearLayout.LayoutParams(0, -1, 1f))
+                        row.addView(cell, LinearLayout.LayoutParams(0, -1, 1f))
                     }
-                    col.addView(barRow, LinearLayout.LayoutParams(-1, dp(52)).apply { bottomMargin = dp(6) })
-                }
+                    if (MtGlass.on()) {
+                        // كبسولة GlassView بتنت الشريط الأساسي نفسه (من غير setSource: دايلوج مستقل مفيهوش مصدر زجاج)
+                        val g = MeeGlass.bar(act, th)
+                        g.addView(row, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
+                        g.elevation = dpf(4f)
+                        g
+                    } else row.apply {
+                        background = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = MtGlass.pr(dpf(34f)); setColor(MtGlass.barSolid(th)); setStroke(dp(1), MtGlass.rim(th)) }
+                        elevation = dpf(4f); setPadding(dp(6), dp(6), dp(6), dp(6))
+                    }
+                } else null
                 col.addView(P.netTop, android.widget.LinearLayout.LayoutParams(-1, dp(16)).apply { bottomMargin = dp(2) })   // (v810) عدّاد النت: سطر صغير لوحده فوق كل حاجة
                 // (v821) ريموت واحد موحّد: صف حالة حي (Wi-Fi فعّال / IR فعّال / جاري الاتصال / الجهاز غير متاح / IR غير مدعوم) + ⏻ + ☰ قايمة + رئيسية التلفزيون.
                 // كل زرار = أمر منطقي واحد عبر RemoteRouter (واي فاي أساسي ← IR احتياطي تلقائي). دوسة على الحالة = تبديل الجهاز الهدف (تلفزيون/ريسيفر)؛ ضغطة طويلة = كتالوج ريموتات IR؛ المزيد في 📡 بالشريط السفلي.
@@ -620,6 +628,7 @@ object ControllerPad {
                 col.addView(P.repeatRow, android.widget.LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(5) })
                 col.addView(P.bar, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
                 col.addView(P.times, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(2) })
+                if (appBar != null) col.addView(appBar, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
             }
 
             // (v680) الريموت ما بيسكرولش: لو المحتوى أطول من الشاشة بيتصغّر كله بنسبة تلائمها

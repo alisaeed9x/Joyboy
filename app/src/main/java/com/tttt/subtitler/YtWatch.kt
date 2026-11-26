@@ -2030,8 +2030,12 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
         if (lp.bottomMargin != b) { lp.bottomMargin = b; layoutParams = lp }
     }
 
+    /** (v1327) إشعار ظهور/اختفاء الدوك: ريل يوتيوب بيترفع فوقه عشان مفيش عنصر يغطّي التاني (بطلب علي) */
+    var onVis: ((Boolean) -> Unit)? = null
+
     fun show(item: NpItem, k: YtKept, instant: Boolean = false) {
         applyInset(); post { applyInset() }
+        onVis?.invoke(true)
         dismissInner()
         curItem = item
         vid = item.id; ttl = item.title; pick = k.pick
@@ -2119,7 +2123,7 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
 
     fun pause() { try { exo?.playWhenReady = false } catch (_: Throwable) {}; paintPlay() }
 
-    fun dismiss() { dismissInner(); visibility = View.GONE }
+    fun dismiss() { dismissInner(); visibility = View.GONE; onVis?.invoke(false) }
 
     private fun dismissInner() {
         hh.removeCallbacks(tick)
