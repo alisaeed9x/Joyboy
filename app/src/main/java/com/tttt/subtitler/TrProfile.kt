@@ -21,14 +21,13 @@ object TrProfile {
     const val TX = 0
     const val MSA = 1
     const val DIA = 2
-    /** (v1229) وضع الدبلجة: ترجمة فصحى + تشكيل + دبلجة عربي. مش مفتاح نوع جديد — فلاج dub_mode فوق الفصحى (المحرك شايفه فصحى عادي) */
-    const val DUB = 3
+    /** (v1358) وضع الدبلجة اتشال خالص (بطلب علي) — الأوضاع الباقية: تفريغ · فصحى · لهجة */
     const val DEF_DIALECT = "مصري"
     val degrees = listOf("خفيفة", "متوسطة", "شديدة")
 
     private const val SAVED = "trp_saved"
     /** الإعدادات اللي بتتحفظ مع بعض */
-    private val keys = listOf("tr_kind", "tr_engine", "lang", "conv_dialect", "tone_strength", "tr_slider", "tr_dia_last", "tr_bal", "tr_one", "fastmode", "dual_listen", "dub_mode")   // (v1098) الثلاثة الأخيرة = أوضاع 1095
+    private val keys = listOf("tr_kind", "tr_engine", "lang", "conv_dialect", "tone_strength", "tr_slider", "tr_dia_last", "tr_bal", "tr_one", "fastmode", "dual_listen")   // (v1098) الثلاثة الأخيرة = أوضاع 1095
 
     /** نقي (متختبر): النوع من القيم الخام */
     fun modeOf(kind: String, convDialect: String, lang: String): Int {
@@ -45,9 +44,8 @@ object TrProfile {
         Cfg.str("tr_engine", "").ifBlank { if (TrWizard.savedPlan()?.offline == true) "off" else "gem" }
     } catch (_: Throwable) { "gem" }
 
-    fun dubOn(): Boolean = try { Cfg.bool("dub_mode", false) } catch (_: Throwable) { false }
-    /** (v1229) موضع السلايدر في الواجهة: الدبلجة بس لو النوع فصحى */
-    fun uiMode(): Int = try { val m = mode(); if (m == MSA && dubOn()) DUB else m } catch (_: Throwable) { MSA }
+    /** (v1358) موضع السلايدر في الواجهة = الوضع نفسه بعد حذف الدبلجة */
+    fun uiMode(): Int = try { mode() } catch (_: Throwable) { MSA }   // (v1358) الدبلجة اتشالت
 
     fun mode(): Int = try { modeOf(kind(), Cfg.str("conv_dialect", ""), Cfg.str("lang", "فصحى")) } catch (_: Throwable) { MSA }
 
@@ -86,9 +84,7 @@ object TrProfile {
     }
 
     fun setMode(m: Int) {
-        Cfg.put("dub_mode", if (m == DUB) "1" else "0")   // (v1229)
         when (m) {
-            DUB -> { Cfg.put("tr_kind", "translate"); applyDialect("") }
             TX -> Cfg.put("tr_kind", "transcribe")
             MSA -> { Cfg.put("tr_kind", "translate"); applyDialect("") }
             else -> { Cfg.put("tr_kind", "translate"); applyDialect(dialect()) }
@@ -106,7 +102,6 @@ object TrProfile {
     private fun cur(k: String): String = when (k) {
         "tr_kind" -> kind()
         "tr_engine" -> engine()
-        "dub_mode" -> if (dubOn()) "1" else "0"
         "tr_bal", "tr_one" -> if (Cfg.bool(k, false)) "1" else "0"
         "fastmode" -> if (Cfg.bool(k, false)) "1" else "0"
         "dual_listen" -> Cfg.int(k, 1).toString()

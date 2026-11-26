@@ -474,10 +474,6 @@ object SettingsFuzzy {
 object AdvRows {
     private class R(val tab: String, val key: String, val label: String, val kind: String, val d: Int = 1, val lo: Int = 0, val hi: Int = 0, val unit: String = "", val scale: Int = 1)
     private val rows = listOf(
-        R("audio", "dub_orig_vol", "🎙 صوت الفيديو الأصلي أثناء الدبلجة", "int", 12, 0, 100, "%"),
-        R("audio", "dub_live", "🎙 دبلجة لحظية (بتشتغل وانت بتتفرج)", "i01", 1),
-        R("audio", "dub_multi", "🎙 دبلجة بأكتر من صوت (حسب المتكلم)", "i01", 1),
-        R("audio", "dub_tashkeel", "🎙 تشكيل النص قبل نطق الدبلجة", "i01", 1),
         R("audio", "stt_vad", "🎧 تخطّي الصمت أثناء التفريغ على الجهاز (VAD)", "b", 1),
         R("audio", "song_auto_id", "🎵 التعرف التلقائي على اسم الأغنية", "s01", 1),
         R("perf", "auto_requal", "🔁 إعادة الباتش تلقائيًا لو جودته ضعيفة", "b", 1),

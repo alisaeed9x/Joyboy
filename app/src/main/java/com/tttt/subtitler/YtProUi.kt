@@ -2030,7 +2030,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         box.addView(prog, FrameLayout.LayoutParams(0, ui.dp(3), Gravity.BOTTOM or Gravity.START))
         // (v406) علامة «مدبلج» (بتظهر لو الفيديو ليه أكتر من لغة صوت) — دوسة عليها بتختار اللغة
         val dub = TextView(act).apply {
-            text = "🌐 مدبلج"; textSize = 11f; setTextColor(Color.WHITE); includeFontPadding = false; typeface = medium; visibility = View.GONE
+            text = "🌐 لغات"; textSize = 11f; setTextColor(Color.WHITE); includeFontPadding = false; typeface = medium; visibility = View.GONE
             setPadding(ui.dp(7), ui.dp(4), ui.dp(7), ui.dp(4)); background = GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = ui.dp(5).toFloat() }
         }
         box.addView(dub, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) })

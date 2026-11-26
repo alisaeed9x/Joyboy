@@ -283,7 +283,7 @@ class YtPlayerKit(private val act: Activity, private val ui: Ui) : FrameLayout(a
     private val closeG = YtGlyph(act, 3)
     private val gearG = YtGlyph(act, 4)
     private val dubTv = TextView(act).apply {
-        text = "🌐 مدبلج"; textSize = 11f; setTextColor(Color.WHITE); visibility = View.GONE; includeFontPadding = false
+        text = "🌐 لغات"; textSize = 11f; setTextColor(Color.WHITE); visibility = View.GONE; includeFontPadding = false
         setPadding(ui.dp(8), ui.dp(5), ui.dp(8), ui.dp(5)); background = GradientDrawable().apply { setColor(0xAA000000.toInt()); cornerRadius = ui.dp(6).toFloat() }
     }
     private val bar = LinearLayout(act)

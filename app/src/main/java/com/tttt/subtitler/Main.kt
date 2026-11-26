@@ -413,7 +413,7 @@ class MainActivity : Activity() {
                 ui.switchRow("▶ تشغيل تلقائي في مشغّل صفحة المشاهدة", YtOpen.autoPlay()) { Cfg.put("yt_mini_auto", if (it) "1" else "0") },
                 ui.switchRow("⬇ دوك صفحة المشاهدة (شريط تحت لما تصغّر الفيديو بالسحب لتحت)", YtDockCfg.on()) { Cfg.put("yt_dock", if (it) "1" else "0") },
                 ui.switchRow("🪟 لما تخرج من التطبيق والفيديو شغّال: يكمّل في نافذة صغيرة (PiP)", Cfg.str("yt_auto_pip", "1") != "0") { Cfg.put("yt_auto_pip", if (it) "1" else "0") },
-                ui.switchRow("🌐 علامة «مدبلج» على الفيديوهات متعددة اللغات", YtDub.enabled()) { Cfg.put("yt_dub_scan", if (it) "1" else "0") },
+                ui.switchRow("🌐 علامة «لغات» على الفيديوهات متعددة اللغات", YtDub.enabled()) { Cfg.put("yt_dub_scan", if (it) "1" else "0") },
                 ui.switchRow("⏭ تخطي الرعاة (SponsorBlock)", YtSponsor.on()) { on -> Cfg.put("yt_sponsor", if (on) "1" else "0") },
                 ui.switchRow("🎬 الشورتس تظهر كفيديوهات عادية", YtBackends.shortsAsVideos()) { Cfg.put("yt_shorts_normal", if (it) "1" else "0") },
                 ui.text("الفيديو بيفتح على صفحة المشاهدة: المشغّل فوق، وتحته الوصف والتعليقات والمقترحات. اسحب لتحت يصغّر لدوك تحت، وزرار التكبير بيفتح المشغّل الكامل من نفس الثانية.", 12f, th.muted)),
@@ -647,7 +647,7 @@ class MainActivity : Activity() {
                 },
                 ui.button("📊 إحصائية الاستهلاك والكوتة") { StatsUi(this, ui, th).show() },
                                 ui.section("🔑 كل المفاتيح", true,
-                    ui.noHint(), KeyStatus.row(this, ui, th), KeyStatus.audioTestButton(this, ui, th), fetchModelsBtnKeys, keysUi, backupUi, extraUi)),   // (v1303) حالة المفاتيح هنا بعد حذف تبويب الشات + (v1320) زرار جلب الموديلات
+                    ui.noHint(), KeyStatus.row(this, ui, th), fetchModelsBtnKeys, keysUi, backupUi, extraUi)),   // (v1303) حالة المفاتيح هنا بعد حذف تبويب الشات + (v1320) زرار جلب الموديلات
                 ui.section("🔑 مفتاح الوضع البصري فقط", true,
                     ui.noHint(), visKeysUi)) }),   // (v1014) مفتاح الوضع البصري مع باقي المفاتيح
             // ===== 🎙 التفريغ والصوت: موديلات الجهاز + إعدادات الصوت =====
