@@ -297,6 +297,8 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private val navIcons = ArrayList<YtIcon>()
     private val navLabs = ArrayList<TextView>()
     private val navBars = ArrayList<View>()   // (v472) خط التمييز تحت التبويب النشط
+    private val railLabs = ArrayList<TextView>()   // (v1323) ليبلات الريل الجانبي الشمال (الرئيسية · الاشتراكات · أنا)
+    private var ytRail: View? = null
     private val chanRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE }
     private val chanName: TextView
     private val subBtn: TextView
@@ -628,6 +630,62 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         ytDock = extDock ?: YtDock(act, ui) { id, t, pos, pk -> val f = onPlayAt; if (f != null) f(id, t, false, pos, pk) else onPlay(id, t, false) }   // (v417) · (v1350) موبايل: PiP Main العايمة المشتركة
         if (extDock == null) content.addView(ytDock, FrameLayout.LayoutParams(-1, ui.dp(58), Gravity.BOTTOM))   // (v1350) التلفزيون بس هو اللي بيحط الشريط القديم جوه الصفحة
 
+        // (v1327) ريل تبويبات يوتيوب (الرئيسية · الاشتراكات · أنا) نزل تحت فوق الشريط الأساسي وبقى كبسولة جلاسي زيه بالظبط، وبيترفع فوق الدوك لما فيديو يتصغّر (بطلب علي). التلفزيون عنده تبويباته فوق واللايت خلاياه تحت زي ما هما
+        if (!DeviceUi.isTv(act) && !act.packageName.endsWith(".lite")) {
+            val rr = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            val cap: ViewGroup = if (MtGlass.on()) {
+                val g = FrameLayout(act)
+                g.setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6))
+                g.addView(rr, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+                g
+            } else {
+                rr.background = GradientDrawable().apply { setColor(MtGlass.barSolid(th)); cornerRadius = ui.dp(34).toFloat(); setStroke(ui.dp(1), MtGlass.rim(th)) }
+                rr.setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6))
+                rr
+            }
+            val railNames = listOf("الرئيسية", "الاشتراكات", "أنا"); val railEmos = listOf("🏠", "📺", "👤")
+            for (i in 0..2) {
+                val cell = TextView(act).apply {
+                    text = railTxt(railEmos[i], railNames[i], 0); textSize = 11f; gravity = Gravity.CENTER; setTextColor(YtSkin.sub); typeface = YtSkin.medium
+                    setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4)); foreground = YtSkin.ripple(true)
+                    setOnClickListener { tapTab(i) }
+                }
+                railLabs.add(cell)
+                rr.addView(cell, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) })
+            }
+            val host = object : FrameLayout(act) {
+                private var dx = 0f; private var drag = false; private var base = 0f
+                override fun onInterceptTouchEvent(e: android.view.MotionEvent): Boolean {
+                    when (e.actionMasked) {
+                        android.view.MotionEvent.ACTION_DOWN -> { dx = e.rawX; drag = false; base = translationX }
+                        android.view.MotionEvent.ACTION_MOVE -> if (!drag && Math.abs(e.rawX - dx) > ui.dp(10)) { drag = true; parent?.requestDisallowInterceptTouchEvent(true) }
+                    }
+                    return drag
+                }
+                override fun onTouchEvent(e: android.view.MotionEvent): Boolean {
+                    when (e.actionMasked) {
+                        android.view.MotionEvent.ACTION_MOVE -> {
+                            val pw = (parent as? View)?.width ?: 0
+                            val lim = ((pw - width) / 2f).coerceAtLeast(0f)
+                            translationX = (base + e.rawX - dx).coerceIn(-lim, lim)
+                        }
+                        android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> { if (drag) { try { Cfg.put("yt_rail_x", translationX.toInt().toString()) } catch (_: Throwable) {} }; drag = false }
+                    }
+                    return true
+                }
+            }
+            host.addView(cap, FrameLayout.LayoutParams(-2, -2))
+            host.translationX = try { Cfg.int("yt_rail_x", 0).toFloat() } catch (_: Throwable) { 0f }
+            ytRail = host
+            content.addView(host, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
+            ytDock.onVis = { ytDock.post { railInset() } }
+            // (v1331) زجاج الريل = نفس زجاج شريط الأدوات حرفيًا: بلور حي فوق مصدر الصفحة + نفس التنت وبيتبع سلايدر «الشفافية والبلر»
+            // (v1334) إصلاح الفورس كلوز: الريل جوه مصدر الزجاج نفسه، فالبلور الحي بيسجّل نفسه ويكرش — رجعنا لتنت ثابت بنفس قيمة الشريط حرفيًا (نفس الشفافية، من غير بلور)
+            val paintRail = {
+                if (MtGlass.on()) try { cap.background = GradientDrawable().apply { setColor(MtGlass.ak(MeeRes.color("meetube_glass_tint", 0x66FAFAFA, 0x66000000))); cornerRadius = ui.dp(34).toFloat(); setStroke(ui.dp(1), MtGlass.ak(MeeRes.color("meetube_glass_rim", 0x3DFFFFFF, 0x1F000000))) } } catch (_: Throwable) {}
+            }
+            host.post { railInset(); paintRail() }
+        }
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         navBar = null; navLine = null   // (v472) الشريط السفلي الخاص بيوتيوب اتشال (التبويبات فوق)
         paintNav()
@@ -856,15 +914,35 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             if (on && b.visibility != View.VISIBLE) { b.visibility = View.VISIBLE; b.scaleX = 0.2f; b.animate().cancel(); b.animate().scaleX(1f).setDuration(Skins.dur(200L)).start() }
             else if (!on) { b.animate().cancel(); b.visibility = View.INVISIBLE }
         }
+        for (i in railLabs.indices) {   // (v1327) تفعيل التاب في الريل: لون + كبسولة تحديد زي الشريط الأساسي
+            val on = i == navSel
+            railLabs[i].setTextColor(if (on) YtSkin.accent else YtSkin.sub)
+            railLabs[i].background = if (on) GradientDrawable().apply { setColor(MtGlass.selected(th)); cornerRadius = ui.dp(22).toFloat(); setStroke(1, MtGlass.rim(th)) } else null
+        }
         railSubsBadge()
     }
-    /** (v1350) عدّاد «جديد» في الاشتراكات بقى على بسبوسة الشريط الرئيسي وكبسولتها (Main بتقرا subsBadgeN وتتحدّث عن طريق onTab) */
-    var subsBadgeN = 0; private set
+    /** (v1323) عدّاد «جديد» على زرار الاشتراكات في الريل الجانبي (موبايل) — نفس فكرة بادج التلفزيون */
     private fun railSubsBadge() {
+        val lab = railLabs.getOrNull(1) ?: return
         val n = if (navSel == 1) 0 else try { YtNotify.badgeCount() } catch (_: Throwable) { 0 }
-        if (n == subsBadgeN) return
-        subsBadgeN = n
-        try { onTab?.invoke(navSel) } catch (_: Throwable) {}
+        lab.text = railTxt("📺", "الاشتراكات", n)
+    }
+    /** (v1327) نص خلية الريل: إيموجي أكبر من الليبل (زي خلايا الشريط الأساسي 16/11) */
+    private fun railTxt(emo: String, lab: String, badge: Int): CharSequence {
+        val s = emo + "\n" + lab + if (badge > 0) " (" + (if (badge > 99) "99+" else badge.toString()) + ")" else ""
+        val sp = android.text.SpannableString(s)
+        sp.setSpan(android.text.style.RelativeSizeSpan(1.45f), 0, emo.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        return sp
+    }
+    /** (v1327) الريل فوق الشريط العايم، وفوق الدوك لما يكون ظاهر: مفيش عنصر يغطّي التاني (بطلب علي) */
+    private fun railInset() {
+        val r = ytRail ?: return
+        val lp = r.layoutParams as? FrameLayout.LayoutParams ?: return
+        val bt = try { MtFloat.barTop(act) } catch (_: Throwable) { 0 }
+        val b = if (bt > 0) bt + ui.dp(8) else ui.dp(12)
+        if (lp.bottomMargin != b) { lp.bottomMargin = b; r.layoutParams = lp }
+        // الدوك فوق الريل (الريل لازق فوق الشريط)
+        if (::ytDock.isInitialized) { ytDock.extraBottom = if (r.visibility == View.VISIBLE) (if (r.height > 0) r.height else ui.dp(52)) + ui.dp(8) else 0; ytDock.reinset() }
     }
     // ───────── (v1291) «أنت»: زي صفحة You في يوتيوب الرسمي — كارت الحساب فوق، أرفف أفقية بالصور (السجل · أكمل · المحفوظات)، وتحتها قوايمك والتحميلات والإعدادات ─────────
     private fun yrow(title: String, sub: String, key: String) = NpItem("act", title, sub, "", "", -1L, -1L, "", 2, "yta:$key")
@@ -974,7 +1052,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         }
     }
 
-    private fun setNavHidden(h: Boolean) { navBar?.visibility = if (h) View.GONE else View.VISIBLE; navLine?.visibility = if (h) View.GONE else View.VISIBLE }   // (v1350) الريل العايم اتشال — التبويبات في بسبوسة الشريط الرئيسي
+    private fun setNavHidden(h: Boolean) { navBar?.visibility = if (h) View.GONE else View.VISIBLE; navLine?.visibility = if (h) View.GONE else View.VISIBLE; ytRail?.visibility = if (h) View.GONE else View.VISIBLE; try { railInset() } catch (_: Throwable) {} }   // (v1323) الريل الجانبي بيختفي مع صفحة المشاهدة/القناة
 
     private fun watchVideo(v: NpItem, view: View?) {
         hideKb(); sugBox.visibility = View.GONE

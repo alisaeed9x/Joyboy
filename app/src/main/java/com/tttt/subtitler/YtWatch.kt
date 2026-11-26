@@ -1952,8 +1952,8 @@ object YtDockCfg { fun on(): Boolean = Cfg.str("yt_dock", "1") != "0" }
 
 /**
  * (v417) المشغّل المصغّر: لما تنزّل من صفحة المشاهدة الفيديو بيكمّل في مربع صغير. دوسة عليه = يتكبّر لمشغّلك الكامل من نفس الثانية (نفس المشغّل من غير تحميل).
- * (v1350) على الموبايل بقى PiP عايمة جوه البرنامج (مش شريط سفلي): بتفضل ظاهرة وانت بتتنقل بين التبويبات، بتتحرك بالسحب من على الفيديو،
- * وضغطة طويلة عليها بتطلع ✕ للقفل (بطلب علي). التلفزيون فاضل بالشريط السفلي القديم. بيقف لما الصفحة تتخبّى وبيتقفل لما تفتح فيديو تاني.
+ * (v1350) على الموبايل بقى PiP عايمة جوه البرنامج (مش شريط سفلي): بتفضل ظاهرة وانت بتتنقل بين التبويبات، بتتحرك بالسحب من على الفيديو.
+ * (v1351) القفل: وانت بتسحبها بتظهر ✕ في نص الشاشة من تحت — سيبها عليها تتقفل (بطلب علي). التلفزيون فاضل بالشريط السفلي القديم.
  */
 class YtDock(private val act: Activity, private val ui: Ui, private val onExpand: (String, String, Long, YtPick?) -> Unit) : FrameLayout(act) {
     private var exo: ExoPlayer? = null
@@ -1972,14 +1972,10 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
     private val closeTv = TextView(act).apply { textSize = 18f; gravity = Gravity.CENTER; setTextColor(YtSkin.text); text = "✕" }
     private val prog = View(act).apply { setBackgroundColor(YtSkin.accent); pivotX = 0f; scaleX = 0f }
     private val tvMode = try { DeviceUi.isTv(act) } catch (_: Throwable) { false }   // (v1350) التلفزيون يفضل بالشريط السفلي القديم
-    private val closeX = TextView(act).apply {   // (v1350) ✕ القفل: بتظهر بضغطة طويلة على الـPiP وتختفي لوحدها بعد ثواني (بطلب علي)
-        text = "✕"; textSize = 13f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); contentDescription = "قفل"
-        background = android.graphics.drawable.GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = ui.dp(13).toFloat() }
-        visibility = View.GONE
-    }
-    private val hideX = Runnable { closeX.visibility = View.GONE }
     /** (v1350) ارتفاع شريط التبويبات اللي الـPiP بتفضل فوقه (Main بيحطه بعد قياس الشريط) */
     var bottomClear = 0
+    /** (v1351) هدف القفل أثناء السحب (✕ دايرة في نص الشاشة من تحت) — بيتعمل ويتشال مع كل سحبة */
+    private var dtView: TextView? = null
     private val listener = object : androidx.media3.common.Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) { paintPlay() }
         override fun onPlaybackStateChanged(state: Int) { paintPlay() }
@@ -2038,16 +2034,13 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
             all.addView(row, LinearLayout.LayoutParams(-1, ui.dp(30)))
             addView(all, FrameLayout.LayoutParams(-1, -1))
             addView(prog, FrameLayout.LayoutParams(-1, ui.dp(2), Gravity.BOTTOM))
-            addView(closeX, FrameLayout.LayoutParams(ui.dp(26), ui.dp(26), Gravity.TOP or Gravity.START).apply { setMargins(ui.dp(5), ui.dp(5), 0, 0) })
-            closeX.setOnClickListener { dismiss() }
-            // (v1350) إيماءات الـPiP: سحب من على الفيديو = تحريكها (بتتقيد جوه الشاشة وتحت شريط يوتيوب العلوي) · دوسة = تكبير · ضغطة طويلة = ✕ القفل (بطلب علي)
-            var dx = 0f; var dy = 0f; var btx = 0f; var bty = 0f; var moved = false; var lpFired = false
-            val lpRun = Runnable { if (!moved) { lpFired = true; closeX.visibility = View.VISIBLE; hh.removeCallbacks(hideX); hh.postDelayed(hideX, 3500L) } }
+            // (v1351) إيماءات الـPiP: سحب من على الفيديو = تحريكها (بتتقيد جوه الشاشة وتحت شريط يوتيوب العلوي) · أول ما تسحب بتظهر ✕ دايرة في نص الشاشة من تحت — سيبها عليها تتقفل (زي قفل الإشعارات، بطلب علي) · دوسة = تكبير
+            var dx = 0f; var dy = 0f; var btx = 0f; var bty = 0f; var moved = false
             setOnTouchListener { _, e ->
                 when (e.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { dx = e.rawX; dy = e.rawY; btx = translationX; bty = translationY; moved = false; lpFired = false; hh.removeCallbacks(lpRun); hh.postDelayed(lpRun, 450L); true }
+                    MotionEvent.ACTION_DOWN -> { dx = e.rawX; dy = e.rawY; btx = translationX; bty = translationY; moved = false; true }
                     MotionEvent.ACTION_MOVE -> {
-                        if (!moved && (Math.abs(e.rawX - dx) > ui.dp(8) || Math.abs(e.rawY - dy) > ui.dp(8))) { moved = true; hh.removeCallbacks(lpRun) }
+                        if (!moved && (Math.abs(e.rawX - dx) > ui.dp(8) || Math.abs(e.rawY - dy) > ui.dp(8))) { moved = true; try { dtShow() } catch (_: Throwable) {} }
                         if (moved) {
                             val pv = parent as? View
                             val pw = pv?.width ?: 0; val ph = pv?.height ?: 0
@@ -2059,11 +2052,12 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
                                 ty = ty.coerceIn(Math.min(loY, hiY), Math.max(loY, hiY))
                             }
                             translationX = tx; translationY = ty
+                            try { dtHot(dtOver()) } catch (_: Throwable) {}
                         }
                         true
                     }
-                    MotionEvent.ACTION_UP -> { hh.removeCallbacks(lpRun); if (!moved && !lpFired) { if (closeX.visibility == View.VISIBLE) closeX.visibility = View.GONE else expand() }; true }   // (v1350) رفع الصبع بعد الضغطة الطويلة مبيخبّيش الـ✕
-                    MotionEvent.ACTION_CANCEL -> { hh.removeCallbacks(lpRun); true }
+                    MotionEvent.ACTION_UP -> { if (moved) { val closeIt = try { dtOver() } catch (_: Throwable) { false }; dtHide(); if (closeIt) dismiss() } else expand(); true }
+                    MotionEvent.ACTION_CANCEL -> { dtHide(); true }
                     else -> true
                 }
             }
@@ -2092,6 +2086,36 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
         if (p.playbackState == androidx.media3.common.Player.STATE_ENDED) { p.seekTo(0L); p.playWhenReady = true } else p.playWhenReady = !p.playWhenReady
         paintPlay()
     }
+
+    /** (v1351) ✕ القفل بتظهر في نص الشاشة من تحت أول ما السحبة تبدأ (بطلب علي) */
+    private fun dtShow() {
+        if (dtView != null || tvMode) return
+        val pv = parent as? ViewGroup ?: return
+        val dt = TextView(act).apply {
+            text = "✕"; textSize = 20f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); contentDescription = "اسحب هنا للقفل"
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(0xB3232323.toInt()); cornerRadius = ui.dp(28).toFloat(); setStroke(ui.dp(1), 0x40FFFFFF) }
+            elevation = ui.dp(12).toFloat()
+        }
+        val bm = (if (bottomClear > 0) bottomClear else ui.dp(76)) + ui.dp(18)
+        pv.addView(dt, FrameLayout.LayoutParams(ui.dp(56), ui.dp(56), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = bm })
+        dtView = dt
+    }
+    /** (v1351) الـPiP فوق هدف القفل؟ (مسافة بين المركزين) */
+    private fun dtOver(): Boolean {
+        val dt = dtView ?: return false
+        if (dt.width <= 0 || dt.height <= 0) return false
+        val cx = left + translationX + width / 2f; val cy = top + translationY + height / 2f
+        val tx = dt.left + dt.width / 2f; val ty = dt.top + dt.height / 2f
+        val r = ui.dp(60).toFloat()
+        return (cx - tx) * (cx - tx) + (cy - ty) * (cy - ty) <= r * r
+    }
+    /** (v1351) الهدف بيتحمر ويكبّر شوية لما الـPiP تيجي فوقه */
+    private fun dtHot(on: Boolean) {
+        val dt = dtView ?: return
+        (dt.background as? android.graphics.drawable.GradientDrawable)?.mutate()?.setColor(if (on) 0xFFE53935.toInt() else 0xB3232323.toInt())
+        dt.scaleX = if (on) 1.15f else 1f; dt.scaleY = if (on) 1.15f else 1f
+    }
+    private fun dtHide() { val dt = dtView ?: return; try { (dt.parent as? ViewGroup)?.removeView(dt) } catch (_: Throwable) {}; dtView = null }
 
     /** (v1119) الشريط الزجاجي العايم بيغطّي أسفل الصفحة — دوك الصفحة لازم يقعد فوقه مش تحته (كان بينزل تحت مستوى شريط الأدوات) */
     private fun applyInset() {
@@ -2199,7 +2223,7 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
 
     fun pause() { try { exo?.playWhenReady = false } catch (_: Throwable) {}; paintPlay() }
 
-    fun dismiss() { dismissInner(); hh.removeCallbacks(hideX); closeX.visibility = View.GONE; visibility = View.GONE; onVis?.invoke(false) }
+    fun dismiss() { dismissInner(); dtHide(); visibility = View.GONE; onVis?.invoke(false) }
 
     private fun dismissInner() {
         hh.removeCallbacks(tick)
