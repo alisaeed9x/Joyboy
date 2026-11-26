@@ -8,9 +8,9 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 
-/** (v1260) عرض ملاحظات الإصدار: كل بند مرقّم في سطره وعليه كبسولة ملوّنة (ميزة جديدة أخضر · تعديل أزرق · حذف أحمر · إصلاح برتقالي)، وقسم «ملاحظات» في الآخر. صيغة البند: «1. [إصلاح] النص». */
+/** (v1260) عرض ملاحظات الإصدار: كل بند مرقّم في سطره وعليه كبسولة ملوّنة (ميزة جديدة/ميزة أخضر · تحسين/تعديل أزرق · حذف أحمر · إصلاح برتقالي)، وقسم «ملاحظات» في الآخر. صيغة البند: «1. [إصلاح] النص». (v1328) «ميزة» و«تحسين» بقوا بادجات ملونة زي «إصلاح» بالظبط (بطلب علي) */
 object Notes {
-    private val chips = linkedMapOf("ميزة جديدة" to 0xFF2E9E5B.toInt(), "تعديل" to 0xFF2F7FE0.toInt(), "حذف" to 0xFFD9453D.toInt(), "إصلاح" to 0xFFF08A24.toInt())
+    private val chips = linkedMapOf("ميزة جديدة" to 0xFF2E9E5B.toInt(), "ميزة" to 0xFF2E9E5B.toInt(), "تعديل" to 0xFF2F7FE0.toInt(), "تحسين" to 0xFF2F7FE0.toInt(), "حذف" to 0xFFD9453D.toInt(), "إصلاح" to 0xFFF08A24.toInt())   // (v1328) كل أنواع البنود بتطلع بادج ملوّن مش «إصلاح» بس
     private val itemRe = Regex("^(\\d+)[.)]\\s+(.*)$")
     private val chipRe = Regex("^\\[([^\\]]+)]\\s*(.*)$")
 
@@ -21,7 +21,8 @@ object Notes {
         sec.contains("إصلاح") -> "إصلاح"
         sec.contains("جديد") || sec.contains("ميز") || sec.contains("إضاف") -> "ميزة جديدة"
         sec.contains("حذف") || sec.contains("إزال") || sec.contains("إلغاء") -> "حذف"
-        sec.contains("تعديل") || sec.contains("تحسين") -> "تعديل"
+        sec.contains("تعديل") -> "تعديل"
+        sec.contains("تحسين") -> "تحسين"
         else -> ""
     }
 
