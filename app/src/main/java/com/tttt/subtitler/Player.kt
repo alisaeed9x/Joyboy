@@ -33,6 +33,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import java.io.File
+import com.bumptech.glide.Glide
 import android.content.pm.ActivityInfo
 import android.view.ViewGroup
 import android.app.PictureInPictureParams
@@ -6171,6 +6172,8 @@ class PlayerActivity : Activity(), Host {
         if (DeviceUi.isRemote(this)) { TvFocus.attach(this, th.primary); tvInitBar(rootFrame); tvSnapChrome(); tvChromeGate() }   // (v477 م4)
         // شاشة كاملة دايمًا (أفقي ورأسي) إلا في صفحة يوتيوب: الصفحة تحت الفيديو والتكبير بزرار ⛶
         applyFull(wantFull())
+        // (v1345) فتح من قايمة يوتيوب: الصورة المصغّرة بتكمّل التمدد فوق مكان الفيديو لحد أول فريم حقيقي (بطلب علي)
+        if (pendingYt && ytPage) ytExpandIn(rootFrame)
         // فيديو اتفتح من فولدرات الجهاز: يشتغل لاندسكيب مباشرة زي MX Player
         // الاتجاه الأولي من شكل الفيديو (من المكتبة) — وبعدها بيتصحح لوحده أول ما الأبعاد الحقيقية تظهر (onVideoSizeChanged)
         if (intent.getBooleanExtra("landscape", false) && resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -7345,6 +7348,67 @@ class PlayerActivity : Activity(), Host {
     private var ytVt: android.view.VelocityTracker? = null
     private var ytAnim: android.animation.ValueAnimator? = null
     private fun ytPageH(): Float { val pg = ytPageRef; return (if (pg != null && pg.height > 0) pg.height else resources.displayMetrics.heightPixels).toFloat() }
+    /** (v1345) تكميلة أنيميشن الفتح من القايمة (بطلب علي): الصورة بتبدأ من آخر نقطة وصلتلها في Main وبتستقر على مكان الفيديو الحقيقي، وبتتشال بأول فريم */
+    private fun ytExpandIn(rootFrame: FrameLayout) {
+        val sl = intent.getIntExtra("ytsrcl", -1)
+        if (sl < 0) return
+        val gl = intent.getIntExtra("ytgtl", sl)
+        val gt = intent.getIntExtra("ytgtt", intent.getIntExtra("ytsrct", 0))
+        val gr = intent.getIntExtra("ytgtr", intent.getIntExtra("ytsrcr", 0))
+        val gb = intent.getIntExtra("ytgtb", intent.getIntExtra("ytsrcb", 0))
+        var rad = ui.dp(14).toFloat()
+        var ovGone = false
+        val ov = android.widget.ImageView(this).apply {
+            scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            setBackgroundColor(0xFF272727.toInt())
+            clipToOutline = true
+            outlineProvider = object : android.view.ViewOutlineProvider() { override fun getOutline(v2: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v2.width, v2.height, rad) } }
+        }
+        val thUrl = intent.getStringExtra("ytthumb") ?: ""
+        if (thUrl.isNotBlank()) try { Glide.with(this).load(thUrl).centerCrop().into(ov) } catch (_: Throwable) {}
+        rootFrame.addView(ov, FrameLayout.LayoutParams((gr - gl).coerceAtLeast(1), (gb - gt).coerceAtLeast(1), Gravity.TOP or Gravity.LEFT))
+        ytPageRef?.let { pg -> pg.alpha = 0f; pg.animate().alpha(1f).setDuration(220L).setStartDelay(60L).start() }   // محتوى الصفحة بيفيد إن تحت الصورة
+        fun dismissOv() {
+            if (ovGone) return; ovGone = true
+            try { ov.animate().alpha(0f).setDuration(160L).withEndAction { try { rootFrame.removeView(ov) } catch (_: Throwable) {} }.start() } catch (_: Throwable) {}
+        }
+        fun settleOv(tries: Int) {
+            if (ovGone || isFinishing || isDestroyed) return
+            try {
+                val rLoc = IntArray(2); rootFrame.getLocationOnScreen(rLoc)
+                val vLoc = IntArray(2); videoBoxRef.getLocationOnScreen(vLoc)
+                if (videoBoxRef.width <= 0 || videoBoxRef.height <= 0) { if (tries < 10) h.postDelayed({ settleOv(tries + 1) }, 60L) else dismissOv(); return }
+                val fx = (vLoc[0] - rLoc[0]).toFloat(); val fy = (vLoc[1] - rLoc[1]).toFloat()
+                val dw = videoBoxRef.width - ov.width; val dh = videoBoxRef.height - ov.height
+                if (kotlin.math.abs(fx - ov.translationX) < 2f && kotlin.math.abs(fy - ov.translationY) < 2f && kotlin.math.abs(dw) < 4 && kotlin.math.abs(dh) < 4) {
+                    ov.translationX = fx; ov.translationY = fy
+                    return   // وصلنا للمكان الحقيقي — مفيش حركة ظاهرة
+                }
+                val sw0 = ov.width; val sh0 = ov.height; val sx0 = ov.translationX; val sy0 = ov.translationY
+                val an = android.animation.ValueAnimator.ofFloat(0f, 1f)
+                an.duration = 140L
+                an.interpolator = android.view.animation.PathInterpolator(0.4f, 0f, 0.2f, 1f)
+                an.addUpdateListener { a ->
+                    val f = a.animatedValue as Float
+                    ov.layoutParams = (ov.layoutParams as FrameLayout.LayoutParams).apply { width = sw0 + ((videoBoxRef.width - sw0) * f).toInt(); height = sh0 + ((videoBoxRef.height - sh0) * f).toInt() }
+                    ov.translationX = sx0 + (fx - sx0) * f
+                    ov.translationY = sy0 + (fy - sy0) * f
+                }
+                an.start()
+            } catch (_: Throwable) { dismissOv() }
+        }
+        ov.post {
+            try {
+                if (ovGone) return@post
+                val rLoc = IntArray(2); rootFrame.getLocationOnScreen(rLoc)   // فرق إحداثيات الشاشة عن إحداثيات الـroot (شريط الحالة)
+                ov.translationX = (gl - rLoc[0]).toFloat(); ov.translationY = (gt - rLoc[1]).toFloat()
+                settleOv(0)
+            } catch (_: Throwable) { dismissOv() }
+        }
+        h.post(object : Runnable { override fun run() { if (ovGone || isFinishing || isDestroyed) return; if (ffShown) dismissOv() else h.postDelayed(this, 200L) } })
+        h.postDelayed({ dismissOv() }, 6000L)   // احتياطي: أول فريم ماجاش
+    }
     private fun ytMiniScale(): Float { val w = videoBoxRef.width.toFloat().coerceAtLeast(1f); return minOf(ui.dp(104).toFloat(), w * 0.42f) / w }   // (v1162) نفس عرض فيديو الدوك السفلي
     private fun ytMiniTy(): Float { val vb = videoBoxRef; return (ytPageH() - vb.height * ytMiniScale() - ui.dp(72)) - vb.top }
     private fun ytApplyDrag(p0: Float) {

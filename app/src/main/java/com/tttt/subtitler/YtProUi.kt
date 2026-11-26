@@ -52,7 +52,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
               private val onDownload: (NpItem, Boolean) -> Unit = { _, _ -> },
               private val onPubHistory: () -> Unit = {},
               private val onPlayAt: ((String, String, Boolean, Long, YtPick?) -> Unit)? = null,
-              private val onOpenPage: ((NpItem, Long) -> Unit)? = null) {   // (v402) تشغيل من ثانية معيّنة (زرار التكبير في المشغّل المصغّر)   // (v349) السجل العام   // (v337) ⬇ تحميل (true = صوت بس)
+              private val onOpenPage: ((NpItem, Long, android.graphics.Rect?, android.graphics.drawable.Drawable?) -> Unit)? = null) {   // (v402) تشغيل من ثانية معيّنة (زرار التكبير في المشغّل المصغّر)   // (v349) السجل العام   // (v337) ⬇ تحميل (true = صوت بس)
 
     private class St(val title: String, val tab: Int, val items: ArrayList<NpItem>, var next: Page?, val more: ((Page) -> YtRes)?,
                       val chUrl: String?, val chName: String?, val q: String?, val filter: String,
@@ -1061,18 +1061,18 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         logWatch(it, false)
         YtStore.markApp(it.id)
         watch.seekOnOpenMs = try { YtProg.resumeMs(it.id, recs()["yt:" + it.id] as? Recent) } catch (_: Throwable) { 0L }   // (v469) C6
+        val thV = (view?.tag as? Card)?.thumb ?: view   // (v1345) التمدد من الصورة المصغّرة نفسها مش من الكارت كله
+        var r: android.graphics.Rect? = null
+        if (thV != null && thV.width > 0 && thV.height > 0) {
+            val loc = IntArray(2); thV.getLocationOnScreen(loc)
+            r = android.graphics.Rect(loc[0], loc[1], loc[0] + thV.width, loc[1] + thV.height)
+        }
         if (YtPlayerPage.on(act)) {
             val fp = onOpenPage
             if (fp != null) {
-                fp(it, watch.seekOnOpenMs)
+                fp(it, watch.seekOnOpenMs, r, (thV as? ImageView)?.drawable)   // (v1345) فتح الفيديو بأنيميشن يوتيوب: الصورة بتتمدد من مكانها للصفحة
                 return
             }
-        }
-        var r: android.graphics.Rect? = null
-        if (view != null) {
-            val loc = IntArray(2); view.getLocationOnScreen(loc)
-            val w = view.width; val x = loc[0]
-            if (w > 0) r = android.graphics.Rect(x, loc[1], x + w, loc[1] + w * 9 / 16)
         }
         watch.open(it, r)
     }
