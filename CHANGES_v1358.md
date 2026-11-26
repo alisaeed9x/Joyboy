@@ -21,18 +21,3 @@
 ✏️ عدّل:   app/src/main/java/com/tttt/subtitler/KeyStatus.kt
 ✏️ عدّل:   app/src/main/java/com/tttt/subtitler/YtProUi.kt
 ✏️ عدّل:   app/src/main/java/com/tttt/subtitler/YtWatch.kt
-
-
-## 🗂️ الملفات اللي اتغيّرت (أوتوماتيك)
-```
-➕ أضاف:  CHANGES_v1358.md
-✏️ عدّل:   STATUS.txt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/KeyStatus.kt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/Main.kt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/Player.kt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/Settings.kt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/TrProfile.kt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/YtProUi.kt
-✏️ عدّل:   app/src/main/java/com/tttt/subtitler/YtWatch.kt
-```
-🔙 نسخة احتياطية قبل التعديل: `backup-v1357-run167` (للرجوع: Actions ← Rollback)

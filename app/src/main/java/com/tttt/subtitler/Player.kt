@@ -8073,6 +8073,23 @@ open class PlayerActivity : Activity(), Host {
 
     // (v1358) الدبلجة اتشالت بالكامل من التطبيق (بطلب علي) — المحرك Dub.kt متساب من غير أي استدعاء
 
+    private fun morphText(v: TextView, t: String) {
+        if (v.text.toString() == t) return
+        if (!Design.isNew() || !v.isShown) { v.text = t; return }
+        if (ytPage) { v.animate().cancel(); v.text = t; return }   // (v1347) يوتيوب: تغيير النص فوري (بطلب علي)
+        v.animate().cancel()
+        v.animate().scaleX(0.55f).scaleY(0.55f).rotation(-25f).setDuration(90L).withEndAction {
+            v.text = t; v.rotation = 25f
+            v.animate().scaleX(1f).scaleY(1f).rotation(0f).setDuration(190L).setInterpolator(android.view.animation.OvershootInterpolator(1.6f)).start()
+        }.start()
+    }
+    private fun fsPlayDp(): Int = if (Design.isNew()) 64 else 56
+    private fun auroraPill(rDp: Int): GradientDrawable {
+        if (ui.th.isLight && !Design.isMaterial()) return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xCCEF5350.toInt(), 0xCCC62828.toInt())).apply { cornerRadius = ui.dp(rDp).toFloat(); setStroke(maxOf(1, ui.dp(1)), 0x66FFFFFF) }   // (v1247) الفاتح: زجاجي بالأحمر القديم بدل النعناعي
+        return GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Design.mint(0xFF), Design.violet(0xFF))).apply { cornerRadius = ui.dp(rDp).toFloat() }
+    }
+    private fun trComplete(): Boolean = try { trPct >= 100 || (::realEngine.isInitialized && realEngine.fullyDone()) } catch (_: Throwable) { false }
+
     private fun touchSubs() = runOnUiThread { curIdx = -2; dirty = true }
 
     fun runTool(label: String, instruction: String, all: Boolean) {
