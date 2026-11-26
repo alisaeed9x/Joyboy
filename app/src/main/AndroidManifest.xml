@@ -82,6 +82,10 @@
         <activity android:name=".PlayerActivity" android:exported="false" android:autoRemoveFromRecents="true" android:theme="@style/AppPlayer"
             android:supportsPictureInPicture="true" android:resizeableActivity="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
+        <!-- (v1351) نسخة صفحة يوتيوب من المشغّل: نفس PlayerActivity بثيم شفاف من المانيفست — النظام بياخد قرار «خلي اللي تحتها ظاهرة» من ثيم المانيفست، فالفيد بيفضل باين ورا السحب بدل خلفية الموبايل (بطلب علي) -->
+        <activity android:name=".PlayerYtActivity" android:exported="false" android:autoRemoveFromRecents="true" android:theme="@style/AppPlayerYtM"
+            android:supportsPictureInPicture="true" android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"/>
         <!-- (v476) اللانشر: HOME + LEANBACK_LAUNCHER — TvActivity هي الشاشة الرئيسية للتلفزيون -->
         <activity android:name=".TvActivity" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/AppSplashMain"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">

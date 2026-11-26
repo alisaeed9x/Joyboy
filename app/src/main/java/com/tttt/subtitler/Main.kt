@@ -1671,7 +1671,7 @@ class MainActivity : Activity() {
         if (handoff != null) {   // (v406) المشغّل المصغّر اتسلّم (YtHandoff): المشغّل الكامل بياخده شغّال من غير ما يجيب الرابط ويحمّل من الأول
             val pgItem = YtHandoff.pageItem; YtHandoff.pageItem = null   // (v1162) التكبير من الدوك = يرجع صفحة المشاهدة
             val toPage = pgItem != null && pgItem.id == id && !YtHandoff.pipNext && !DeviceUi.isTv(this)
-            startActivity(Intent(this, PlayerActivity::class.java).let { i0 -> if (toPage) i0 else i0.pipTask(this) }.apply {   // (v1346) الرجوع لصفحة المشاهدة من الدوك: نفس تاسك Main عشان السحب يكشف الفيد مش سواد
+            startActivity(Intent(this, if (toPage) PlayerYtActivity::class.java else PlayerActivity::class.java).let { i0 -> if (toPage) i0 else i0.pipTask(this) }.apply {   // (v1351) صفحة المشاهدة بتتفتح بالنسخة الشفافة (PlayerYtActivity) عشان الفيد يفضل ظاهر ورا السحب (بطلب علي)   // (v1346) الرجوع لصفحة المشاهدة من الدوك: نفس تاسك Main عشان السحب يكشف الفيد مش سواد
                 putExtra("handoff", true)
                 if (toPage && pgItem != null) { putExtra("ytpage", true); putExtra("ytchan", pgItem.channel); putExtra("ytchanurl", pgItem.channelUrl); putExtra("ytthumb", pgItem.thumb); putExtra("ytav", pgItem.avatar); putExtra("ytcid", pgItem.channelId); putExtra("ytcount", pgItem.count); putExtra("ytage", pgItem.age); putExtra("ytdur", pgItem.dur) }
                 putExtra("url", handoff.url); putExtra("aurl", handoff.audio ?: ""); putExtra("ref", "https://www.youtube.com/"); putExtra("ua", handoff.ua)
@@ -1698,7 +1698,7 @@ class MainActivity : Activity() {
         ytLoadLaunched = true
         if (curTab != 4) showTabFn(4)   // (v1343) صفحة الفيديو بتتسحب لتحت وتكشف اللي وراها — يبقى دايمًا قايمة يوتيوب مش تبويب تاني (بطلب علي)
         val ret = if (curTab == 4) "yt" else ""
-        val pi = Intent(this, PlayerActivity::class.java).apply {   // (v1346) صفحة يوتيوب بتفتح في نفس تاسك Main (من غير NEW_DOCUMENT): النافذة الشفافة بتكشف الفيد الحقيقي وراها وقت الفتح والسحب زي يوتيوب — التاسك المنفصل كان بيخلّي اللي وراها سواد (بطلب علي)
+        val pi = Intent(this, PlayerYtActivity::class.java).apply {   // (v1351) صفحة يوتيوب بتتفتح بالنسخة الشفافة من المشغّل (ثيم المانيفست الشفاف بيخلّي الفيد ظاهر وراها وقت السحب) — التاسك نفسه زي v1346 (بطلب علي) صفحة يوتيوب بتفتح في نفس تاسك Main (من غير NEW_DOCUMENT): النافذة الشفافة بتكشف الفيد الحقيقي وراها وقت الفتح والسحب زي يوتيوب — التاسك المنفصل كان بيخلّي اللي وراها سواد (بطلب علي)
             putExtra("ytpend", true)
             putExtra("ytid", v.id)
             putExtra("title", v.title)

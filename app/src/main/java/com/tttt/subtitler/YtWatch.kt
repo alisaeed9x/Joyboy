@@ -2112,7 +2112,7 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
     /** (v1351) الهدف بيتحمر ويكبّر شوية لما الـPiP تيجي فوقه */
     private fun dtHot(on: Boolean) {
         val dt = dtView ?: return
-        (dt.background as? android.graphics.drawable.GradientDrawable)?.mutate()?.setColor(if (on) 0xFFE53935.toInt() else 0xB3232323.toInt())
+        (dt.background as? android.graphics.drawable.GradientDrawable)?.let { g -> g.mutate(); g.setColor(if (on) 0xFFE53935.toInt() else 0xB3232323.toInt()) }
         dt.scaleX = if (on) 1.15f else 1f; dt.scaleY = if (on) 1.15f else 1f
     }
     private fun dtHide() { val dt = dtView ?: return; try { (dt.parent as? ViewGroup)?.removeView(dt) } catch (_: Throwable) {}; dtView = null }

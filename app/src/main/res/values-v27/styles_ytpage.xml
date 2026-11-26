@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- (v1351) من API 27+ ثيم صفحة يوتيوب في المانيفست شفاف فعلًا: الفيد بيفضل ظاهر ورا الفيديو وقت سحب التصغير (بطلب علي) -->
+    <style name="AppPlayerYtM" parent="AppPlayerYt"/>
+</resources>

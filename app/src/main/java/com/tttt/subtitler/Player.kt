@@ -42,7 +42,7 @@ import android.os.Build
 import android.util.Rational
 
 /** مشغّل الفيديو والترجمة (اتنقل من Main.kt في v100 — من غير أي تغيير في الكود) */
-class PlayerActivity : Activity(), Host {
+open class PlayerActivity : Activity(), Host {
     @Volatile private var panicShut = false   // (v1016) 🚨 قفل المشغّل: ماتحفظش في آخر المشغّلة
     private var gone = false   // (v923) (v1105 Y5: مفيش تحويل لمشغّل ميتيوب — بيفضل false)
     // (v507) ريزوليوشن ديناميك لوضع التلفزيون
@@ -4978,7 +4978,6 @@ class PlayerActivity : Activity(), Host {
         NetLedger.start(this); NetLog.start(this); NetGate.apply(this)
         try { if (Build.VERSION.SDK_INT >= 27 && intent.getBooleanExtra("ytpage", false) && intent.getStringExtra("ytid")?.length == 11 && !DeviceUi.isTv(this)) setTheme(R.style.AppPlayerYt) } catch (_: Throwable) {}   // (v1161) نافذة شفافة: الصفحة الخلفية (الفيد) بتبان وقت سحب التصغير زي يوتيوب
         try { if (Build.VERSION.SDK_INT >= 27 && intent.getBooleanExtra("ytpage", false) && !DeviceUi.isTv(this)) { window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)); window.decorView.setBackgroundColor(android.graphics.Color.TRANSPARENT) } } catch (_: Throwable) {}   // (v1350) تأكيد الشفافية على مستوى النافذة والديكور: ممنوع أي أسود خلف الصفحة في أي مرحلة من السحب (بطلب علي)
-        try { if (Build.VERSION.SDK_INT >= 27 && intent.getBooleanExtra("ytpage", false) && !DeviceUi.isTv(this)) convertToTranslucent(null as Runnable?, null) } catch (_: Throwable) {}   // (v1351) السبب الجذري للسواد/الخلفية: النظام بيقرر «خلي اللي تحتك ظاهر» من ثيم المانيفست (AppPlayer opaque) مش من setTheme — فكان بيوقّف Main ورا النافذة (اتأكد من تسجيل علي: اللي بيظهر = خلفية الجهاز). التحويل الرسمي ده بيخلي الصفحة اللي تحت تفضل حية وظاهرة (بطلب علي)
         super.onCreate(b)
         smoothRotation()   // (v1123) كروس-فيد الدوران يتحدّد قبل أي شغل تقيل (قبل ما النافذة تتعرض)
         // (v1123) الدخول للشاشة الكاملة من يوتيوب كان بيفتح المشغّل بورتريه وبعد أول فريم (onVideoSizeChanged) يلف لاندسكيب — ده كان سبب النتشة الكبيرة والسواد.
@@ -7816,7 +7815,7 @@ class PlayerActivity : Activity(), Host {
             if (old > 30 && Math.abs(old - d) > 5.0) runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 Notice.ask(this, "⚠ مدة الفيديو (" + PlayerLogic.clock((d * 1000).toLong()) + ") مختلفة عن الفيديو المحفوظ بنفس الاسم (" + PlayerLogic.clock((old * 1000).toLong()) + ") — ممكن يكون فيديو تاني؟", "افصله", "هو نفسه", 12000L,
-                    { WebIdent.blockKey(via); startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply { putExtras(intent) }); finish() }, { })
+                    { WebIdent.blockKey(via); startActivity(Intent(this, javaClass).pipTask(this).apply { putExtras(intent) }); finish() }, { })
             }
         }.apply { isDaemon = true }.start()
     }
@@ -7964,7 +7963,7 @@ class PlayerActivity : Activity(), Host {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 val url = got?.url
                 if (url == null || got == null) { say("ما قدرتش أجيب الفيديو ده — جرّب غيره"); return@runOnUiThread }
-                startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
+                startActivity(Intent(this, javaClass).pipTask(this).apply {
                     putExtra("url", url); putExtra("aurl", got.audio ?: ""); putExtra("ref", "https://www.youtube.com/"); putExtra("ua", got.ua)
                     got.qlist.takeIf { it.isNotEmpty() }?.let { putExtra("qlist", it) }
                     putExtra("title", n.title.ifBlank { got.title }); putExtra("ytid", n.id)
@@ -9234,3 +9233,6 @@ private val netStreamTl = object : androidx.media3.datasource.TransferListener {
     override fun onBytesTransferred(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean, bytesTransferred: Int) { if (isNetwork) NetUse.streamed(bytesTransferred.toLong()) }
     override fun onTransferEnd(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean) {}
 }
+
+/** (v1351) نسخة صفحة يوتيوب من المشغّل: نفس الأكتيفيتي بالظبط بس بتتعرّف في المانيفست بثيم شفاف (AppPlayerYtM) — قرار «خلي اللي تحتك ظاهر» بيتاخد من ثيم المانيفست مش من setTheme أثناء التشغيل (بطلب علي) */
+class PlayerYtActivity : PlayerActivity()

@@ -19,4 +19,6 @@
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
     </style>
+    <!-- (v1351) ثيم مانيفست صفحة يوتيوب: النسخة دي معتمة (لـ API 26 — الأنشطة الشفافة بتكراش لو طلبت اتجاه الشاشة عليه)؛ النسخة الشفافة في values-v27 (بطلب علي) -->
+    <style name="AppPlayerYtM" parent="AppPlayer"/>
 </resources>
