@@ -1679,7 +1679,7 @@ class MainActivity : Activity() {
                     putExtra("pip", true)
                 }
             })
-            if (toPage) overridePendingTransition(R.anim.yt_page_up_enter, R.anim.yt_page_up_exit)   // (v1346) التكبير من الدوك يرجع الصفحة من تحت زي يوتيوب
+            if (toPage) overridePendingTransition(0, 0)   // (v1347) إلغاء كل أنيميشن وترانزيشن في قسم يوتيوب (بطلب علي): الرجوع من الدوك فوري
             return
         }
         startActivity(Intent(this, PlayerActivity::class.java).pipTask(this).apply {
@@ -1712,58 +1712,8 @@ class MainActivity : Activity() {
             putExtra("ytage", v.age)
             putExtra("ytdur", v.dur)
         }
-        if (srcRect == null || srcRect.width() <= 0 || srcRect.height() <= 0 || DeviceUi.isTv(this)) {
-            startActivity(pi)
-            overridePendingTransition(R.anim.yt_page_up_enter, R.anim.yt_page_up_exit)   // (v1160) الصفحة بتطلع من تحت لفوق — الحركة بتتحدد من الأكتيفيتي اللي بتفتح مش بس من المشغّل (بعض الرومات بتتجاهل اللي بيتنده جوه onCreate)
-            return
-        }
-        pi.putExtra("ytsrcl", srcRect.left); pi.putExtra("ytsrct", srcRect.top); pi.putExtra("ytsrcr", srcRect.right); pi.putExtra("ytsrcb", srcRect.bottom)
-        ytExpandOpen(srcRect, srcThumb, pi)
-    }
-    /** (v1345) فتح الفيديو من القايمة زي يوتيوب الأصلي (بطلب علي): الصورة المصغّرة بتتمدد من مكانها في القايمة لمكان الفيديو في صفحة المشاهدة، والصفحة بتفتح تحتها */
-    private fun ytExpandOpen(src: android.graphics.Rect, thumb: android.graphics.drawable.Drawable?, pi: Intent) {
-        val den = resources.displayMetrics.density
-        val dm = resources.displayMetrics
-        val sbId = resources.getIdentifier("status_bar_height", "dimen", "android")
-        val sbh = if (sbId > 0) resources.getDimensionPixelSize(sbId) else (24 * den + 0.5f).toInt()
-        val tl = (16 * den + 0.5f).toInt(); val tt = sbh + (32 * den + 0.5f).toInt()   // نفس حساب مكان الفيديو في صفحة المشاهدة (applyFull في المشغّل)
-        val tw = dm.widthPixels - (16 * den + 0.5f).toInt() * 2
-        val th2 = (minOf(dm.widthPixels, dm.heightPixels) - (32 * den + 0.5f).toInt()) * 9 / 16
-        pi.putExtra("ytgtl", tl); pi.putExtra("ytgtt", tt); pi.putExtra("ytgtr", tl + tw); pi.putExtra("ytgtb", tt + th2)
-        try {
-            val deco = window.decorView as ViewGroup
-            var rad = 0f
-            val iv = android.widget.ImageView(this).apply {
-                scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-                layoutDirection = View.LAYOUT_DIRECTION_LTR
-                if (thumb != null) setImageDrawable(thumb) else setBackgroundColor(0xFF272727.toInt())
-                clipToOutline = true
-                outlineProvider = object : android.view.ViewOutlineProvider() { override fun getOutline(v2: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v2.width, v2.height, rad) } }
-            }
-            deco.addView(iv, android.widget.FrameLayout.LayoutParams(src.width(), src.height(), Gravity.TOP or Gravity.LEFT))
-            iv.translationX = src.left.toFloat(); iv.translationY = src.top.toFloat()
-            val anim = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = 240L
-                interpolator = android.view.animation.PathInterpolator(0.4f, 0f, 0.2f, 1f)   // منحنى يوتيوب fast-out-slow-in
-                addUpdateListener { a ->
-                    val f = a.animatedValue as Float
-                    iv.layoutParams = (iv.layoutParams as android.widget.FrameLayout.LayoutParams).apply { width = src.width() + ((tw - src.width()) * f).toInt(); height = src.height() + ((th2 - src.height()) * f).toInt() }
-                    iv.translationX = src.left + (tl - src.left) * f
-                    iv.translationY = src.top + (tt - src.top) * f
-                    rad = (14 * den) * f; iv.invalidateOutline()
-                }
-            }
-            anim.start()
-            window.decorView.postDelayed({
-                if (isFinishing || isDestroyed) { try { deco.removeView(iv) } catch (_: Throwable) {}; return@postDelayed }
-                startActivity(pi)
-                overridePendingTransition(android.R.anim.fade_in, 0)   // الصفحة بتفيد إن فوق الصورة بعد ما توصل مكانها
-                window.decorView.postDelayed({ try { anim.cancel() } catch (_: Throwable) {}; try { deco.removeView(iv) } catch (_: Throwable) {} }, 420L)
-            }, 200L)
-        } catch (_: Throwable) {
-            startActivity(pi)
-            overridePendingTransition(R.anim.yt_page_up_enter, R.anim.yt_page_up_exit)
-        }
+        startActivity(pi)   // (v1347) فتح فوري من غير أي أنيميشن أو ترانزيشن (بطلب علي: «مفيش انيميشن واحد يفضل ولا ترانزيشت») — أنيميشن ytExpandOpen اتشال بالكامل
+        overridePendingTransition(0, 0)
     }
     private fun ytStartLegacy(id: String, title: String, translate: Boolean, auto: Boolean, startMs: Long = 0L) {
         val tok = ++ytLoadTok; ytLoadLaunched = false

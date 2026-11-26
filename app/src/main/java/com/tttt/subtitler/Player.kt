@@ -1930,7 +1930,7 @@ class PlayerActivity : Activity(), Host {
         } catch (e: Throwable) { LogStore.err("Tv:vol", e) }
     }
     @Volatile private var replacedByNew = false   // (v1147) اتقفل لأن فيديو جديد فتح مكانه: لازم حركة القفل تساعد حركة الدخول (من تحت لفوق) مش تلغيها
-    override fun finish() { super.finish(); if (dockedAway) { try { overridePendingTransition(0, 0) } catch (_: Throwable) {}; return }; if (gone) { try { overridePendingTransition(0, 0) } catch (_: Throwable) {}; return }; try { if (ytPage && replacedByNew) overridePendingTransition(R.anim.yt_swap_enter, R.anim.yt_swap_exit) else if (ytPage) overridePendingTransition(R.anim.yt_page_down_enter, R.anim.yt_page_down_exit) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_close_enter, R.anim.player_close_exit) else overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:725", e) } }
+    override fun finish() { super.finish(); if (dockedAway) { try { overridePendingTransition(0, 0) } catch (_: Throwable) {}; return }; if (gone) { try { overridePendingTransition(0, 0) } catch (_: Throwable) {}; return }; try { if (ytPage) overridePendingTransition(0, 0) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_close_enter, R.anim.player_close_exit) else overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Main:725", e) }   // (v1347) يوتيوب: قفل فوري (بطلب علي) }
     @Volatile var cur = 0L
     @Volatile var durMs = 0L
     @Volatile var status = ""
@@ -4996,8 +4996,8 @@ class PlayerActivity : Activity(), Host {
         } catch (_: Throwable) {}
         if (incognito) try { window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) } catch (_: Throwable) {}   // (v1062) متخفي: المعاينة في الريسنت سودا
         smoothRotation()   // (v429)
-        if (ytPage && (!intent.getBooleanExtra("handoff", false) || intent.getBooleanExtra("ytpage", false))) try { window.setWindowAnimations(if (intent.getBooleanExtra("ytswap", false)) R.style.YtSwapWindowAnim else R.style.YtPageWindowAnim) } catch (_: Throwable) {}   // (v1160) احتياطي لو الروم تجاهلت overridePendingTransition
-        try { if ((intent.getBooleanExtra("handoff", false) && !ytPage) || (rotLaunch && !ytPage)) overridePendingTransition(0, 0) else if (ytPage && intent.getBooleanExtra("ytswap", false)) overridePendingTransition(R.anim.yt_swap_enter, R.anim.yt_swap_exit) else if (ytPage) overridePendingTransition(R.anim.yt_page_up_enter, R.anim.yt_page_up_exit) else if (intent.getStringExtra("ytid")?.length == 11) overridePendingTransition(R.anim.yt_page_up_enter, R.anim.yt_page_up_exit) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_open_enter, R.anim.player_open_exit) } catch (_: Throwable) {}   // (v899) (v1340) أي فيديو يوتيوب بيفتح من تحت دايمًا — مفيش فتح جانبي/افتراضي للنظام: (v1143) صفحة يوتيوب: بتطلع من تحت (v1130) التسليم من المشغّل المصغّر: من غير حركة حركة فتح المشغّل من MeeTube
+        // (v1347) أنيميشن نافذة صفحة يوتيوب اتشال (بطلب علي): مفيش أي حركة نهائيًا
+        try { if ((intent.getBooleanExtra("handoff", false) && !ytPage) || (rotLaunch && !ytPage)) overridePendingTransition(0, 0) else if (ytPage) overridePendingTransition(0, 0) else if (intent.getStringExtra("ytid")?.length == 11) overridePendingTransition(0, 0) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_open_enter, R.anim.player_open_exit) } catch (_: Throwable) {}   // (v1347) يوتيوب: فتح فوري من غير ترانزيشن (بطلب علي)   // (v899) (v1340) أي فيديو يوتيوب بيفتح من تحت دايمًا — مفيش فتح جانبي/افتراضي للنظام: (v1143) صفحة يوتيوب: بتطلع من تحت (v1130) التسليم من المشغّل المصغّر: من غير حركة حركة فتح المشغّل من MeeTube
         synchronized(liveList) {
             liveList.removeAll { it.get() == null }
             liveList.toList().forEach { r -> r.get()?.let { o -> if (o !== this) try { o.runOnUiThread { o.killForNewVideo() } } catch (_: Throwable) {} } }
@@ -5811,14 +5811,15 @@ class PlayerActivity : Activity(), Host {
             if (on) { chromeFrame.visibility = View.VISIBLE; if (wasOn && chromeFrame.alpha < 1f) { chromeFrame.animate().cancel(); chromeFrame.alpha = 1f; chromeFrame.translationY = 0f } }
             else {
                 dismissPop(); tbCollapseFn()
-                if (wasOn) {   // (v445) اختفاء ناعم (فيد + نزول خفيف) بدل القطع المفاجئ
+                if (wasOn) {   // (v445) اختفاء ناعم — (v1347) في قسم يوتيوب: اختفاء فوري (بطلب علي)
                     chromeFrame.animate().cancel()
-                    chromeFrame.animate().setStartDelay(0L).alpha(0f).translationY(ui.dp(10).toFloat()).setDuration(Skins.dur(160L))
+                    if (ytPage) { chromeFrame.visibility = View.GONE; chromeFrame.alpha = 1f; chromeFrame.translationY = 0f }
+                    else chromeFrame.animate().setStartDelay(0L).alpha(0f).translationY(ui.dp(10).toFloat()).setDuration(Skins.dur(160L))
                         .withEndAction { if (!(fullMode && chromeShown && !pipNow())) chromeFrame.visibility = View.GONE; chromeFrame.alpha = 1f; chromeFrame.translationY = 0f }.start()
                 } else chromeFrame.visibility = View.GONE
             }
             if (on) { try { val tt = titleWithSummary(); if (topTitle.text.toString() != tt.toString()) topTitle.text = tt; topTitle.visibility = if (tt.isBlank()) View.GONE else View.VISIBLE; fixTopRowFn() } catch (_: Throwable) {} }   // (v330) (v360) + ملخص الإعداد
-            if (on && !wasOn) { chromeFrame.animate().cancel(); chromeFrame.alpha = 0f; chromeFrame.translationY = ui.dp(22).toFloat(); chromeFrame.animate().setStartDelay(0L).alpha(1f).translationY(0f).setDuration(Skins.dur(280L)).setInterpolator(android.view.animation.DecelerateInterpolator(1.8f)).start() }
+            if (on && !wasOn) { chromeFrame.animate().cancel(); if (ytPage) { chromeFrame.alpha = 1f; chromeFrame.translationY = 0f } else { chromeFrame.alpha = 0f; chromeFrame.translationY = ui.dp(22).toFloat(); chromeFrame.animate().setStartDelay(0L).alpha(1f).translationY(0f).setDuration(Skins.dur(280L)).setInterpolator(android.view.animation.DecelerateInterpolator(1.8f)).start() } }   // (v1347) يوتيوب: ظهور الشريط فوري (بطلب علي)
             else if (!on && !wasOn) { chromeFrame.animate().cancel(); chromeFrame.alpha = 1f; chromeFrame.translationY = 0f }
             centerPlay.visibility = if ((on && !Design.isNew()) || pipNow() || uiLocked || busyShown()) View.GONE else if (on) View.VISIBLE else if (buffering) View.VISIBLE else if (::player.isInitialized && player.isPlaying) View.GONE else View.VISIBLE   // الشريط ظاهر = فيه زرار تشغيل تحت، فمنشيلش الأوسط فوق الترجمة
             val cv = (!fullMode || chromeShown) && !pipNow()
@@ -5844,9 +5845,8 @@ class PlayerActivity : Activity(), Host {
             if (DeviceUi.isTv(this)) { fsBtnV.visibility = View.GONE; floatBar.visibility = View.GONE; batchBtn.visibility = View.GONE; rotBtn.visibility = View.GONE }   // (v664) تلفزيون: الزراري العايمة دي ممنوعة نهائيًا مهما حصل
             val subOldBm = subLp.bottomMargin
             subLp.bottomMargin = ((if (on) maxOf(ui.dp(128), fsBar.height + ui.dp(12)) else ui.dp(12)) + subPosExtra()).coerceAtLeast(0)
-            if (subOldBm != subLp.bottomMargin && sub.height > 0) {   // (v1169) الترجمة كانت بتنط لما الشريط يظهر/يختفي ← تنزلق لمكانها الجديد
-                sub.animate().cancel(); sub.translationY = sub.translationY + (subLp.bottomMargin - subOldBm)
-                sub.animate().translationY(0f).setStartDelay(0L).setDuration(Skins.dur(210L)).setInterpolator(android.view.animation.DecelerateInterpolator(1.6f)).start()
+            if (subOldBm != subLp.bottomMargin && sub.height > 0) {   // (v1169) انزلاق الترجمة — (v1347) في يوتيوب: فوري (بطلب علي)
+                sub.animate().cancel(); if (ytPage) sub.translationY = 0f else { sub.translationY = sub.translationY + (subLp.bottomMargin - subOldBm); sub.animate().translationY(0f).setStartDelay(0L).setDuration(Skins.dur(210L)).setInterpolator(android.view.animation.DecelerateInterpolator(1.6f)).start() }
             }
             sub.requestLayout()   // (v469) + رفع الاستوديو
             placeFloatFn()
@@ -5888,7 +5888,7 @@ class PlayerActivity : Activity(), Host {
                 player.seekTo((player.currentPosition + (if (right) dtMs else -dtMs)).coerceAtLeast(0))
                 giShow(if (right) "$dtSec ⏩" else "⏪ $dtSec", (if (right) Gravity.END else Gravity.START) or Gravity.CENTER_VERTICAL)
                 // (v469) نبضة أنيميشن على مؤشر التقديم/الترجيع (تكبير لحظي ورجوع) عشان الإيماءة تبقى محسوسة بصريًا
-                try { gi.animate().cancel(); gi.scaleX = 0.7f; gi.scaleY = 0.7f; gi.animate().scaleX(1.15f).scaleY(1.15f).setDuration(130).withEndAction { try { gi.animate().scaleX(1f).scaleY(1f).setDuration(160).start() } catch (_: Throwable) {} }.start() } catch (_: Throwable) {}
+                if (!ytPage) try { gi.animate().cancel(); gi.scaleX = 0.7f; gi.scaleY = 0.7f; gi.animate().scaleX(1.15f).scaleY(1.15f).setDuration(130).withEndAction { try { gi.animate().scaleX(1f).scaleY(1f).setDuration(160).start() } catch (_: Throwable) {} }.start() } catch (_: Throwable) {}   // (v1347) يوتيوب: من غير نبضة (بطلب علي)
                 return true
             }
             override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
@@ -6172,8 +6172,7 @@ class PlayerActivity : Activity(), Host {
         if (DeviceUi.isRemote(this)) { TvFocus.attach(this, th.primary); tvInitBar(rootFrame); tvSnapChrome(); tvChromeGate() }   // (v477 م4)
         // شاشة كاملة دايمًا (أفقي ورأسي) إلا في صفحة يوتيوب: الصفحة تحت الفيديو والتكبير بزرار ⛶
         applyFull(wantFull())
-        // (v1345) فتح من قايمة يوتيوب: الصورة المصغّرة بتكمّل التمدد فوق مكان الفيديو لحد أول فريم حقيقي (بطلب علي)
-        if (pendingYt && ytPage) ytExpandIn(rootFrame)
+        // (v1347) أنيميشن التمدد من القايمة اتلغى بالكامل (بطلب علي): الفتح فوري
         // فيديو اتفتح من فولدرات الجهاز: يشتغل لاندسكيب مباشرة زي MX Player
         // الاتجاه الأولي من شكل الفيديو (من المكتبة) — وبعدها بيتصحح لوحده أول ما الأبعاد الحقيقية تظهر (onVideoSizeChanged)
         if (intent.getBooleanExtra("landscape", false) && resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -6599,7 +6598,7 @@ class PlayerActivity : Activity(), Host {
                 var gone = false
                 val rm = Runnable {
                     if (!gone) { gone = true
-                        iv.animate().alpha(0f).setDuration(120L).withEndAction { try { videoBox.removeView(iv); bm.recycle() } catch (_: Throwable) {} }.start() }
+                        try { videoBox.removeView(iv); bm.recycle() } catch (_: Throwable) {} }   // (v1347) إزالة اللقطة فورًا من غير فيد (بطلب علي)
                 }
                 player.exo()?.addListener(object : Player.Listener {
                     override fun onRenderedFirstFrame() { h.post(rm); try { player.exo()?.removeListener(this) } catch (_: Throwable) {} }
@@ -7348,67 +7347,6 @@ class PlayerActivity : Activity(), Host {
     private var ytVt: android.view.VelocityTracker? = null
     private var ytAnim: android.animation.ValueAnimator? = null
     private fun ytPageH(): Float { val pg = ytPageRef; return (if (pg != null && pg.height > 0) pg.height else resources.displayMetrics.heightPixels).toFloat() }
-    /** (v1345) تكميلة أنيميشن الفتح من القايمة (بطلب علي): الصورة بتبدأ من آخر نقطة وصلتلها في Main وبتستقر على مكان الفيديو الحقيقي، وبتتشال بأول فريم */
-    private fun ytExpandIn(rootFrame: FrameLayout) {
-        val sl = intent.getIntExtra("ytsrcl", -1)
-        if (sl < 0) return
-        val gl = intent.getIntExtra("ytgtl", sl)
-        val gt = intent.getIntExtra("ytgtt", intent.getIntExtra("ytsrct", 0))
-        val gr = intent.getIntExtra("ytgtr", intent.getIntExtra("ytsrcr", 0))
-        val gb = intent.getIntExtra("ytgtb", intent.getIntExtra("ytsrcb", 0))
-        var rad = ui.dp(14).toFloat()
-        var ovGone = false
-        val ov = android.widget.ImageView(this).apply {
-            scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-            layoutDirection = View.LAYOUT_DIRECTION_LTR
-            setBackgroundColor(0xFF272727.toInt())
-            clipToOutline = true
-            outlineProvider = object : android.view.ViewOutlineProvider() { override fun getOutline(v2: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v2.width, v2.height, rad) } }
-        }
-        val thUrl = intent.getStringExtra("ytthumb") ?: ""
-        if (thUrl.isNotBlank()) try { Glide.with(this).load(thUrl).centerCrop().into(ov) } catch (_: Throwable) {}
-        rootFrame.addView(ov, FrameLayout.LayoutParams((gr - gl).coerceAtLeast(1), (gb - gt).coerceAtLeast(1), Gravity.TOP or Gravity.LEFT))
-        ytPageRef?.let { pg -> pg.alpha = 0f; pg.animate().alpha(1f).setDuration(220L).setStartDelay(60L).start() }   // محتوى الصفحة بيفيد إن تحت الصورة
-        fun dismissOv() {
-            if (ovGone) return; ovGone = true
-            try { ov.animate().alpha(0f).setDuration(160L).withEndAction { try { rootFrame.removeView(ov) } catch (_: Throwable) {} }.start() } catch (_: Throwable) {}
-        }
-        fun settleOv(tries: Int) {
-            if (ovGone || isFinishing || isDestroyed) return
-            try {
-                val rLoc = IntArray(2); rootFrame.getLocationOnScreen(rLoc)
-                val vLoc = IntArray(2); videoBoxRef.getLocationOnScreen(vLoc)
-                if (videoBoxRef.width <= 0 || videoBoxRef.height <= 0) { if (tries < 10) h.postDelayed({ settleOv(tries + 1) }, 60L) else dismissOv(); return }
-                val fx = (vLoc[0] - rLoc[0]).toFloat(); val fy = (vLoc[1] - rLoc[1]).toFloat()
-                val dw = videoBoxRef.width - ov.width; val dh = videoBoxRef.height - ov.height
-                if (kotlin.math.abs(fx - ov.translationX) < 2f && kotlin.math.abs(fy - ov.translationY) < 2f && kotlin.math.abs(dw) < 4 && kotlin.math.abs(dh) < 4) {
-                    ov.translationX = fx; ov.translationY = fy
-                    return   // وصلنا للمكان الحقيقي — مفيش حركة ظاهرة
-                }
-                val sw0 = ov.width; val sh0 = ov.height; val sx0 = ov.translationX; val sy0 = ov.translationY
-                val an = android.animation.ValueAnimator.ofFloat(0f, 1f)
-                an.duration = 140L
-                an.interpolator = android.view.animation.PathInterpolator(0.4f, 0f, 0.2f, 1f)
-                an.addUpdateListener { a ->
-                    val f = a.animatedValue as Float
-                    ov.layoutParams = (ov.layoutParams as FrameLayout.LayoutParams).apply { width = sw0 + ((videoBoxRef.width - sw0) * f).toInt(); height = sh0 + ((videoBoxRef.height - sh0) * f).toInt() }
-                    ov.translationX = sx0 + (fx - sx0) * f
-                    ov.translationY = sy0 + (fy - sy0) * f
-                }
-                an.start()
-            } catch (_: Throwable) { dismissOv() }
-        }
-        ov.post {
-            try {
-                if (ovGone) return@post
-                val rLoc = IntArray(2); rootFrame.getLocationOnScreen(rLoc)   // فرق إحداثيات الشاشة عن إحداثيات الـroot (شريط الحالة)
-                ov.translationX = (gl - rLoc[0]).toFloat(); ov.translationY = (gt - rLoc[1]).toFloat()
-                settleOv(0)
-            } catch (_: Throwable) { dismissOv() }
-        }
-        h.post(object : Runnable { override fun run() { if (ovGone || isFinishing || isDestroyed) return; if (ffShown) dismissOv() else h.postDelayed(this, 200L) } })
-        h.postDelayed({ dismissOv() }, 6000L)   // احتياطي: أول فريم ماجاش
-    }
     private fun ytMiniScale(): Float { val w = videoBoxRef.width.toFloat().coerceAtLeast(1f); return minOf(ui.dp(104).toFloat(), w * 0.42f) / w }   // (v1162) نفس عرض فيديو الدوك السفلي
     private fun ytMiniTy(): Float { val vb = videoBoxRef; return (ytPageH() - vb.height * ytMiniScale() - ui.dp(72)) - vb.top }
     private fun ytApplyDrag(p0: Float) {
@@ -7421,18 +7359,10 @@ class PlayerActivity : Activity(), Host {
         extras.alpha = (1f - p * 1.7f).coerceIn(0f, 1f)
         try { pg.background.mutate().alpha = (255f * (1f - (p * 1.4f).coerceAtMost(1f))).toInt() } catch (_: Throwable) {}   // (v1343) السحب للتصغير: الصفحة بتشف تدريجي وتكشف قايمة يوتيوب اللي وراها (رجوع لسلوك v1161) — اللي وراها دايمًا الفيد بعد v1343 (بطلب علي)
     }
-    private fun ytAnimTo(target: Float, then: (() -> Unit)? = null) {
+    private fun ytAnimTo(target: Float, then: (() -> Unit)? = null) {   // (v1347) إنهاء السحب فوري من غير أنيميشن (بطلب علي)
         ytAnim?.cancel()
-        val a = android.animation.ValueAnimator.ofFloat(ytDragP, target)
-        a.duration = if (target > 0f) 220L else 260L
-        a.interpolator = android.view.animation.PathInterpolator(0.4f, 0f, 0.2f, 1f)
-        a.addUpdateListener { ytApplyDrag(it.animatedValue as Float) }
-        a.addListener(object : android.animation.AnimatorListenerAdapter() {
-            var cancelled = false
-            override fun onAnimationCancel(an: android.animation.Animator) { cancelled = true }
-            override fun onAnimationEnd(an: android.animation.Animator) { if (!cancelled) then?.invoke() }
-        })
-        ytAnim = a; a.start()
+        ytApplyDrag(target)
+        then?.invoke()
     }
     private fun ytDragReset() {
         try { ytAnim?.cancel() } catch (_: Throwable) {}
@@ -7621,7 +7551,7 @@ class PlayerActivity : Activity(), Host {
         ytWatch = wp
         val it0 = ytItemFromIntent()
         wp.post { wp.open(it0, null) }
-        if (intent.getBooleanExtra("ytswap", false)) { wp.alpha = 0f; wp.translationY = ui.dp(28).toFloat(); wp.post { try { wp.animate().alpha(1f).translationY(0f).setStartDelay(100L).setDuration(280L).setInterpolator(android.view.animation.PathInterpolator(0.4f, 0f, 0.2f, 1f)).start() } catch (_: Throwable) { wp.alpha = 1f; wp.translationY = 0f } } }   // (v1161)
+        // (v1347) أنيميشن تبديل الفيديو جوه الصفحة اتلغى (بطلب علي): المحتوى بيتبدل فورًا
         return wp
     }
 
@@ -7728,7 +7658,8 @@ class PlayerActivity : Activity(), Host {
                 v.pivotX = nw / 2f; v.pivotY = nh / 2f
                 v.rotation = d.toFloat(); v.scaleX = s; v.scaleY = s
                 v.translationX = cx - (l + r) / 2f; v.translationY = cy - (t + b) / 2f
-                v.animate().rotation(0f).scaleX(1f).scaleY(1f).translationX(0f).translationY(0f).setDuration(280L)
+                if (ytPage) { v.animate().cancel(); v.rotation = 0f; v.scaleX = 1f; v.scaleY = 1f; v.translationX = 0f; v.translationY = 0f }   // (v1347) يوتيوب: لف فوري (بطلب علي)
+                else v.animate().rotation(0f).scaleX(1f).scaleY(1f).translationX(0f).translationY(0f).setDuration(280L)
                     .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
             } catch (e: Throwable) { LogStore.err("Player:rotAnim", e) }
         }
@@ -8187,6 +8118,7 @@ class PlayerActivity : Activity(), Host {
     private fun morphText(v: TextView, t: String) {
         if (v.text.toString() == t) return
         if (!Design.isNew() || !v.isShown) { v.text = t; return }
+        if (ytPage) { v.animate().cancel(); v.text = t; return }   // (v1347) يوتيوب: تغيير النص فوري (بطلب علي)
         v.animate().cancel()
         v.animate().scaleX(0.55f).scaleY(0.55f).rotation(-25f).setDuration(90L).withEndAction {
             v.text = t; v.rotation = 25f
@@ -8795,7 +8727,7 @@ class PlayerActivity : Activity(), Host {
     private var probIdx = -1
     fun toggleProb() {
         probOn = !probOn
-        probDrawer.animate().translationX(if (probOn) 0f else -(probBar.width + ui.dp(2)).toFloat()).setDuration(220).start()
+        if (ytPage) { probDrawer.animate().cancel(); probDrawer.translationX = if (probOn) 0f else -(probBar.width + ui.dp(2)).toFloat() } else probDrawer.animate().translationX(if (probOn) 0f else -(probBar.width + ui.dp(2)).toFloat()).setDuration(220).start()   // (v1347) يوتيوب: فوري (بطلب علي)
         probHandle.text = if (probOn) "◂" else "⚠"
         fadeTo(probHandle, if (probOn) 1f else PROB_A)
         h.removeCallbacks(probAuto); if (probOn) h.postDelayed(probAuto, 8000)

@@ -654,8 +654,9 @@ class YtPlayerKit(private val act: Activity, private val ui: Ui) : FrameLayout(a
         val vs = ArrayList<View>(); vs.add(shade); vs.add(playB)
         if (tvMode) { vs.add(closeG); vs.add(gearG) } else vs.add(topRow)
         for (v in vs) {
-            if (on) { v.visibility = View.VISIBLE; v.animate().alpha(1f).setDuration(160L).start() }
-            else v.animate().alpha(0f).setDuration(160L).withEndAction { if (!ctlOn) v.visibility = View.INVISIBLE }.start()
+            v.animate().cancel()   // (v1347) كنترول يوتيوب: ظهور/اختفاء فوري من غير فيد (بطلب علي)
+            if (on) { v.visibility = View.VISIBLE; v.alpha = 1f }
+            else { v.alpha = 1f; v.visibility = View.INVISIBLE }
         }
         if (on && auto && exo?.isPlaying == true) scheduleHide()
     }
@@ -1210,11 +1211,11 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
                 val vy = vt?.yVelocity ?: 0f
                 vt?.recycle(); vt = null
                 val dy = translationY
+                animate().cancel()   // (v1347) قفل/رجوع الشيت فوري من غير أنيميشن (بطلب علي)
                 if (e.actionMasked == MotionEvent.ACTION_UP && (dy > ui.dp(110) || vy > 1400f)) {
-                    animate().translationY(height * 0.55f).alpha(0f).setDuration(160L)
-                        .withEndAction { close(false); translationY = 0f; alpha = 1f }.start()
+                    close(false); translationY = 0f; alpha = 1f
                 } else {
-                    animate().translationY(0f).alpha(1f).setDuration(180L).setInterpolator(DecelerateInterpolator()).start()
+                    translationY = 0f; alpha = 1f
                 }
             }
         }
@@ -1602,12 +1603,10 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         if (!wasOpen) {
             from = src
             host.state(true)
-            if (embedded) {
-                visibility = View.VISIBLE
-                alpha = 1f
-            } else animateIn(src)
+            visibility = View.VISIBLE   // (v1347) فتح الصفحة فوري من غير أنيميشن (بطلب علي)
+            alpha = 1f
         }
-        else { body.alpha = 0f; body.animate().alpha(1f).setDuration(220L).start() }
+        else { body.animate().cancel(); body.alpha = 1f }
         // (v471) الفيديو والتفاصيل بقوا على خيطين منفصلين: قبل كده المشغّل كان بيستنى NewPipe يخلّص كل التفاصيل (3-8 ثواني) قبل ما يبدأ يجيب الرابط،
         // وكمان كان بيمشي في الطريق البطيء بس. دلوقتي الرابط بيتجاب من نفس السباق السريع بتاع المشغّل الكامل (YtExtract + NewPipe + كاش) والتفاصيل تظهر لما تجهز.
         if (!embedded) Thread {
@@ -1658,37 +1657,7 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
             kit.scaleX = 1f; kit.scaleY = 1f; kit.translationX = 0f; kit.translationY = 0f; kit.alpha = 1f
             tail.translationY = 0f; tail.alpha = 1f; alpha = 1f
         }
-        if (!animated) { finish(); return }
-        val src = from
-        kit.pivotX = 0f; kit.pivotY = 0f
-        val loc = IntArray(2); kit.getLocationOnScreen(loc)
-        val pw = kit.width.toFloat().coerceAtLeast(1f); val ph = kit.height.toFloat().coerceAtLeast(1f)
-        tail.animate().translationY(ui.dp(90).toFloat()).alpha(0f).setDuration(180L).start()
-        if (src != null && src.width() > 0) {
-            kit.animate().scaleX(src.width() / pw).scaleY(src.height() / ph).translationX((src.left - loc[0]).toFloat()).translationY((src.top - loc[1]).toFloat())
-                .setDuration(260L).setInterpolator(DecelerateInterpolator(1.4f)).start()
-            animate().alpha(0f).setStartDelay(120L).setDuration(160L).withEndAction { finish() }.start()
-        } else {
-            kit.animate().translationY(ui.dp(60).toFloat()).alpha(0f).setDuration(200L).start()
-            animate().alpha(0f).setDuration(220L).withEndAction { finish() }.start()
-        }
-    }
-
-    private fun animateIn(src: Rect?) {
-        visibility = View.VISIBLE; alpha = 0f
-        tail.alpha = 0f; tail.translationY = ui.dp(90).toFloat()
-        post {
-            val pw = (if (kit.width > 0) kit.width else sw).toFloat(); val ph = (if (kit.height > 0) kit.height else sw * 9 / 16).toFloat()
-            val loc = IntArray(2); kit.getLocationOnScreen(loc)
-            kit.pivotX = 0f; kit.pivotY = 0f
-            if (src != null && src.width() > 0) {
-                kit.scaleX = src.width() / pw; kit.scaleY = src.height() / ph
-                kit.translationX = (src.left - loc[0]).toFloat(); kit.translationY = (src.top - loc[1]).toFloat()
-            } else { kit.translationY = ui.dp(60).toFloat(); kit.alpha = 0f }
-            animate().alpha(1f).setStartDelay(0L).setDuration(140L).start()
-            kit.animate().scaleX(1f).scaleY(1f).translationX(0f).translationY(0f).alpha(1f).setDuration(360L).setInterpolator(DecelerateInterpolator(1.6f)).start()
-            tail.animate().translationY(0f).alpha(1f).setStartDelay(140L).setDuration(320L).setInterpolator(DecelerateInterpolator()).start()
-        }
+        finish()   // (v1347) القفل فوري دايمًا مهما كانت قيمة animated (بطلب علي: «مفيش انيميشن واحد يفضل»)
     }
 
     // ───────── المحتوى ─────────
@@ -2093,7 +2062,7 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
         if (v.width > 0 && v.height > 0) { vw = (v.width * v.pixelWidthHeightRatio).toInt(); vh = v.height; fit() }
         paintPlay()
         if (instant) { alpha = 1f; translationY = 0f; visibility = View.VISIBLE }   // (v1162) جاي من تصغير الصفحة: الحركة اتعملت في المشغّل نفسه
-        else { alpha = 0f; translationY = ui.dp(24).toFloat(); visibility = View.VISIBLE; animate().alpha(1f).translationY(0f).setDuration(200L).start() }
+        else { alpha = 1f; translationY = 0f; visibility = View.VISIBLE }   // (v1347) ظهور الدوك فوري (بطلب علي)
         hh.removeCallbacks(tick); hh.post(tick)
     }
 
@@ -2123,10 +2092,10 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
                         val dx = rv.translationX
                         if (Math.abs(dx) > rv.width * 0.32f) {
                             YtQueue.remove(v.id)
-                            rv.animate().translationX(if (dx > 0) rv.width.toFloat() else -rv.width.toFloat()).alpha(0f).setDuration(160L).withEndAction { (rv.parent as? LinearLayout)?.removeView(rv); queueTv.text = "☰" }.start()
+                            rv.animate().cancel(); (rv.parent as? LinearLayout)?.removeView(rv); queueTv.text = "☰"   // (v1347) حذف من القايمة فوري (بطلب علي)
                             Notice.show(act, "🗑 اتشال من قائمة الانتظار", 1400L)
                         } else if (!moved) { dlg.dismiss(); expandItem(v) }
-                        else rv.animate().translationX(0f).setDuration(160L).start()
+                        else { rv.animate().cancel(); rv.translationX = 0f }   // (v1347) رجوع فوري (بطلب علي)
                         true
                     }
                     else -> false
