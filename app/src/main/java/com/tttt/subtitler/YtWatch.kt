@@ -1931,9 +1931,9 @@ object YtDockHold {
     @Volatile private var h: H? = null
     private val hh = Handler(Looper.getMainLooper())
     private val expire = Runnable { val x = h; h = null; try { x?.kept?.p?.release() } catch (_: Throwable) {} }
-    fun put(item: NpItem, kept: YtKept, wasPlaying: Boolean) {
+    fun put(item: NpItem, kept: YtKept, wasPlaying: Boolean, pending: Boolean = false) {
         val old = h; h = H(item, kept, wasPlaying)
-        hh.removeCallbacks(expire); hh.postDelayed(expire, 15000L)
+        hh.removeCallbacks(expire); if (!pending) hh.postDelayed(expire, 15000L)   // (v1340) pending = تسليم لحظة الخروج من التطبيق: يستنى رجوعك من غير انتهاء، والدوك بيظهر أول ما ترجع
         if (old != null && old.kept.p !== kept.p) try { old.kept.p.release() } catch (_: Throwable) {}
     }
     fun take(): H? { hh.removeCallbacks(expire); val x = h; h = null; return x }

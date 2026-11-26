@@ -5018,7 +5018,7 @@ class PlayerActivity : Activity(), Host {
         if (incognito) try { window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) } catch (_: Throwable) {}   // (v1062) متخفي: المعاينة في الريسنت سودا
         smoothRotation()   // (v429)
         if (ytPage && (!intent.getBooleanExtra("handoff", false) || intent.getBooleanExtra("ytpage", false))) try { window.setWindowAnimations(if (intent.getBooleanExtra("ytswap", false)) R.style.YtSwapWindowAnim else R.style.YtPageWindowAnim) } catch (_: Throwable) {}   // (v1160) احتياطي لو الروم تجاهلت overridePendingTransition
-        try { if ((intent.getBooleanExtra("handoff", false) && !ytPage) || (rotLaunch && !ytPage)) overridePendingTransition(0, 0) else if (ytPage && intent.getBooleanExtra("ytswap", false)) overridePendingTransition(R.anim.yt_swap_enter, R.anim.yt_swap_exit) else if (ytPage) overridePendingTransition(R.anim.yt_page_up_enter, R.anim.yt_page_up_exit) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_open_enter, R.anim.player_open_exit) } catch (_: Throwable) {}   // (v899) (v1143) صفحة يوتيوب: بتطلع من تحت (v1130) التسليم من المشغّل المصغّر: من غير حركة حركة فتح المشغّل من MeeTube
+        try { if ((intent.getBooleanExtra("handoff", false) && !ytPage) || (rotLaunch && !ytPage)) overridePendingTransition(0, 0) else if (ytPage && intent.getBooleanExtra("ytswap", false)) overridePendingTransition(R.anim.yt_swap_enter, R.anim.yt_swap_exit) else if (ytPage) overridePendingTransition(R.anim.yt_page_up_enter, R.anim.yt_page_up_exit) else if (intent.getStringExtra("ytid")?.length == 11) overridePendingTransition(R.anim.yt_page_up_enter, R.anim.yt_page_up_exit) else if (MtLook.playerAnim()) overridePendingTransition(R.anim.player_open_enter, R.anim.player_open_exit) } catch (_: Throwable) {}   // (v899) (v1340) أي فيديو يوتيوب بيفتح من تحت دايمًا — مفيش فتح جانبي/افتراضي للنظام: (v1143) صفحة يوتيوب: بتطلع من تحت (v1130) التسليم من المشغّل المصغّر: من غير حركة حركة فتح المشغّل من MeeTube
         synchronized(liveList) {
             liveList.removeAll { it.get() == null }
             liveList.toList().forEach { r -> r.get()?.let { o -> if (o !== this) try { o.runOnUiThread { o.killForNewVideo() } } catch (_: Throwable) {} } }
@@ -7364,7 +7364,7 @@ class PlayerActivity : Activity(), Host {
         vb.scaleX = sc; vb.scaleY = sc; vb.translationY = p * ytMiniTy(); vb.translationX = p * (pg.width - vb.width * s)   // (v1162) يلزق يمين زي الدوك
         extras.translationY = p * (ytPageH() - vb.height)
         extras.alpha = (1f - p * 1.7f).coerceIn(0f, 1f)
-        try { pg.background.mutate().alpha = (255f * (1f - (p * 1.4f).coerceAtMost(1f))).toInt() } catch (_: Throwable) {}
+        try { pg.background.mutate().alpha = 255 } catch (_: Throwable) {}   // (v1340) السحب للتصغير: الخلفية بتفضل سودا ثابتة — الشاشة/الصورة اللي ورا الصفحة متظهرش تاني
     }
     private fun ytAnimTo(target: Float, then: (() -> Unit)? = null) {
         ytAnim?.cancel()
@@ -7415,7 +7415,7 @@ class PlayerActivity : Activity(), Host {
     // ===== (v1162) تسليم المشغّل للدوك السفلي في Main + سحب التصغير من الصفحة نفسها =====
     @Volatile private var dockedAway = false
     private var plstRef: Player.Listener? = null
-    private fun ytTryDock(): Boolean {
+    private fun ytTryDock(pending: Boolean = false): Boolean {
         if (remote || !ytPage || !YtDockCfg.on() || audioOnlyMode) return false
         try {
             val ex = player.exo() ?: return false
@@ -7430,7 +7430,7 @@ class PlayerActivity : Activity(), Host {
             try { loud?.release(); loud = null } catch (_: Throwable) {}
             try { ex.setPlaybackSpeed(1f); ex.volume = 1f } catch (_: Throwable) {}
             val pick = YtPick(u, aurl, hdr["User-Agent"] ?: "", item.title, vidH)
-            YtDockHold.put(item, YtKept(ex, pick, pos), was)
+            YtDockHold.put(item, YtKept(ex, pick, pos), was, pending)
             dockedAway = true
             try { visual.stop() } catch (_: Throwable) {}
             try { saveRecent() } catch (_: Throwable) {}
@@ -7742,7 +7742,13 @@ class PlayerActivity : Activity(), Host {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (gone) return
-        if (!internalNav && !isFinishing && Build.VERSION.SDK_INT >= 26 && !isInPictureInPictureMode && try { player.isPlaying } catch (_: Exception) { false }) enterPip(false)
+        if (!internalNav && !isFinishing && Build.VERSION.SDK_INT >= 26 && !isInPictureInPictureMode && try { player.isPlaying } catch (_: Exception) { false }) {
+            if (!DeviceUi.isTv(this) && !remote && ytPage && !audioOnlyMode && !canOverlay()) {
+                if (!ytTryDock(true)) try { player.pause() } catch (_: Throwable) {}
+                return
+            }
+            enterPip(false)
+        }
     }
     fun doExport() { startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "application/x-subrip"; putExtra(Intent.EXTRA_TITLE, "subtitles.srt") }, 7) }
     fun doImport() { startActivityForResult(filePicker("*/*", "اختار ملف SRT", false), 9) }
