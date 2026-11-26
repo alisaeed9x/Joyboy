@@ -54,7 +54,6 @@ class Ui(val ctx: Context, var th: Theme) {
         orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(12), dp(14), dp(14))
         background = box(th.card, th.border, 14)
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(6), 0, dp(6)) }
-        MtGlass.liveGlass(this) { background = box(th.card, th.border, 14) }   // (v1312) الكارت بيتحدّث لحظيًا مع سلايدر «الشفافية والبلر»
     }
     fun input(hint: String, value: String, lines: Int = 1) = EditText(ctx).apply {
         this.hint = Icons.plain(hint); setText(value); setTextColor(th.text); setHintTextColor(th.muted); textSize = 14f

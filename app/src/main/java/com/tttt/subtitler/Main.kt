@@ -709,9 +709,6 @@ class MainActivity : Activity() {
     ui.noHint()),
                 ui.section("🎨 الشكل", true,
                     ui.noHint(),
-                    ui.slider("🪟 الشفافية والبلر (50 = الافتراضي · أكتر = أشفّ وأبلر)", MtGlass.level(), 0, 100, "%") { Cfg.put("glass_level", it.toString()); MtGlass.fireLevel() },   // (v1312) تطبيق لحظي وقت التحريك
-                    ui.text("بيتطبق لحظيًا على الكروت والشيتات والنوافذ المنبثقة وقت تحريك السلايدر.", 12f, th.muted),
-                    glassPreview(ui, th),
                     ui.slider("🖼 تعتيم خلفية الشاشة الرئيسية", Cfg.int("app_wall_scrim", 55).coerceIn(0, 95), 0, 95, "%") { Cfg.put("app_wall_scrim", it.toString()) },
                     ui.switchRow("🔍 عدسة الشريط السفلي (زجاج)", Cfg.bool("glass_lens", false)) { Cfg.put("glass_lens", if (it) "1" else "0") },
                     ui.switchRow("〰 اهتزاز عدسة الشريط", Cfg.bool("glass_jiggle", false)) { Cfg.put("glass_jiggle", if (it) "1" else "0") }),
@@ -2112,28 +2109,3 @@ class MainActivity : Activity() {
 }
 
 
-/** معاينة حيّة: نفس شريط الأدوات الحقيقي (GlassView أصلي + بلور حي من مصدر زجاج + نفس التنت) وبيتحدّث وقت تحريك سلايدر «الشفافية والبلر» */
-private fun MainActivity.glassPreview(ui: Ui, th: Theme): View {
-    val d = resources.displayMetrics.density
-    val box = FrameLayout(this)
-    val src = JoyGlassSource(this)
-    src.setBackgroundColor(0xFF2A2A2E.toInt())
-    val stripes = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-    for (c in intArrayOf(0xFFFF8A65.toInt(), 0xFFAB47BC.toInt(), 0xFF26C6DA.toInt(), 0xFFFFEB3B.toInt(), 0xFF1565C0.toInt(), 0xFFD81B60.toInt())) stripes.addView(View(this).apply { setBackgroundColor(c) }, LinearLayout.LayoutParams(0, -1, 1f))
-    src.addView(stripes, FrameLayout.LayoutParams(-1, -1))
-    val dots = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-    for (c in intArrayOf(0xFFFFFFFF.toInt(), 0xFFFFD54F.toInt(), 0xFF4DD0E1.toInt())) dots.addView(View(this).apply { background = GradientDrawable().apply { setShape(GradientDrawable.OVAL); setColor(c) } }, LinearLayout.LayoutParams((26 * d).toInt(), (26 * d).toInt()).apply { marginStart = (8 * d).toInt(); marginEnd = (8 * d).toInt() })
-    src.addView(dots, FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply { topMargin = (12 * d).toInt() })
-    box.addView(src, FrameLayout.LayoutParams(-1, -1))
-    val bar = MeeGlass.bar(this, th)
-    bar.setSource(src)
-    bar.addView(TextView(this).apply { text = "🏠     📺     🎬     ⚙"; textSize = 17f; gravity = Gravity.CENTER }, FrameLayout.LayoutParams(-1, -2))
-    val tintLive = { try { bar.setGlassTint(MtGlass.ak(MeeRes.color("meetube_glass_tint", 0x66FAFAFA, 0x66000000))) } catch (_: Throwable) {} }
-    tintLive()
-    MtGlass.liveGlass(box) { tintLive() }
-    box.addView(bar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { leftMargin = (14 * d).toInt(); rightMargin = (14 * d).toInt(); bottomMargin = (12 * d).toInt() })
-    box.clipToOutline = true
-    box.outlineProvider = object : android.view.ViewOutlineProvider() { override fun getOutline(v: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, v.height, 16f * d) } }
-    box.layoutParams = LinearLayout.LayoutParams(-1, (120 * d).toInt()).apply { topMargin = (6 * d).toInt(); bottomMargin = (6 * d).toInt() }
-    return box
-}

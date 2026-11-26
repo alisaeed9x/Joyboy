@@ -34,23 +34,10 @@ object MtGlass {
 
     // ===== ألوان الزجاج — بتتقرا من موارد MeeTube نفسها (colors_mobile.xml: values = فاتح · values-night = داكن) =====
     // (v907) كانت أرقام منسوخة؛ دلوقتي المصدر مورد MeeTube (MeeRes) والرقم اللي هنا مجرد fallback لو المورد مش لاقيه.
-    /** (v1281) شريط «الشفافية والبلر» (glass_level 0..100، الافتراضي 50 = الشكل الحالي): فوق 50 أشفّ وأبلر، تحت 50 أعتم وأخف بلر */
-    @JvmStatic fun level(): Int = try { Cfg.int("glass_level", 50).coerceIn(0, 100) } catch (_: Throwable) { 50 }
-    @JvmStatic fun blurScale(): Float = 0.4f + level() / 50f * 0.6f   // 0.4 .. 1.6
+    /** (v1335) مسار تعديل البلر/الشفافية اتمسح بطلب علي: القيم ثابتة على الافتراضي الأصلي (50) */
+    @JvmStatic fun level(): Int = 50
+    @JvmStatic fun blurScale(): Float = 1.0f
 
-    // (v1312) «الشفافية والبلر» بيتطبق لحظيًا وقت تحريك السلايدر: الكروت/الأسطح الزجاجية بتسجّل نفسها هنا،
-    // وfireLevel (بتتنادى من السلايدر) بيعيد رسمها في نفس اللحظة + بيحدّث بلور النوافذ المنبثقة المفتوحة
-    private val levelL = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
-    fun onLevel(l: () -> Unit) { levelL.add(l) }
-    private val liveViews = java.util.concurrent.CopyOnWriteArrayList<Pair<java.lang.ref.WeakReference<android.view.View>, () -> Unit>>()
-    /** سطح زجاجي بيحدّث نفسه مع السلايدر (refresh بتعيد عمل الخلفية بقيمة level الجديدة) */
-    fun liveGlass(v: android.view.View, refresh: () -> Unit) { liveViews.add(Pair(java.lang.ref.WeakReference(v), refresh)) }
-    fun fireLevel() {
-        val dead = ArrayList<Pair<java.lang.ref.WeakReference<android.view.View>, () -> Unit>>()
-        for (p in liveViews) { val v = p.first.get(); if (v == null || !v.isAttachedToWindow) dead.add(p) else try { p.second() } catch (_: Throwable) {} }
-        if (dead.isNotEmpty()) liveViews.removeAll(dead)
-        for (l in levelL) try { l() } catch (_: Throwable) {}
-    }
     @JvmStatic fun ak(c: Int): Int { val k = (150 - level()) / 100f; val a = (((c ushr 24) and 0xFF) * k).toInt().coerceIn(0, 255); return (a shl 24) or (c and 0x00FFFFFF) }
     fun fill(th: Theme): Int = ak(MeeRes.color("meetube_glass_fill", 0x17FFFFFF, 0x0D000000))
     fun stroke(th: Theme): Int = ak(MeeRes.color("meetube_glass_stroke", 0x24FFFFFF, 0x1A000000))

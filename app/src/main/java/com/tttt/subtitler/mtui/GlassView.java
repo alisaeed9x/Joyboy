@@ -162,9 +162,7 @@ public class GlassView extends FrameLayout {
     private static Bitmap sNoise;
 
     private final float mCorner;
-    private int mTint;
-    /** (v1331) شفافية الشريط بتتبع سلايدر «الشفافية والبلر» لحظيًا */
-    public void setGlassTint(int tint) { if (mTint != tint) { mTint = tint; invalidate(); } }
+    private final int mTint;
     /** Liquid: lens and specular rim (floating pills). Off: a flat frosted bar (top bar). */
     private final boolean mLiquid;
     private final float mDensity;

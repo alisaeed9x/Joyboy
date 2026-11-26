@@ -674,7 +674,6 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             val paintRail = {
                 if (MtGlass.on()) try { cap.background = GradientDrawable().apply { setColor(MtGlass.ak(MeeRes.color("meetube_glass_tint", 0x66FAFAFA, 0x66000000))); cornerRadius = ui.dp(34).toFloat(); setStroke(ui.dp(1), MtGlass.ak(MeeRes.color("meetube_glass_rim", 0x3DFFFFFF, 0x1F000000))) } } catch (_: Throwable) {}
             }
-            MtGlass.liveGlass(cap, paintRail)
             host.post { railInset(); paintRail() }
         }
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
