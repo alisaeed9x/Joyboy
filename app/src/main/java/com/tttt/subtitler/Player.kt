@@ -4977,6 +4977,7 @@ class PlayerActivity : Activity(), Host {
     override fun onCreate(b: Bundle?) {
         NetLedger.start(this); NetLog.start(this); NetGate.apply(this)
         try { if (Build.VERSION.SDK_INT >= 27 && intent.getBooleanExtra("ytpage", false) && intent.getStringExtra("ytid")?.length == 11 && !DeviceUi.isTv(this)) setTheme(R.style.AppPlayerYt) } catch (_: Throwable) {}   // (v1161) نافذة شفافة: الصفحة الخلفية (الفيد) بتبان وقت سحب التصغير زي يوتيوب
+        try { if (Build.VERSION.SDK_INT >= 27 && intent.getBooleanExtra("ytpage", false) && !DeviceUi.isTv(this)) { window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)); window.decorView.setBackgroundColor(android.graphics.Color.TRANSPARENT) } } catch (_: Throwable) {}   // (v1350) تأكيد الشفافية على مستوى النافذة والديكور: ممنوع أي أسود خلف الصفحة في أي مرحلة من السحب (بطلب علي)
         super.onCreate(b)
         smoothRotation()   // (v1123) كروس-فيد الدوران يتحدّد قبل أي شغل تقيل (قبل ما النافذة تتعرض)
         // (v1123) الدخول للشاشة الكاملة من يوتيوب كان بيفتح المشغّل بورتريه وبعد أول فريم (onVideoSizeChanged) يلف لاندسكيب — ده كان سبب النتشة الكبيرة والسواد.

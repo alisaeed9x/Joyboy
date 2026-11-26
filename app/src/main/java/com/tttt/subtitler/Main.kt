@@ -92,6 +92,14 @@ class MainActivity : Activity() {
     private fun refreshWarm() { val v = try { Cfg.int("warm", 0) } catch (_: Throwable) { 0 }.coerceIn(0, 100); warmView?.let { it.setBackgroundColor(android.graphics.Color.argb((v * 0.85f).toInt(), 255, 138, 42)); it.visibility = if (v > 0) View.VISIBLE else View.GONE } }
     // (v1303) تبويب شات الذكاء (17) اتشال: الشات بالموديلات المجانية بطيء وضعيف — جيميناي للترجمة والدبلجة بس
     private var ytUi: YtProUi? = null                // (v1105 Y5) يوتيوب Joyboy القديم (تبويب 4) = يوتيوب البرنامج الوحيد (ميتيوب اتشال)
+    private var ytPipF: YtDock? = null               // (v1350) PiP يوتيوب العايمة المشتركة (Main بتمتلكها عشان تفضل فوق كل التبويبات)
+    private var rootFrame: FrameLayout? = null       // (v1350) جذر المحتوى: الـPiP والبسبوسة بيتحطوا عليه
+    private var uiRef: Ui? = null                    // (v1350)
+    private var thRef: Theme? = null                 // (v1350)
+    private var ytBump: TextView? = null             // (v1350) بسبوسة تبويبات يوتيوب فوق الشريط الرئيسي
+    private var ytBubble: View? = null               // (v1350) كبسولة التبويبات الثلاثة
+    private var ytScrim: View? = null                // (v1350) خلفية شفافة بتقفل الكبسولة عند الدوس خارجها
+    private val ytBubbleLabs = ArrayList<TextView>() // (v1350) خلايا الكبسولة
     private fun openYoutube() { showTabFn(4) }   // (v1105 Y5)
     private var musicUi: MusicUi? = null            // (v189) صفحة الموسيقى
     private var tasksUiRef: TasksUi? = null
@@ -150,6 +158,7 @@ class MainActivity : Activity() {
         }
         val th = Themes.current()
         val ui = Ui(this, th)
+        uiRef = ui; thRef = th   // (v1350)
         applyBars(th)
         TvFocus.attach(this, th.primary)   // (v477) حلقة تركيز الريموت (تلفزيون بس)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, ui.dp(32), 0, ui.dp(110)); layoutDirection = View.LAYOUT_DIRECTION_RTL; clipChildren = false; clipToPadding = false }
@@ -1005,7 +1014,7 @@ class MainActivity : Activity() {
                     kind == "v" -> openLink(ref)
                     kind == "a" && src == "youtube" -> playYtAudio(ref, title, "", "")
                     else -> {}
-                } } }, onPlayAt = { id, name, tr, ms, pk -> playYt(id, name, tr, tr, ms, pk) }, onOpenPage = { v, ms, r, td -> ytStartPage(v, ms, r, td) })
+                } } }, onPlayAt = { id, name, tr, ms, pk -> playYt(id, name, tr, tr, ms, pk) }, onOpenPage = { v, ms, r, td -> ytStartPage(v, ms, r, td) }, extDock = ensureYtPip())   // (v1350) الـPiP العايمة المشتركة
             ytUi = yt; yt.root.visibility = View.INVISIBLE; yt.onTab = { syncNav() }
             pane.addView(yt.root, 1, FrameLayout.LayoutParams(-1, -1))
             pane.addView(yt.busyView, FrameLayout.LayoutParams(-1, -1))
@@ -1096,6 +1105,7 @@ class MainActivity : Activity() {
         else if (floatNav) { MtFloat.attach(this, th, ui, shell, paneWrap, nav, if (!packageName.endsWith(".lite")) msw else null) }
         else { shell.addView(paneWrap, LinearLayout.LayoutParams(-1, 0, 1f)); shell.addView(nav.view, LinearLayout.LayoutParams(-1, -2)) }
         val frame = FrameLayout(this).apply { if (!MtSkin.on()) setBackgroundColor(th.bg); layoutDirection = View.LAYOUT_DIRECTION_LTR }   // (v897) الخلفية المتحركة في الـwindow
+        rootFrame = frame   // (v1350)
         tvShellOn = fromTv && !fromPlayer && DeviceUi.isTv(this)
         if (tvShellOn) { try { (nav.view.parent as? android.view.ViewGroup)?.removeView(nav.view) } catch (_: Throwable) {} }   // (v524) تلفزيون: الشريط السفلي بتاع الموبايل (6 أزرار) مشال
         if (tvShellOn) {
@@ -1108,6 +1118,37 @@ class MainActivity : Activity() {
         }
         // (v823) كبسولة ⚙️ الصفحة: عايمة بس فوق الصفحة (مش صف) — لازقة فوق الشريط السفلي
         if (!fromPlayer && !DeviceUi.isTv(this)) { pageGearUi = PageGear(this, frame, nav.view, tabletShell, ui, th, msw.view) { pg -> pageSettingsShow?.invoke(pg) }; pageGearUi?.sync(curTab) }   // (v829) msw.view = الكبسولة ترتفع فوق زرارين الميديا ومتغطّيهمش
+        // (v1350) بسبوسة يوتيوب: توحيد الشريطين — تبويبات يوتيوب الثلاثة (الرئيسية · الاشتراكات · أنا) بتطلع كبسولة من زرار صغير لاصق فوق الشريط الرئيسي، وتظهر بس على تاب يوتيوب (بطلب علي)
+        if (!fromPlayer && !packageName.endsWith(".lite") && !DeviceUi.isTv(this)) {
+            fun capBg(r: Int): GradientDrawable = GradientDrawable().apply { setColor(if (MtGlass.on()) MtGlass.ak(MeeRes.color("meetube_glass_tint", 0x66FAFAFA, 0x66000000)) else MtGlass.barSolid(th)); cornerRadius = ui.dp(r).toFloat(); setStroke(ui.dp(1), if (MtGlass.on()) MtGlass.ak(MeeRes.color("meetube_glass_rim", 0x3DFFFFFF, 0x1F000000)) else MtGlass.rim(th)) }
+            val bump = TextView(this).apply { text = "⌃ يوتيوب"; textSize = 10.5f; gravity = Gravity.CENTER; setTextColor(th.text); typeface = YtSkin.medium; setPadding(ui.dp(12), 0, ui.dp(12), 0); background = capBg(11); visibility = View.GONE; elevation = ui.dp(7).toFloat(); contentDescription = "تبويبات يوتيوب" }
+            val scrim = View(this).apply { visibility = View.GONE; setOnClickListener { ytBubble?.visibility = View.GONE; visibility = View.GONE } }
+            val bub = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6)); background = capBg(26); visibility = View.GONE; elevation = ui.dp(8).toFloat() }
+            for (i in 0..2) {
+                val cell = TextView(this).apply {
+                    textSize = 11f; gravity = Gravity.CENTER; setTextColor(YtSkin.sub); typeface = YtSkin.medium
+                    setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4))
+                    setOnClickListener { try { ytUi?.tapTab(i) } catch (_: Throwable) {}; ytBubble?.visibility = View.GONE; ytScrim?.visibility = View.GONE }
+                }
+                ytBubbleLabs.add(cell)
+                bub.addView(cell, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) })
+            }
+            bump.setOnClickListener {
+                if (bub.visibility == View.VISIBLE) { bub.visibility = View.GONE; scrim.visibility = View.GONE }
+                else { paintYtBubble(th); bub.visibility = View.VISIBLE; scrim.visibility = View.VISIBLE; scrim.bringToFront(); bub.bringToFront(); bump.bringToFront() }
+            }
+            frame.addView(scrim, FrameLayout.LayoutParams(-1, -1))
+            frame.addView(bub, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
+            frame.addView(bump, FrameLayout.LayoutParams(-2, ui.dp(22), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
+            nav.view.post {   // الاتنين لازقين فوق الشريط الرئيسي بعد قياسه
+                try {
+                    val nh = nav.view.height
+                    (bump.layoutParams as? FrameLayout.LayoutParams)?.let { lp -> lp.bottomMargin = nh - ui.dp(8); bump.layoutParams = lp }
+                    (bub.layoutParams as? FrameLayout.LayoutParams)?.let { lp -> lp.bottomMargin = nh + ui.dp(16); bub.layoutParams = lp }
+                } catch (_: Throwable) {}
+            }
+            ytBump = bump; ytBubble = bub; ytScrim = scrim
+        }
         if (fromPlayer) {
             setContentView(FrameLayout(this))
             settingsDlg.show(intent?.getStringExtra("tab"))   // من غير قسم محدد = قايمة الإعدادات كاملة
@@ -1970,6 +2011,37 @@ class MainActivity : Activity() {
     fun updateUpdBadge() { try { navUi?.badge(BottomNav.MORE, Upd.count) } catch (_: Throwable) {} }   // (v1259) بادج أحمر على «المزيد»
     fun updateYtBadge() { navUi?.badge(4, try { YtNotify.badgeCount() } catch (_: Throwable) { 0 }) }   // (v1107) عدّاد الفيديوهات الجديدة على «الاشتراكات»
     /** (v475) الشريط السفلي: وانت في يوتيوب بيعرض (الرئيسية · الاشتراكات · أنا)؛ اللايت ترتيبه ثابت (الرئيسية · الاشتراكات · محلي · أنا) */
+    /** (v1350) الـPiP العايمة بتاعة يوتيوب: Main بتمتلكها وتضيفها للجذر مرة واحدة فبتفضل ظاهرة على كل التبويبات (بطلب علي). التلفزيون من غيرها (شريط YtProUi القديم) */
+    private fun ensureYtPip(): YtDock? {
+        try { if (DeviceUi.isTv(this)) return null } catch (_: Throwable) {}
+        ytPipF?.let { return it }
+        val fr = rootFrame ?: return null
+        val u = uiRef ?: return null
+        val pip = YtDock(this, u) { id, t, pos, pk -> playYt(id, t, false, false, pos, pk) }
+        fr.addView(pip, FrameLayout.LayoutParams(u.dp(150), u.dp(114), Gravity.BOTTOM or Gravity.END).apply { marginEnd = u.dp(10) })
+        ytPipF = pip
+        navUi?.view?.post { try { pip.bottomClear = (navUi?.view?.height ?: 0) + u.dp(10); pip.reinset() } catch (_: Throwable) {} }
+        return pip
+    }
+
+    /** (v1350) تلوين كبسولة تبويبات يوتيوب: التاب النشط مظلّل + عدّاد «جديد» على «الاشتراكات» */
+    private fun paintYtBubble(th: Theme) {
+        val u = uiRef ?: return
+        val cur = try { ytUi?.currentTab ?: 0 } catch (_: Throwable) { 0 }
+        val badge = try { ytUi?.subsBadgeN ?: 0 } catch (_: Throwable) { 0 }
+        val names = listOf("الرئيسية", "الاشتراكات", "أنا"); val emos = listOf("🏠", "📺", "👤")
+        for (i in ytBubbleLabs.indices) {
+            val on = i == cur
+            val lab = ytBubbleLabs[i]
+            val tx = emos[i] + "\n" + names[i] + if (i == 1 && badge > 0) " (" + (if (badge > 99) "99+" else badge.toString()) + ")" else ""
+            val sp = android.text.SpannableString(tx)
+            sp.setSpan(android.text.style.RelativeSizeSpan(1.45f), 0, emos[i].length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            lab.text = sp
+            lab.setTextColor(if (on) YtSkin.accent else YtSkin.sub)
+            lab.background = if (on) GradientDrawable().apply { setColor(MtGlass.selected(th)); cornerRadius = u.dp(18).toFloat(); setStroke(1, MtGlass.rim(th)) } else null
+        }
+    }
+
     fun syncNav() {
         tvBar?.select(if (curTab == 4) 2 else if (curTab == 0) 4 else -1)   // (v516)
         val n = navUi ?: return
@@ -1977,6 +2049,13 @@ class MainActivity : Activity() {
         n.mode(curTab == 4)
         mediaSw?.show(if (!fullPlayerOpen && !liteApp && !fromPlayer && !tvShellOn && (curTab == 0 || curTab == 1)) curTab else -1)   // (v654) + (v1309) مخفية والمشغّل الكامل مفتوح
         n.set(if (curTab == 4) BottomNav.YT_HOME + (ytUi?.currentTab ?: 0).coerceIn(0, 2) else if (liteApp && curTab == 7) BottomNav.YT_ME else curTab)   // (v1103 Y2)
+        ytBump?.let { b ->   // (v1350) البسبوسة على تاب يوتيوب بس + عدّاد الجديد عليها
+            val on = curTab == 4 && !fullPlayerOpen
+            b.visibility = if (on) View.VISIBLE else View.GONE
+            if (!on) { ytBubble?.visibility = View.GONE; ytScrim?.visibility = View.GONE }
+            val bd = try { ytUi?.subsBadgeN ?: 0 } catch (_: Throwable) { 0 }
+            b.text = "⌃ يوتيوب" + if (bd > 0) " (" + (if (bd > 99) "99+" else bd.toString()) + ")" else ""
+        }
     }
     fun openSettingsRoot() { try { settingsShow?.invoke(null) } catch (_: Throwable) {} }
     private var ytBgAt = 0L
@@ -2034,8 +2113,9 @@ class MainActivity : Activity() {
         super.onResume()
         try {   // (v1162) صفحة يوتيوب اتصغّرت لدوك: خد المشغّل الشغّال وحطّه في الدوك السفلي (لو مش في تبويب يوتيوب: اقفله)
             YtDockHold.take()?.let { dk ->
-                val u = ytUi
-                if (u != null && curTab == 4) { dk.kept.p.playWhenReady = dk.wasPlaying; u.dockKept(dk.item, dk.kept) } else try { dk.kept.p.release() } catch (_: Throwable) {}
+                val pip = ensureYtPip()   // (v1350) الـPiP بتكمّل على أي تبويب مش بس يوتيوب (بطلب علي)
+                if (pip != null) { dk.kept.p.playWhenReady = dk.wasPlaying; pip.show(dk.item, dk.kept, true) }
+                else { val u = ytUi; if (u != null && curTab == 4) { dk.kept.p.playWhenReady = dk.wasPlaying; u.dockKept(dk.item, dk.kept) } else try { dk.kept.p.release() } catch (_: Throwable) {} }   // تلفزيون: الشريط القديم
             }
         } catch (e: Throwable) { LogStore.err("Main:ytDockTake", e) }
         try { hideBrowserLoading() } catch (_: Throwable) {}   // (دمج v1071)

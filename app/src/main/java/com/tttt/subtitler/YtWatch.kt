@@ -1951,9 +1951,9 @@ object YtDockHold {
 object YtDockCfg { fun on(): Boolean = Cfg.str("yt_dock", "1") != "0" }
 
 /**
- * (v417) الشريط الصغير السفلي زي يوتيوب: لما تنزّل من صفحة المشاهدة الفيديو بيكمّل في مربع صغير فوق شريط يوتيوب السفلي
- * (مربع فيديو · العنوان · القناة · ⏸/▶ · ✕ · خط تقدم أحمر). دوسة عليه = يتكبّر لمشغّلك الكامل من نفس الثانية (نفس المشغّل من غير تحميل).
- * بيقف لما الصفحة تتخبّى (تبويب تاني / خروج) وبيتقفل لما تفتح فيديو تاني.
+ * (v417) المشغّل المصغّر: لما تنزّل من صفحة المشاهدة الفيديو بيكمّل في مربع صغير. دوسة عليه = يتكبّر لمشغّلك الكامل من نفس الثانية (نفس المشغّل من غير تحميل).
+ * (v1350) على الموبايل بقى PiP عايمة جوه البرنامج (مش شريط سفلي): بتفضل ظاهرة وانت بتتنقل بين التبويبات، بتتحرك بالسحب من على الفيديو،
+ * وضغطة طويلة عليها بتطلع ✕ للقفل (بطلب علي). التلفزيون فاضل بالشريط السفلي القديم. بيقف لما الصفحة تتخبّى وبيتقفل لما تفتح فيديو تاني.
  */
 class YtDock(private val act: Activity, private val ui: Ui, private val onExpand: (String, String, Long, YtPick?) -> Unit) : FrameLayout(act) {
     private var exo: ExoPlayer? = null
@@ -1971,6 +1971,15 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
     private val queueTv = TextView(act).apply { textSize = 17f; gravity = Gravity.CENTER; setTextColor(YtSkin.text); text = "☰"; contentDescription = "قائمة الانتظار" }   // (v469) C9
     private val closeTv = TextView(act).apply { textSize = 18f; gravity = Gravity.CENTER; setTextColor(YtSkin.text); text = "✕" }
     private val prog = View(act).apply { setBackgroundColor(YtSkin.accent); pivotX = 0f; scaleX = 0f }
+    private val tvMode = try { DeviceUi.isTv(act) } catch (_: Throwable) { false }   // (v1350) التلفزيون يفضل بالشريط السفلي القديم
+    private val closeX = TextView(act).apply {   // (v1350) ✕ القفل: بتظهر بضغطة طويلة على الـPiP وتختفي لوحدها بعد ثواني (بطلب علي)
+        text = "✕"; textSize = 13f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); contentDescription = "قفل"
+        background = android.graphics.drawable.GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = ui.dp(13).toFloat() }
+        visibility = View.GONE
+    }
+    private val hideX = Runnable { closeX.visibility = View.GONE }
+    /** (v1350) ارتفاع شريط التبويبات اللي الـPiP بتفضل فوقه (Main بيحطه بعد قياس الشريط) */
+    var bottomClear = 0
     private val listener = object : androidx.media3.common.Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) { paintPlay() }
         override fun onPlaybackStateChanged(state: Int) { paintPlay() }
@@ -1990,32 +1999,82 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
         layoutDirection = View.LAYOUT_DIRECTION_LTR
         visibility = View.GONE
         // (v1344) زجاج ثابت زي شريط الأدوات: نفس التنت والإطار والحواف المدورة (من غير بلور حي — ممنوع بلور من مصدر الزجاج اللي الدوك مرسوم جواه، سبب كراش v1333)
-        if (MtGlass.on()) try { background = android.graphics.drawable.GradientDrawable().apply { setColor(MtGlass.ak(MeeRes.color("meetube_glass_tint", 0x66FAFAFA, 0x66000000))); cornerRadius = ui.dp(18).toFloat(); setStroke(ui.dp(1), MtGlass.ak(MeeRes.color("meetube_glass_rim", 0x3DFFFFFF, 0x1F000000))) } } catch (_: Throwable) { setBackgroundColor(YtSkin.surface) } else setBackgroundColor(YtSkin.surface)
+        if (MtGlass.on()) try { background = android.graphics.drawable.GradientDrawable().apply { setColor(MtGlass.ak(MeeRes.color("meetube_glass_tint", 0x66FAFAFA, 0x66000000))); cornerRadius = ui.dp(if (tvMode) 18 else 12).toFloat(); setStroke(ui.dp(1), MtGlass.ak(MeeRes.color("meetube_glass_rim", 0x3DFFFFFF, 0x1F000000))) } } catch (_: Throwable) { setBackgroundColor(YtSkin.surface) } else setBackgroundColor(YtSkin.surface)
         clipToOutline = true; outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         isClickable = true
-        elevation = ui.dp(6).toFloat()
-        val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        elevation = ui.dp(if (tvMode) 6 else 10).toFloat()
         val vbox = FrameLayout(act).apply { setBackgroundColor(Color.BLACK) }
         vbox.addView(tex, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
-        row.addView(vbox, LinearLayout.LayoutParams(ui.dp(104), -1))
-        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(10), 0, ui.dp(6), 0) }
-        col.addView(titleTv, LinearLayout.LayoutParams(-1, -2))
-        col.addView(chanTv, LinearLayout.LayoutParams(-1, -2))
-        row.addView(col, LinearLayout.LayoutParams(0, -1, 1f))
-        row.addView(queueTv, LinearLayout.LayoutParams(ui.dp(40), -1))
-        row.addView(playTv, LinearLayout.LayoutParams(ui.dp(44), -1))
-        row.addView(closeTv, LinearLayout.LayoutParams(ui.dp(40), -1))
-        addView(row, FrameLayout.LayoutParams(-1, -1))
-        addView(prog, FrameLayout.LayoutParams(-1, ui.dp(2), Gravity.TOP))
-        setOnClickListener { expand() }
+        if (tvMode) {
+            // التلفزيون: الشريط السفلي القديم بعرض كامل (فيديو · عنوان · ☰ · ▶/⏸ · ✕)
+            val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            row.addView(vbox, LinearLayout.LayoutParams(ui.dp(104), -1))
+            val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(10), 0, ui.dp(6), 0) }
+            col.addView(titleTv, LinearLayout.LayoutParams(-1, -2))
+            col.addView(chanTv, LinearLayout.LayoutParams(-1, -2))
+            row.addView(col, LinearLayout.LayoutParams(0, -1, 1f))
+            row.addView(queueTv, LinearLayout.LayoutParams(ui.dp(40), -1))
+            row.addView(playTv, LinearLayout.LayoutParams(ui.dp(44), -1))
+            row.addView(closeTv, LinearLayout.LayoutParams(ui.dp(40), -1))
+            addView(row, FrameLayout.LayoutParams(-1, -1))
+            addView(prog, FrameLayout.LayoutParams(-1, ui.dp(2), Gravity.TOP))
+            setOnClickListener { expand() }
+            closeTv.setOnClickListener { dismiss() }
+        } else {
+            // (v1350) موبايل/تابلت: PiP عايمة — فيديو 16:9 فوق وصف رفيع تحت (عنوان + قناة · ☰ · ▶/⏸) من غير ✕ دايم (بطلب علي)
+            titleTv.maxLines = 1; titleTv.textSize = 11.5f
+            chanTv.textSize = 9.5f
+            queueTv.textSize = 14f
+            playTv.textSize = 15f
+            val all = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+            all.addView(vbox, LinearLayout.LayoutParams(-1, ui.dp(84)))
+            val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(2), 0, ui.dp(2), 0) }
+            val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(7), 0, ui.dp(4), 0) }
+            col.addView(titleTv, LinearLayout.LayoutParams(-1, -2))
+            col.addView(chanTv, LinearLayout.LayoutParams(-1, -2))
+            row.addView(col, LinearLayout.LayoutParams(0, -1, 1f))
+            row.addView(queueTv, LinearLayout.LayoutParams(ui.dp(30), -1))
+            row.addView(playTv, LinearLayout.LayoutParams(ui.dp(32), -1))
+            all.addView(row, LinearLayout.LayoutParams(-1, ui.dp(30)))
+            addView(all, FrameLayout.LayoutParams(-1, -1))
+            addView(prog, FrameLayout.LayoutParams(-1, ui.dp(2), Gravity.BOTTOM))
+            addView(closeX, FrameLayout.LayoutParams(ui.dp(26), ui.dp(26), Gravity.TOP or Gravity.START).apply { setMargins(ui.dp(5), ui.dp(5), 0, 0) })
+            closeX.setOnClickListener { dismiss() }
+            // (v1350) إيماءات الـPiP: سحب من على الفيديو = تحريكها (بتتقيد جوه الشاشة وتحت شريط يوتيوب العلوي) · دوسة = تكبير · ضغطة طويلة = ✕ القفل (بطلب علي)
+            var dx = 0f; var dy = 0f; var btx = 0f; var bty = 0f; var moved = false; var lpFired = false
+            val lpRun = Runnable { if (!moved) { lpFired = true; closeX.visibility = View.VISIBLE; hh.removeCallbacks(hideX); hh.postDelayed(hideX, 3500L) } }
+            setOnTouchListener { _, e ->
+                when (e.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> { dx = e.rawX; dy = e.rawY; btx = translationX; bty = translationY; moved = false; lpFired = false; hh.removeCallbacks(lpRun); hh.postDelayed(lpRun, 450L); true }
+                    MotionEvent.ACTION_MOVE -> {
+                        if (!moved && (Math.abs(e.rawX - dx) > ui.dp(8) || Math.abs(e.rawY - dy) > ui.dp(8))) { moved = true; hh.removeCallbacks(lpRun) }
+                        if (moved) {
+                            val pv = parent as? View
+                            val pw = pv?.width ?: 0; val ph = pv?.height ?: 0
+                            var tx = btx + e.rawX - dx; var ty = bty + e.rawY - dy
+                            if (pw > 0 && ph > 0) {
+                                val loX = (ui.dp(8) - left).toFloat(); val hiX = (pw - ui.dp(8) - right).toFloat()
+                                val loY = (ui.dp(80) - top).toFloat(); val hiY = (ph - ui.dp(6) - bottom).toFloat()
+                                tx = tx.coerceIn(Math.min(loX, hiX), Math.max(loX, hiX))
+                                ty = ty.coerceIn(Math.min(loY, hiY), Math.max(loY, hiY))
+                            }
+                            translationX = tx; translationY = ty
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_UP -> { hh.removeCallbacks(lpRun); if (!moved && !lpFired) { if (closeX.visibility == View.VISIBLE) closeX.visibility = View.GONE else expand() }; true }   // (v1350) رفع الصبع بعد الضغطة الطويلة مبيخبّيش الـ✕
+                    MotionEvent.ACTION_CANCEL -> { hh.removeCallbacks(lpRun); true }
+                    else -> true
+                }
+            }
+        }
         addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (visibility == View.VISIBLE) post { applyInset() } }   // (v1119)
         queueTv.setOnClickListener { showQueue() }
         playTv.setOnClickListener { toggle() }
-        closeTv.setOnClickListener { dismiss() }
     }
 
     private fun fit() {
-        val bw = ui.dp(104); val bh = ui.dp(58)
+        val bw = if (tvMode) ui.dp(104) else ui.dp(150); val bh = if (tvMode) ui.dp(58) else ui.dp(84)   // (v1350) مقاس الـPiP العايمة
         if (vw <= 0 || vh <= 0) return
         val sc = minOf(bw.toFloat() / vw, bh.toFloat() / vh)
         val lp = tex.layoutParams as? FrameLayout.LayoutParams ?: return
@@ -2038,7 +2097,8 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
     private fun applyInset() {
         val lp = layoutParams as? FrameLayout.LayoutParams ?: return
         val bt = try { MtFloat.barTop(act) } catch (_: Throwable) { 0 }
-        val b = (if (bt > 0) bt + ui.dp(8) else 0) + extraBottom
+        val base = if (bt > 0) bt + ui.dp(8) else if (!tvMode) bottomClear else 0   // (v1350) الـPiP بتفضل فوق الشريط الموحّد في الوضعين
+        val b = base + extraBottom
         if (lp.bottomMargin != b) { lp.bottomMargin = b; layoutParams = lp }
     }
     /** ارتفاع إضافي تحت الدوك (ريل يوتيوب اللي بين الدوك والشريط) */
@@ -2139,7 +2199,7 @@ class YtDock(private val act: Activity, private val ui: Ui, private val onExpand
 
     fun pause() { try { exo?.playWhenReady = false } catch (_: Throwable) {}; paintPlay() }
 
-    fun dismiss() { dismissInner(); visibility = View.GONE; onVis?.invoke(false) }
+    fun dismiss() { dismissInner(); hh.removeCallbacks(hideX); closeX.visibility = View.GONE; visibility = View.GONE; onVis?.invoke(false) }
 
     private fun dismissInner() {
         hh.removeCallbacks(tick)
