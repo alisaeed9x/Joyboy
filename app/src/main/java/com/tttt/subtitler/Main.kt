@@ -938,7 +938,8 @@ class MainActivity : Activity() {
         // (v124) الشريط السفلي: بوابتين — الفيديوهات (المكتبة) · المتصفح (تبويب يوتيوب اتشال)
         // (v1038) البوابة التالتة: «مركز التحميل» (التحميلات بس — أدوات القص/GIF/الضغط اتشالت)
         val tasksUi = TasksUi(this, ui, th); tasksUiRef = tasksUi
-        tasksUi.onOpenOut = { t -> openTaskOutput(t) }   // (v472) دوسة على مهمة خالصة تفتح الفيديو
+        tasksUi.onOpenOut = { t -> openTaskOutput(t) }   // (v472) دوسة على مهمة خالصة تفتح
+        tasksUi.onTrSettings = { settingsShow?.invoke("general") }   // (v1361) إعدادات الترجمة (🚀 خط الترجمة) من مركز التحميل — بتأثر في برومبت باتش الصوت الفيديو
         tasksUi.onClose = { showTabFn(if (tabBeforeTasks == 5) 0 else tabBeforeTasks) }   // (v324) ✕ في صفحة المهام
         // (v198) الشريط السفلي (البوابات) وشريط النظام بياخدوا لون مشغّل الموسيقى لما يتفتح، ويرجعوا لثيم البرنامج لما يتقفل
         @Suppress("DEPRECATION")

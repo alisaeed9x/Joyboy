@@ -22,6 +22,8 @@ class TasksUi(private val act: Activity, private val ui: Ui, private val th: The
     /** (v472) دوسة على مهمة خالصة = افتح الفيديو/الصوت الناتج في مشغّل البرنامج (لو null بيتفتح بتطبيق خارجي) */
     var onOpenOut: ((TaskItem) -> Unit)? = null
         set(v) { field = v; closeB.visibility = if (v != null) View.VISIBLE else View.GONE }
+    /** (v1361) زرار «⚙ إعدادات الترجمة» في مركز التحميل — بيفتح إعدادات الترجمة اللي بتأثر في برومبت باتش الصوت */
+    var onTrSettings: (() -> Unit)? = null
 
     // (v1198) المهام + مركز التحميل = صفحة واحدة: طابور ترجمة الخلفية فوق التحميلات
     private val bgq = QueueUi(act, ui, th)
@@ -49,6 +51,11 @@ class TasksUi(private val act: Activity, private val ui: Ui, private val th: The
         val cv = listOf("1", "2", "4", "6", "8")
         connRow.addView(ui.chips(cv, { Cfg.int("dl_conns", 4).coerceIn(1, 8).toString().let { if (it in cv) it else "4" } }) { n -> Cfg.put("dl_conns", n) }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(connRow, LinearLayout.LayoutParams(-1, -2))
+        // (v1361 — بطلب علي) باتش الصوت للترجمة برّه التطبيق: فصل صوت أي فيديو + ملف برومبت، يتحفظوا على الموبايل ويتشاركوا لأي AI
+        val apRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(4), ui.dp(12), ui.dp(2)) }
+        apRow.addView(ui.button("🎧 ترجمة عن طريق تحميل باتش ملف الصوت", true) { GhAudio.pickAndStart(act) }, LinearLayout.LayoutParams(0, -2, 1f))
+        apRow.addView(ui.button("⚙ إعدادات الترجمة") { try { onTrSettings?.invoke() } catch (e: Throwable) { LogStore.err("TasksUi:trset", e) } }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(6) })
+        root.addView(apRow, LinearLayout.LayoutParams(-1, -2))
         root.addView(sv, LinearLayout.LayoutParams(-1, 0, 1f))
         bgSec.addView(ui.text("🌙 ترجمة الخلفية", 13f, th.primary, true).apply { setPadding(ui.dp(4), ui.dp(4), 0, ui.dp(2)) })
         bgSec.addView(bgq.content)

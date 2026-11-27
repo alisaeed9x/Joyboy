@@ -1588,9 +1588,8 @@ open class PlayerActivity : Activity(), Host {
         add("🔤⏱ شكل وتوقيت الترجمة") { tvSubDialog() }
         if (hasSubs) add("📝 الجمل المترجمة") { try { if (::sentDlg.isInitialized) sentDlg.show() } catch (_: Throwable) {} }
         add("📝 ترجمات الفيديو (قديم + جديد)") { sfTranslationsDialog(anchor) }
-        add("☁ ارفع الصوت للريبو (ترجمة بره)") { ghUpload() }   // (v1202)
-        add("📋 نسخ برومبت الريبو") { GhAudio.copyLast(this) }
-        add("🗑 امسح الصوت من الريبو") { GhAudio.clear(this) }
+        add("🎧 باتش الصوت للترجمة بره (على الموبايل)") { ghUpload() }   // (v1361) محلي بدل الريبو: فصل الصوت + برومبت في التنزيلات (بطلب علي)
+        add("📋 نسخ برومبت باتش الصوت") { GhAudio.copyLast(this) }
         if (tr) {
             add("🔄 إعادة / تقدم الباتشات") { batchDialog() }
             add("⚙ إعدادات الترجمة") { trSettings(anchor) }
@@ -5413,9 +5412,8 @@ open class PlayerActivity : Activity(), Host {
         // (v103) قايمة ☰ = قايمة منسدلة صغيرة فيها بس الأزرار اللي مش موجودة في المشغّل نفسه
         gTool.addView(pd("📤 تصدير SRT") { doExport() })
         if (Design.isNew()) gTool.addView(pd("🎧 ابعت الصوت كله (ملف واحد)") { shareFullAudio() })
-        gTool.addView(pd("☁ ارفع الصوت للريبو (ترجمة بره)") { ghUpload() })   // (v1202)
-        gTool.addView(pd("📋 نسخ برومبت الريبو") { GhAudio.copyLast(this) })
-        gTool.addView(pd("🗑 امسح الصوت من الريبو") { GhAudio.clear(this) })
+        gTool.addView(pd("🎧 باتش الصوت للترجمة بره (على الموبايل)") { ghUpload() })   // (v1361) محلي بدل الريبو (بطلب علي)
+        gTool.addView(pd("📋 نسخ برومبت باتش الصوت") { GhAudio.copyLast(this) })
         gTool.addView(pd("📥 استيراد ملف ترجمة (بيترجم فورًا)") { doImport() })
         gTool.addView(pd("📂 فتح فيديو") { doOpen() })
         // (v1025) اللي اتشال من الشريط العلوي لقلّة الاستعمال بقى هنا
@@ -5480,6 +5478,7 @@ open class PlayerActivity : Activity(), Host {
         // (v188) مركز التحميل (التقدم + الناتج) في نافذة فوق المشغّل
         fun openTasksDialog() {
             val tu = TasksUi(this, ui, th)
+            tu.onTrSettings = { trSettings(tu.root) }   // (v1361) إعدادات الترجمة من مركز التحميل — بتأثر في برومبت باتش الصوت
             val dlg = android.app.Dialog(this)
             dlg.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
             val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setBackgroundColor(th.bg) }
@@ -8112,13 +8111,12 @@ open class PlayerActivity : Activity(), Host {
         BatchExport.run(this, le, t)
     }
 
-    /** (v1202) يرفع صوت الفيديو (باتشات AAC في ZIP) على الريبو + برومبت الترجمة، ويتابع من «المهام» */
+    /** (v1361 — بطلب علي) باتش الصوت محلي: فصل صوت الفيديو الحالي + برومبت ترجمة على الموبايل (بدل رفع الريبو v1202)، ويتابع من مركز التحميل */
     fun ghUpload() {
-        if (!::engine.isInitialized) { say("المحرك لسه ما اشتغلش — افتح الفيديو الأول"); return }
+        val u = uri; val su = aurl ?: url
+        if (u == null && su == null) { say("افتح الفيديو الأول"); return }
         val t = try { Recents.titleOf(vid).substringBeforeLast('.', Recents.titleOf(vid)) } catch (_: Throwable) { "video" }
-        val le = (engine as? LocalEngine)?.e
-        if (le == null) { say("رفع الصوت متاح لما المحرك يشتغل على الجهاز ده نفسه"); return }
-        GhAudio.upload(this, le, t)
+        GhAudio.start(this, u, su, HashMap(hdr), t, durMs)
     }
 
     /** (v1195) ZIP «اللوج + الترجمة»: اللوج كامل + الأصل لوحده + الترجمة الناتجة لوحدها (Download/Joyboy_Logs) */

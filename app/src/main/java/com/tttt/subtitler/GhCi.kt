@@ -219,11 +219,11 @@ object GhCi {
     }
 
     /** بيحفظ اللوج في التنزيلات (Download/Joyboy) ويرجّع المسار للعرض */
-    fun saveToDownloads(c: Context, src: File, name: String): String {
+    fun saveToDownloads(c: Context, src: File, name: String, mime: String = "application/zip"): String {   // (v1361) mime اختياري: باتش الصوت بيحفظ audio/* و text/plain
         if (Build.VERSION.SDK_INT >= 29) {
             val cv = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, name)
-                put(MediaStore.Downloads.MIME_TYPE, "application/zip")
+                put(MediaStore.Downloads.MIME_TYPE, mime)
                 put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Joyboy")
             }
             val uri = c.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv) ?: throw IOException("مقدرتش أكتب في التنزيلات")
