@@ -74,7 +74,7 @@ object GhAudio {
     }
 
     /** تفريغ بايتات صوت بـ Groq Whisper: بيرجّع (اللغة المكتشفة، الجمل [بداية، نهاية، نص] بالثواني من أول المقطع). 3 محاولات مع backoff على 429/5xx. Unsupported = المفتاح مرفوض (مفيش إعادة). */
-    fun groqTranscribeAudio(key: String, model: String, lang: String, fileName: String, mime: String, bytes: ByteArray, log: (String) -> Unit): Pair<String, List<Triple<Double, Double, String>>> {
+    fun groqTranscribeAudio(key: String, model: String, lang: String, fileName: String, mime: String, bytes: ByteArray, prompt: String = "", log: (String) -> Unit): Pair<String, List<Triple<Double, Double, String>>> {
         var lastErr = "Groq فشل"
         for (attempt in 1..3) {
             try {
@@ -85,6 +85,7 @@ object GhAudio {
                 w("--$B\r\nContent-Disposition: form-data; name=\"response_format\"\r\n\r\nverbose_json\r\n")
                 w("--$B\r\nContent-Disposition: form-data; name=\"timestamp_granularities[]\"\r\n\r\nsegment\r\n")
                 if (lang.isNotBlank() && lang != "auto") w("--$B\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\n" + lang + "\r\n")
+                if (prompt.isNotBlank()) w("--$B\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\n" + prompt + "\r\n")   // (v1375 — بطلب علي) توجيه أسلوب التفريغ (العربي كان بيطلع رسمي/قديم)
                 w("--$B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" + fileName + "\"\r\nContent-Type: " + mime + "\r\n\r\n")
                 o.write(bytes); w("\r\n--$B--\r\n")
                 val body = o.toByteArray()

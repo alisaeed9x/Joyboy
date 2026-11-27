@@ -3591,15 +3591,15 @@ open class PlayerActivity : Activity(), Host {
                 fun pickStt(kind: String) {
                     when (kind) {
                         "whisper" -> {
-                            Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper")
+                            Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper"); Cfg.put("tr_engine", "off")   // (v1375 — بطلب علي) مزامنة tr_engine مع البلوك — كانت بتفضل gem فيتفرّغ بجيميناي غلط
                             val rdy = try { Offline.engine().ready() || Offload.wanted() } catch (_: Throwable) { false }
                             if (!rdy) { close(); h.post { whisperModelPick { h.post { beginTranslate() } } }; return } else say("🎙 وشبر — التفريغ على الجهاز")   // (v1341) الدايلوج بيفتح بعد قفل الشيت — كان بيطلع وراها (بطلب علي)
                         }
                         "groq" -> {
-                            Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "groq"); say("⚡ جروك — تفريغ Whisper سحابي سريع")
+                            Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "groq"); Cfg.put("tr_engine", "gem"); say("⚡ جروك — تفريغ Whisper سحابي سريع")   // (v1375) جروك بيشتغل في الحارة الجيميناوية
                             if (Cfg.str("groq_key", "").isBlank()) Notice.show(this, "🔑 مفتاح Groq ناقص — ضيفه من الإعدادات ← 🔑 المفاتيح", 3400L)
                         }
-                        else -> { Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "gemini"); say("☁ جيميناي بيفرّغ الصوت") }
+                        else -> { Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "gemini"); Cfg.put("tr_engine", "gem"); say("☁ جيميناي بيفرّغ الصوت") }
                     }
                     again()
                 }
@@ -5334,8 +5334,13 @@ open class PlayerActivity : Activity(), Host {
                     else android.widget.PopupWindow(svP, maxOf(col.measuredWidth, ui.dp(150)), popH, false)
                 pw.isOutsideTouchable = true; pw.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
                 if (DeviceUi.isTv(this)) pw.setOnDismissListener { if (popup === pw) { popup = null; popupOwner = null } }
-                if (goUp) pw.showAsDropDown(v, 0, -(v.height + popH + ui.dp(2)))
-                else pw.showAsDropDown(v, 0, ui.dp(2))
+                // (v1375 — بطلب علي) القايمة كانت بتتقص بحرف الشاشة (زرار ⏱ في الشريط العلوي): اقلبها تحت لو مفيش مساحة فوق، وظبط الإزاحة الأفقية عشان تفضل جوه الشاشة
+                val popW = maxOf(col.measuredWidth, ui.dp(150))
+                var xoff = 0
+                if (loc[0] + popW > dmP.widthPixels - ui.dp(8)) xoff = (dmP.widthPixels - ui.dp(8)) - (loc[0] + popW)
+                if (loc[0] + xoff < ui.dp(8)) xoff = ui.dp(8) - loc[0]
+                if (goUp && loc[1] - popH - ui.dp(2) >= 0) pw.showAsDropDown(v, xoff, -(v.height + popH + ui.dp(2)))
+                else pw.showAsDropDown(v, xoff, ui.dp(2))
                 popup = pw; popupOwner = v
                 if (col === qualCol && DeviceUi.isRemote(this)) col.post {   // (v803) قايمة الجودات: التركيز يبدأ على الجودة الشغّالة دلوقتي (✓) مش أول واحدة
                     try { for (i in 0 until col.childCount) { val c = col.getChildAt(i); if ((c as? TextView)?.text?.startsWith("✓") == true) { c.requestFocus(); break } } } catch (_: Throwable) {}
@@ -5472,10 +5477,7 @@ open class PlayerActivity : Activity(), Host {
         val offB = pk(offFmt()) { setOff(-offsetMs) }
         offFsB = offB; gSub.addView(offB)
         gSub.addView(pk("⏱ تأخير +0.25") { setOff(250) })   // (v468) خطوة ربع ثانية
-        gSub.addView(pk("🅰 تعيين نقطة أ (حلقة A-B)") { abSet(0) })   // (v469) B5
-        gSub.addView(pk("🅱 تعيين نقطة ب (حلقة A-B)") { abSet(1) })   // (v469) B5
-        gSub.addView(pk("✖ إلغاء حلقة A-B") { abClear() })   // (v469) B5
-        gSub.addView(pk("⏱ شريط التزامن السريع") { toggleSyncStrip() })   // (v469) B14
+        // (v1375 — بطلب علي) لوحة ⏱ بقت تقديم/تأخير والعداد بس — أزرار حلقة A-B وشريط التزامن اتشالت من هنا
         // (v103) قايمة ☰ = قايمة منسدلة صغيرة فيها بس الأزرار اللي مش موجودة في المشغّل نفسه
         gTool.addView(pd("📤 تصدير SRT") { doExport() })
         if (Design.isNew()) gTool.addView(pd("🎧 ابعت الصوت كله (ملف واحد)") { shareFullAudio() })
@@ -8290,6 +8292,7 @@ open class PlayerActivity : Activity(), Host {
         if (!free) { Cfg.put("tr_kind", if (only) "transcribe" else "translate"); Cfg.put("tr_engine", "off") }   // (v1098) T3
         if (!WhisperLib.loaded) { say("📴 الأوفلاين مش مدعوم على جهازك"); return }
         if (Offline.downloading()) { say("⬇ فيه تنزيل موديل شغّال — استنى يخلص وادوس تاني"); return }
+        if (!Offload.wanted() && Offline.models.none { try { Offline.downloaded(it) } catch (_: Throwable) { false } }) { whisperModelPick { h.post { beginTranslate() } }; return }   // (v1375 — بطلب علي) وشبر مختار ومفيش موديل متنزّل: نزّله الأول بدل التحويل الصامت لجيميناي
         offBusy = true
         val lang = Offline.lang()   // (v411) "" = تلقائي: Whisper بيكتشف اللغة، وموديل ML Kit بيتنزّل أول ما اللغة تتأكد (مع إشعار تقدم)
         val order = listOf(Offline.model()) + Offline.models.asReversed()   // (v1325) الاحتياطي من الأحدث للأقدم (كان base/small/medium بس — turbo مكانش في القايمة خالص)

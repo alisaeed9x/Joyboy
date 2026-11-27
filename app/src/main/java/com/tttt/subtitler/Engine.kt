@@ -2034,7 +2034,8 @@ class Engine(
         val model = Cfg.str("groq_model", "whisper-large-v3-turbo").trim().ifEmpty { "whisper-large-v3-turbo" }
         val lang = try { Offline.lang() } catch (_: Throwable) { "" }   // لغة الكلام اليدوية (لو متحددة) بتتبعت لـ Groq، غير كده بيكتشف لوحده
         val wav = bytes.size > 4 && bytes[0] == 'R'.toByte() && bytes[1] == 'I'.toByte() && bytes[2] == 'F'.toByte() && bytes[3] == 'F'.toByte()   // RIFF
-        val (dl, segs) = try { GhAudio.groqTranscribeAudio(key, model, lang, if (wav) "chunk.wav" else "chunk.m4a", if (wav) "audio/wav" else "audio/mp4", bytes) { host.log(it) } } catch (e: Throwable) { groqDot.set(2); throw e }   // (v1373) 🔴 عند فشل الطلب
+        val stylePrompt = "Transcribe the audio exactly as spoken, in its own language. لو الكلام عربي، فرّغه بالعامية الطبيعية زي ما بيتقال بالظبط — من غير تحويله لفصحى رسمية ولا ألفاظ قديمة."   // (v1375 — بطلب علي: «التفريخ في الجروك عربي سيء جدا وطالع باشا»)
+        val (dl, segs) = try { GhAudio.groqTranscribeAudio(key, model, lang, if (wav) "chunk.wav" else "chunk.m4a", if (wav) "audio/wav" else "audio/mp4", bytes, stylePrompt) { host.log(it) } } catch (e: Throwable) { groqDot.set(2); throw e }   // (v1373) 🔴 عند فشل الطلب
         groqRan.set(true); groqLang.set(dl); groqDot.set(1); host.log("⚡ Groq (" + model + "): رجّع " + segs.size + " مقطع" + (if (dl.isNotEmpty()) " · اللغة: " + dl else ""))   // (v1371) إثبات واضح إن Groq هو اللي فرّغ
         val out = JSONArray()
         for (g in segs) {

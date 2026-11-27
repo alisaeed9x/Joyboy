@@ -694,8 +694,8 @@ class MainActivity : Activity() {
                 ui.section("🔀 محرك الترجمة والتفريغ", true,
                     ui.text("التفريغ (صوت ← نص):", 12f, th.muted),
                     ui.chips(listOf("☁ جيميناي", "🎙 ويشبر (على الجهاز)"), { if (Cfg.bool("stt_offline", false)) "🎙 ويشبر (على الجهاز)" else "☁ جيميناي" }) { n ->
-                        if (n.startsWith("🎙")) { Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper"); if (!Offline.downloaded()) Notice.show(this, "🎙 موديل الويشبر مش متنزّل — نزّله من «📴 التفريغ على الجهاز» فوق", 3200L) }
-                        else { Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "gemini") }
+                        if (n.startsWith("🎙")) { Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper"); Cfg.put("tr_engine", "off"); if (!Offline.downloaded()) Notice.show(this, "🎙 موديل الويشبر مش متنزّل — نزّله من «📴 التفريغ على الجهاز» فوق", 3200L) }   // (v1375 — بطلب علي) مزامنة tr_engine — التحويل الصامت لجيميناي
+                        else { Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "gemini"); Cfg.put("tr_engine", "gem") }
                         recreate()
                     },
                     ui.text("الترجمة (نص ← عربي):", 12f, th.muted),
