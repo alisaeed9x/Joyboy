@@ -159,23 +159,27 @@ object GhAudio {
 /** (v1238) صوت الفيديو كله كملف واحد */
 object FullAudio {
     private const val OUT_RATE = 48000
-    private const val WIN_SEC = 120.0
+    private const val WIN_SEC = 30.0
     private const val OPUS_BR = 24000
     private const val AAC_BR = 32000
 
-    /** (v1362 — بطلب علي: «الصوت طالع m4a وحجمه كبير») بقينا بنرمّز Opus مونو 24kbps بدل نسخ المسار الخام:
-     *  الملف أصغر بحوالي 5-8 مرات ومناسب للكلام/الترجمة (شات جي بي تي بيقبل .opus). سلسلة أمان لو الترميز فشل:
-     *  Opus ← AAC 32k مونو (m4a) ← النسخ الخام القديم (remux) — الميزة مستحيل تبوظ، أسوأ حالة ترجع لسلوك v1361. */
+    /** (v1363 — بطلب علي: الفصل كان بطيء جدًا) الافتراضي بقى السرعة: فك + ترميز AAC 32k مونو 16kHz بكوديك الجهاز
+     *  (هاردوير — أسرع من الوقت الحقيقي بمرات) في ملف m4a صغير (~4 مرات أصغر من الأصل). تفعيل «✨ تحسين الصوت»
+     *  من إعدادات الترجمة يرمّز Opus 24k (أدق للترجمة وأصغر، لكن أبطأ — كوديك سوفتوير). لو أي ترميز فشل:
+     *  رجوع تلقائي للنسخ الخام القديم (remux) — الميزة مستحيل تبوظ.
+     *  (v1362 — بطلب علي: «الصوت طالع m4a وحجمه كبير») كان أول ترميز Opus. */
     fun extract(ctx: Context, uri: Uri?, url: String?, hdr: Map<String, String>, title: String, onPct: (Int) -> Unit = {}): File {
         val dir = File(ctx.cacheDir, "share_audio").also { it.mkdirs() }
         dir.listFiles()?.forEach { try { it.delete() } catch (_: Throwable) {} }
         val safe = title.replace(Regex("[^A-Za-z0-9._-]+"), "_").trim('_').take(30).ifBlank { "audio" }
-        try {
-            val f = File(dir, safe + "-audio.opus")
-            transcode(ctx, uri, url, hdr, f, true, onPct)
-            if (f.length() >= 1024L && headIs(f)) return f
-            throw IOException("ملف Opus طلع غير سليم")
-        } catch (e: Throwable) { if (e is TaskCancelled) throw e; LogStore.err("FullAudio:opus", e) }
+        if (Cfg.bool("gh_audio_enhance", false)) {
+            try {
+                val f = File(dir, safe + "-audio.opus")
+                transcode(ctx, uri, url, hdr, f, true, onPct)
+                if (f.length() >= 1024L && headIs(f)) return f
+                throw IOException("ملف Opus طلع غير سليم")
+            } catch (e: Throwable) { if (e is TaskCancelled) throw e; LogStore.err("FullAudio:opus", e) }
+        }
         try {
             val f = File(dir, safe + "-audio.m4a")
             transcode(ctx, uri, url, hdr, f, false, onPct)
@@ -192,6 +196,7 @@ object FullAudio {
 
     /** فك الصوت كله لـ PCM مونو 48kHz على شبابيك (ذاكرة ثابتة ~12MB مهما طال الفيديو) + ترميزه. */
     private fun transcode(ctx: Context, uri: Uri?, url: String?, hdr: Map<String, String>, out: File, opus: Boolean, onPct: (Int) -> Unit) {
+        val rate = if (opus) OUT_RATE else 16000
         val ex = MediaExtractor()
         var writer: PcmOut? = null
         try {
@@ -202,14 +207,14 @@ object FullAudio {
             val durUs = if (fmt.containsKey(MediaFormat.KEY_DURATION)) fmt.getLong(MediaFormat.KEY_DURATION) else 0L
             if (durUs <= 0L) throw IOException("مدة الصوت غير معروفة")
             ex.selectTrack(ti)
-            val w = if (opus) OggOpus(out) else AacM4a(out)
+            val w = if (opus) OggOpus(out) else AacM4a(out, rate)
             writer = w
             val winUs = (WIN_SEC * 1_000_000).toLong()
             var start = 0L; var lastP = -1
             while (start < durUs) {
                 val end = minOf(start + winUs, durUs)
                 ex.seekTo(start, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-                val sink = PcmSink(WIN_SEC + 2.0, OUT_RATE)
+                val sink = PcmSink(WIN_SEC + 2.0, rate)
                 Decoder.decode(ex, fmt, start, end, sink)
                 val wav = sink.finish(start / 1_000_000.0).bytes   // WAV 48k مونو (44 بايت هيدر + PCM)
                 w.offer(wav, 44, wav.size - 44, end >= durUs)
@@ -368,7 +373,7 @@ object FullAudio {
     }
 
     /** بديل أضمن: AAC-LC 32k مونو في m4a (MediaMuxer) — كوديك إجباري في أي أندرويد. */
-    private class AacM4a(out: File) : PcmOut {
+    private class AacM4a(out: File, rate: Int) : PcmOut {
         private val enc: MediaCodec
         private val mux = MediaMuxer(out.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
         private var track = -1
@@ -376,7 +381,7 @@ object FullAudio {
         private var closed = false
 
         init {
-            val f = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, OUT_RATE, 1)
+            val f = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, rate, 1)
             f.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
             f.setInteger(MediaFormat.KEY_BIT_RATE, AAC_BR)
             val c = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)

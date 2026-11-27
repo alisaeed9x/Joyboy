@@ -629,7 +629,9 @@ class MainActivity : Activity() {
                     ui.chips(baseLangs.map { it.second }, { baseLangName() }) { n -> Cfg.put("base_lang", baseLangs.firstOrNull { it.second == n }?.first ?: "ar") }),
                 ui.button("📝 البرومبتات (شوف · انسخ · عدّل · استبدل)") { PromptsUi.show(this, ui) },
                 ui.section("📖 مسرد المصطلحات الثابت", false,
-                    ui.noHint(), gloss)) }),
+                    ui.noHint(), gloss),
+                ui.section("🎧 باتش الصوت (للترجمة برّه)", false,
+                    ui.switchRow("✨ تحسين الصوت قبل الحفظ: Opus + رفع الكلام الواطي (أدق وأصغر لكن أبطأ بكتير)", Cfg.bool("gh_audio_enhance", false)) { Cfg.put("gh_audio_enhance", if (it) "1" else "0") })) }),   // (v1363) الافتراضي السرعة بعد شكوى البطء
             // ===== 🔑 المفاتيح: جيميناي · الوضع البصري · محركات خارجية =====
             tab("keys", { listOf<View>(
                 ui.section("🆓 من غير مفتاح؟ تمام", true,
