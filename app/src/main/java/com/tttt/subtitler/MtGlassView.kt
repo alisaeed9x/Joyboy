@@ -65,6 +65,25 @@ object MtFloat {
     private val padded = WeakHashMap<View, Int>()
     private val sources = WeakHashMap<Activity, JoyGlassSource>()
     private val bars = WeakHashMap<Activity, View>()
+    private val roots = WeakHashMap<Activity, FrameLayout>()
+    private val pendingRail = WeakHashMap<Activity, Pair<View, FrameLayout.LayoutParams>>()
+    private val pendingRailGlass = WeakHashMap<Activity, com.tttt.subtitler.mtui.GlassView>()
+    private const val RAIL_TAG = "joy_yt_rail"
+    /** (v1364) ريل يوتيوب (الرئيسية · الاشتراكات · أنا) بيطلع بره مصدر الزجاج على جذر الصفحة، فتقدر كبسولته تبقى GlassView على نفس المصدر بتاع الشريط السفلي = نفس البلور والشفافية حرفيًا (بطلب علي). لما كان جوه المصدر البلور كان بيكرش (v1333) ففضل تنت بس. */
+    fun hoistRail(act: Activity, v: View, lp: FrameLayout.LayoutParams, glass: com.tttt.subtitler.mtui.GlassView?): Boolean {
+        val root = roots[act]
+        if (root == null) { pendingRail[act] = v to lp; if (glass != null) pendingRailGlass[act] = glass; return true }
+        attachRail(act, v, lp, glass)
+        return true
+    }
+    private fun attachRail(act: Activity, v: View, lp: FrameLayout.LayoutParams, glass: com.tttt.subtitler.mtui.GlassView?) {
+        val root = roots[act] ?: return
+        (v.parent as? ViewGroup)?.removeView(v)
+        root.findViewWithTag<View>(RAIL_TAG)?.let { old -> if (old !== v) root.removeView(old) }
+        v.tag = RAIL_TAG
+        root.addView(v, lp)
+        try { glass?.setSource(sources[act]) } catch (_: Throwable) {}
+    }
     /** (v910) الشريط السفلي الزجاجي العايم بتاع الشاشة دي (لو فيه) — عشان الأزرار العايمة (⚙️ الصفحة...) تقعد فوقه بالظبط */
     fun barOf(act: Activity): View? = bars[act]
     /** الارتفاع اللي الشريط بياخده من تحت الشاشة (ارتفاعه + هامشه التحتاني)؛ 0 لو مفيش شريط عايم */
@@ -114,6 +133,7 @@ object MtFloat {
         val skin = MtSkin.on()   // (v897) الخلفية المتحركة في الـwindow — الصفحة شفافة، والشريط بيبلّر نسخة منها
         val src = JoyGlassSource(act).apply { if (!skin) setBackgroundColor(th.bg) }
         sources[act] = src
+        roots[act] = fl
         // (v923) الرعشة في المتصفح: الزجاج كان بيسجّل الـWebView كلها في RenderNode ويرسمها مرتين كل فريم (مرة للشاشة ومرة للبلور) فالصفحة بترتعش.
         // في المتصفح (reserve) الـWebView بتترسم مباشرة على النافذة والشريط بياخد لون الزجاج من غير بلور حي.
         if (reserve) src.setSampling(false)
@@ -178,6 +198,7 @@ object MtFloat {
             liftFabs(paneWrap, b)
         }
         fl.viewTreeObserver.addOnGlobalLayoutListener { if (!scheduled) { scheduled = true; fl.postDelayed({ pad() }, 200L) } }
+        pendingRail.remove(act)?.let { (v, lp) -> attachRail(act, v, lp, pendingRailGlass.remove(act)) }
         return fl
     }
 }

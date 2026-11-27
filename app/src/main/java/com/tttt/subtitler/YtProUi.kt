@@ -301,8 +301,10 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private val navIcons = ArrayList<YtIcon>()
     private val navLabs = ArrayList<TextView>()
     private val navBars = ArrayList<View>()   // (v472) خط التمييز تحت التبويب النشط
-    private val railLabs = ArrayList<TextView>()   // (v1323) ليبلات الريل الجانبي الشمال (الرئيسية · الاشتراكات · أنا)
+    private val railLabs = ArrayList<TextView>()
+    private val railIcons = ArrayList<IconTextView>()   // (v1364) أيقونات الريل منفصلة زي الشريط السفلي   // (v1323) ليبلات الريل الجانبي الشمال (الرئيسية · الاشتراكات · أنا)
     private var ytRail: View? = null
+    private var railGlass: com.tttt.subtitler.mtui.GlassView? = null
     private val chanRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE }
     private val chanName: TextView
     private val subBtn: TextView
@@ -637,10 +639,12 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
         // (v1327) ريل تبويبات يوتيوب (الرئيسية · الاشتراكات · أنا) نزل تحت فوق الشريط الأساسي وبقى كبسولة جلاسي زيه بالظبط، وبيترفع فوق الدوك لما فيديو يتصغّر (بطلب علي). التلفزيون عنده تبويباته فوق واللايت خلاياه تحت زي ما هما
         if (!DeviceUi.isTv(act) && !act.packageName.endsWith(".lite")) {
             val rr = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            val railHoist = try { MtFloat.eligible(act) } catch (_: Throwable) { false }   // (v1364) الريل بيطلع بره مصدر الزجاج = نفس شفافية الشريط السفلي بالظبط (بطلب علي)
             val cap: ViewGroup = if (MtGlass.on()) {
-                val g = FrameLayout(act)
+                val g = if (railHoist) MeeGlass.bar(act, th) else FrameLayout(act)
                 g.setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6))
                 g.addView(rr, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+                if (g is com.tttt.subtitler.mtui.GlassView) railGlass = g
                 g
             } else {
                 rr.background = GradientDrawable().apply { setColor(MtGlass.barSolid(th)); cornerRadius = ui.dp(34).toFloat(); setStroke(ui.dp(1), MtGlass.rim(th)) }
@@ -649,12 +653,18 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             }
             val railNames = listOf("الرئيسية", "الاشتراكات", "أنا"); val railEmos = listOf("🏠", "📺", "👤")
             for (i in 0..2) {
-                val cell = TextView(act).apply {
-                    text = railTxt(railEmos[i], railNames[i], 0); textSize = 11f; gravity = Gravity.CENTER; setTextColor(YtSkin.sub); typeface = YtSkin.medium
-                    setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4)); foreground = YtSkin.ripple(true)
+                // (v1364) خلية الريل = نفس تشريح خلية الشريط السفلي حرفيًا: أيقونة إيموجي 16 منفصلة (includeFontPadding=false) + ليبل 11 تحتها (بطلب علي)
+                val cell = LinearLayout(act).apply {
+                    orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+                    setPadding(ui.dp(10), ui.dp(3), ui.dp(10), ui.dp(2)); foreground = YtSkin.ripple(true)
                     setOnClickListener { tapTab(i) }
                 }
-                railLabs.add(cell)
+                val ic = IconTextView(act).apply { text = railEmos[i]; textSize = 16f; gravity = Gravity.CENTER; includeFontPadding = false }
+                cell.addView(ic, LinearLayout.LayoutParams(-2, ui.dp(20)))
+                val lb = ui.text(railNames[i], 11f, YtSkin.sub, true).apply { gravity = Gravity.CENTER; setSingleLine(); includeFontPadding = false }
+                cell.addView(lb, LinearLayout.LayoutParams(-2, -2))
+                railIcons.add(ic)
+                railLabs.add(lb)
                 rr.addView(cell, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) })
             }
             val host = object : FrameLayout(act) {
@@ -681,12 +691,13 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             host.addView(cap, FrameLayout.LayoutParams(-2, -2))
             host.translationX = try { Cfg.int("yt_rail_x", 0).toFloat() } catch (_: Throwable) { 0f }
             ytRail = host
-            content.addView(host, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
+            val railLp = FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+            if (!railHoist || !MtFloat.hoistRail(act, host, railLp, railGlass)) content.addView(host, railLp)
             ytDock.onVis = { ytDock.post { railInset() } }
             // (v1331) زجاج الريل = نفس زجاج شريط الأدوات حرفيًا: بلور حي فوق مصدر الصفحة + نفس التنت وبيتبع سلايدر «الشفافية والبلر»
             // (v1334) إصلاح الفورس كلوز: الريل جوه مصدر الزجاج نفسه، فالبلور الحي بيسجّل نفسه ويكرش — رجعنا لتنت ثابت بنفس قيمة الشريط حرفيًا (نفس الشفافية، من غير بلور)
             val paintRail = {
-                if (MtGlass.on()) try { cap.background = GradientDrawable().apply { setColor(MtGlass.ak(MeeRes.color("meetube_glass_tint", 0x66FAFAFA, 0x66000000))); cornerRadius = ui.dp(34).toFloat(); setStroke(ui.dp(1), MtGlass.ak(MeeRes.color("meetube_glass_rim", 0x3DFFFFFF, 0x1F000000))) } } catch (_: Throwable) {}
+                if (MtGlass.on()) try { if (cap !is com.tttt.subtitler.mtui.GlassView) cap.background = GradientDrawable().apply { setColor(MtGlass.ak(MeeRes.color("meetube_glass_tint", 0x66FAFAFA, 0x66000000))); cornerRadius = ui.dp(34).toFloat(); setStroke(ui.dp(1), MtGlass.ak(MeeRes.color("meetube_glass_rim", 0x3DFFFFFF, 0x1F000000))) } } catch (_: Throwable) {}
             }
             host.post { railInset(); paintRail() }
         }
@@ -918,10 +929,13 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             if (on && b.visibility != View.VISIBLE) { b.visibility = View.VISIBLE; b.scaleX = 0.2f; b.animate().cancel(); b.animate().scaleX(1f).setDuration(Skins.dur(200L)).start() }
             else if (!on) { b.animate().cancel(); b.visibility = View.INVISIBLE }
         }
-        for (i in railLabs.indices) {   // (v1327) تفعيل التاب في الريل: لون + كبسولة تحديد زي الشريط الأساسي
+        for (i in railLabs.indices) {   // (v1327) تفعيل التاب في الريل: لون + كبسولة تحديد زي الشريط الأساسي — (v1364) الألوان بقت نفس ألوان الشريط السفلي الزجاجي حرفيًا (th.text / MtGlass.navInactive)
             val on = i == navSel
-            railLabs[i].setTextColor(if (on) YtSkin.accent else YtSkin.sub)
-            railLabs[i].background = if (on) GradientDrawable().apply { setColor(MtGlass.selected(th)); cornerRadius = ui.dp(22).toFloat(); setStroke(1, MtGlass.rim(th)) } else null
+            val off = if (MtGlass.on()) MtGlass.navInactive(th) else YtSkin.sub
+            val onC = if (MtGlass.on()) th.text else YtSkin.accent
+            railIcons.getOrNull(i)?.setTextColor(if (on) onC else off)
+            railLabs[i].setTextColor(if (on) onC else off)
+            (railLabs[i].parent as? View)?.background = if (on) GradientDrawable().apply { setColor(MtGlass.selected(th)); cornerRadius = ui.dp(22).toFloat(); setStroke(1, MtGlass.rim(th)) } else null
         }
         railSubsBadge()
     }
@@ -929,14 +943,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun railSubsBadge() {
         val lab = railLabs.getOrNull(1) ?: return
         val n = if (navSel == 1) 0 else try { YtNotify.badgeCount() } catch (_: Throwable) { 0 }
-        lab.text = railTxt("📺", "الاشتراكات", n)
-    }
-    /** (v1327) نص خلية الريل: إيموجي أكبر من الليبل (زي خلايا الشريط الأساسي 16/11) */
-    private fun railTxt(emo: String, lab: String, badge: Int): CharSequence {
-        val s = emo + "\n" + lab + if (badge > 0) " (" + (if (badge > 99) "99+" else badge.toString()) + ")" else ""
-        val sp = android.text.SpannableString(s)
-        sp.setSpan(android.text.style.RelativeSizeSpan(1.45f), 0, emo.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        return sp
+        lab.text = "الاشتراكات" + if (n > 0) " (" + (if (n > 99) "99+" else n.toString()) + ")" else ""
     }
     /** (v1327) الريل فوق الشريط العايم، وفوق الدوك لما يكون ظاهر: مفيش عنصر يغطّي التاني (بطلب علي) */
     private fun railInset() {

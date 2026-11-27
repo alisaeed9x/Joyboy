@@ -3504,12 +3504,25 @@ open class PlayerActivity : Activity(), Host {
         if (hasSoftSubNow() && softAskedFor != key) { sfChoiceDialog(anchor); return }
         val tx = trIsTx(); val off = TrProfile.engine() == "off"
         LogStore.add("▶ زرار ترجم ← " + (if (tx) "تفريغ" else "ترجمة") + " · " + (if (off) "وشبر أوفلاين" else "جيميناي"))   // (v1126) تشخيص: أنهي فرع اشتغل
-        when {
-            tx && off -> askVideoLang { offlineQuick(true) }
-            tx -> startGeminiTranscribe()
-            off -> whisperStart()
-            else -> geminiStart()
+        val goTr = { here: Boolean ->
+            if (here) trHere = true
+            when {
+                tx && off -> askVideoLang { offlineQuick(true) }
+                tx -> startGeminiTranscribe()
+                off -> whisperStart()
+                else -> geminiStart()
+            }
         }
+        // (v1364 — بطلب علي) زرار بدء الترجمة يسأل: من الأول ولا من مكان التشغيل؟ (لو واقف بعد أول 10 ثواني وفيديو جديد مترجمش قبل كده)
+        val pos0 = try { player.currentPosition } catch (_: Throwable) { 0L }
+        val hasSaved = try { ::engine.isInitialized && engine.subs.isNotEmpty() } catch (_: Throwable) { false }   // الترجمة الناقصة/الكاملة ليها دايالوجها الخاص
+        if (pos0 > 10_000L && !hasSaved) {
+            shDialog(300) { col, close ->
+                col.addView(shHead("▶ بدء الترجمة", "واقف عند " + fmtMs(pos0) + " — تبدأ منين؟"))
+                col.addView(shRow("📍 من مكان التشغيل (" + fmtMs(pos0) + ")") { close(); h.post { goTr(true) } })
+                col.addView(shRow("⏮ من أول الفيديو") { close(); h.post { goTr(false) } })
+            }
+        } else goTr(false)
     }
 
     /** (v1236) التصميم الجديد: دوسة على زرار ترجم/دبلج بتفتح خيارات في نص الشاشة: ترجم · كمّل · من الأول · إعادة الترجمة */
@@ -4304,7 +4317,8 @@ open class PlayerActivity : Activity(), Host {
     private var inPip = false
     private var resumedNow = false
     private var pipOv: PipSubBar? = null
-    private val pipExitCheck = Runnable { if (!resumedNow && !isFinishing && !audioOnlyMode) closeAfterPip() }
+    private var stoppedNow = true   // (v1364) للتمييز بين ✕ الـPiP (onStop) والتوسيع (يفضل started)
+    private val pipExitCheck = Runnable { if (!resumedNow && stoppedNow && !isFinishing && !audioOnlyMode) closeAfterPip() }   // (v1364 — ببلاغ علي: «دوسة الـPiP بتقفل التطبيق ساعات») السباق: لو onResume اتأخر عن 500ms كان closeAfterPip بيقفل التاسك كله — دلوقتي لازم الأكتيفيتي تكون متوقفة فعلًا
     fun pipNow() = inPip || (Build.VERSION.SDK_INT >= 24 && isInPictureInPictureMode)
     private fun closeAfterPip() {
         if (remote) { pipOv?.hide(); pipOv = null; finishAndRemoveTask(); return }   // (v568) مايوقفش التلفزيون
@@ -7721,7 +7735,7 @@ open class PlayerActivity : Activity(), Host {
             sub.suppressed = false; curIdx = -2; applyCard()
             applyFull(wantFull())
             // لو الخروج من PiP كان بالـ ✕ (الأكتيفيتي مش ظاهرة) نقفل الفيديو ونخرج؛ لو كان توسيع، onResume بيلغي الفحص
-            h.removeCallbacks(pipExitCheck); h.postDelayed(pipExitCheck, 500)
+            h.removeCallbacks(pipExitCheck); h.postDelayed(pipExitCheck, 1000)   // (v1364) مهلة أوسع + شرط stoppedNow
         }
     }
 
@@ -8977,8 +8991,9 @@ open class PlayerActivity : Activity(), Host {
     }
     private var pipAutoDone = false
     override fun onPause() { super.onPause(); if (gone) return; NetUse.unbindThread(); LogStore.add("⏸ onPause · ${LogStore.heapLine()}"); resumedNow = false; if (!handedOff && !remote) { saveRecent(); Thread { engine.saveNow() }.start() } }
+    override fun onStart() { super.onStart(); stoppedNow = false }   // (v1364)
     override fun onStop() {
-        super.onStop(); if (gone) return; saveRecent()
+        super.onStop(); stoppedNow = true; if (gone) return; saveRecent()
         // ✕ على نافذة PiP: النظام بيوقف الأكتيفيتي وهي لسه في وضع PiP — نقفل الفيديو ونخرج (إلا لو الشاشة اتقفلت)
         val interactive = try { (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isInteractive } catch (_: Exception) { true }
         if (pipNow() && interactive && !isFinishing && !audioOnlyMode) closeAfterPip()
