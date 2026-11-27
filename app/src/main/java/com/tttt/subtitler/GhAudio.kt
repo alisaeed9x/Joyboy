@@ -5,6 +5,14 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
+import android.media.MediaCodec
+import android.media.MediaCodecInfo
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import android.media.MediaMuxer
+import java.io.FileOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.io.File
 import java.io.IOException
 import java.util.Locale
@@ -148,50 +156,298 @@ object GhAudio {
     }
 }
 
-/** (v1238) صوت الفيديو كله كملف واحد (m4a من غير إعادة ضغط، بنفس التوقيت) + نافذة المشاركة (واتساب وغيره) */
+/** (v1238) صوت الفيديو كله كملف واحد */
 object FullAudio {
-    fun extract(ctx: android.content.Context, uri: android.net.Uri?, url: String?, hdr: Map<String, String>, title: String, onPct: (Int) -> Unit = {}): java.io.File {
-        val ex = android.media.MediaExtractor()
+    private const val OUT_RATE = 48000
+    private const val WIN_SEC = 120.0
+    private const val OPUS_BR = 24000
+    private const val AAC_BR = 32000
+
+    /** (v1362 — بطلب علي: «الصوت طالع m4a وحجمه كبير») بقينا بنرمّز Opus مونو 24kbps بدل نسخ المسار الخام:
+     *  الملف أصغر بحوالي 5-8 مرات ومناسب للكلام/الترجمة (شات جي بي تي بيقبل .opus). سلسلة أمان لو الترميز فشل:
+     *  Opus ← AAC 32k مونو (m4a) ← النسخ الخام القديم (remux) — الميزة مستحيل تبوظ، أسوأ حالة ترجع لسلوك v1361. */
+    fun extract(ctx: Context, uri: Uri?, url: String?, hdr: Map<String, String>, title: String, onPct: (Int) -> Unit = {}): File {
+        val dir = File(ctx.cacheDir, "share_audio").also { it.mkdirs() }
+        dir.listFiles()?.forEach { try { it.delete() } catch (_: Throwable) {} }
+        val safe = title.replace(Regex("[^A-Za-z0-9._-]+"), "_").trim('_').take(30).ifBlank { "audio" }
+        try {
+            val f = File(dir, safe + "-audio.opus")
+            transcode(ctx, uri, url, hdr, f, true, onPct)
+            if (f.length() >= 1024L && headIs(f)) return f
+            throw IOException("ملف Opus طلع غير سليم")
+        } catch (e: Throwable) { if (e is TaskCancelled) throw e; LogStore.err("FullAudio:opus", e) }
+        try {
+            val f = File(dir, safe + "-audio.m4a")
+            transcode(ctx, uri, url, hdr, f, false, onPct)
+            if (f.length() >= 1024L) return f
+            throw IOException("ملف AAC طلع فاضي")
+        } catch (e: Throwable) { if (e is TaskCancelled) throw e; LogStore.err("FullAudio:aac", e) }
+        return remux(ctx, uri, url, hdr, title, onPct)
+    }
+
+    private fun headIs(f: File): Boolean = try {
+        val b = ByteArray(4); java.io.FileInputStream(f).use { it.read(b) }
+        b[0] == 'O'.code.toByte() && b[1] == 'g'.code.toByte() && b[2] == 'g'.code.toByte() && b[3] == 'S'.code.toByte()
+    } catch (_: Throwable) { false }
+
+    /** فك الصوت كله لـ PCM مونو 48kHz على شبابيك (ذاكرة ثابتة ~12MB مهما طال الفيديو) + ترميزه. */
+    private fun transcode(ctx: Context, uri: Uri?, url: String?, hdr: Map<String, String>, out: File, opus: Boolean, onPct: (Int) -> Unit) {
+        val ex = MediaExtractor()
+        var writer: PcmOut? = null
         try {
             if (uri != null && !uri.toString().startsWith("http")) ex.setDataSource(ctx, uri, null)
             else ex.setDataSource(url ?: uri.toString(), hdr)
-            var ti = -1; var fmt: android.media.MediaFormat? = null
+            val ti = Tracks.pick(ex, 0) {}
+            val fmt = ex.getTrackFormat(ti)
+            val durUs = if (fmt.containsKey(MediaFormat.KEY_DURATION)) fmt.getLong(MediaFormat.KEY_DURATION) else 0L
+            if (durUs <= 0L) throw IOException("مدة الصوت غير معروفة")
+            ex.selectTrack(ti)
+            val w = if (opus) OggOpus(out) else AacM4a(out)
+            writer = w
+            val winUs = (WIN_SEC * 1_000_000).toLong()
+            var start = 0L; var lastP = -1
+            while (start < durUs) {
+                val end = minOf(start + winUs, durUs)
+                ex.seekTo(start, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+                val sink = PcmSink(WIN_SEC + 2.0, OUT_RATE)
+                Decoder.decode(ex, fmt, start, end, sink)
+                val wav = sink.finish(start / 1_000_000.0).bytes   // WAV 48k مونو (44 بايت هيدر + PCM)
+                w.offer(wav, 44, wav.size - 44, end >= durUs)
+                val p = (end * 100 / durUs).toInt().coerceIn(0, 100)
+                if (p != lastP) { lastP = p; onPct(p) }
+                start = end
+            }
+        } finally {
+            try { writer?.close() } catch (_: Throwable) {}
+            try { ex.release() } catch (_: Throwable) {}
+        }
+    }
+
+    /** بفر ترميز: ياخد PCM16 مونو 48k على دفعات، وlast=true مع آخر دفعة. */
+    private interface PcmOut { fun offer(pcm: ByteArray, off: Int, len: Int, last: Boolean); fun close() }
+
+    /** حلقة ترميز MediaCodec مشتركة: تغذية PCM + سحب الحزم. onFmt تتنده عند أول تغيير صيغة، onPkt لكل حزمة (pts µs, flags). */
+    private fun pump(enc: MediaCodec, pcm: ByteArray, off0: Int, len0: Int, last: Boolean, onFmt: (MediaFormat) -> Unit, onPkt: (ByteArray, Long, Int) -> Unit) {
+        var off = off0; var rem = len0; var eos = false; var stall = 0
+        val info = MediaCodec.BufferInfo()
+        while (true) {
+            if (!eos) {
+                val ii = enc.dequeueInputBuffer(10_000)
+                if (ii >= 0) {
+                    val ib = enc.getInputBuffer(ii)!!
+                    ib.clear()
+                    val n = minOf(rem, ib.capacity())
+                    if (n > 0) { ib.put(pcm, off, n); off += n; rem -= n }
+                    val fin = last && rem == 0
+                    enc.queueInputBuffer(ii, 0, n, 0, if (fin) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0)
+                    if (fin) eos = true
+                }
+            }
+            if (!eos && rem == 0) {
+                val oi0 = enc.dequeueOutputBuffer(info, 0)
+                if (oi0 == MediaCodec.INFO_TRY_AGAIN_LATER) return
+                handleOut(enc, oi0, info, onFmt, onPkt)?.let { if (it) return }
+            } else {
+                val oi = enc.dequeueOutputBuffer(info, 10_000)
+                if (oi == MediaCodec.INFO_TRY_AGAIN_LATER) { if (++stall > 3000) throw IOException("الترميز أخد وقت طويل"); continue }
+                handleOut(enc, oi, info, onFmt, onPkt)?.let { if (it) return }
+            }
+        }
+    }
+
+    /** @return true لو دي حزمة EOS (الترميز خلص) */
+    private fun handleOut(enc: MediaCodec, oi: Int, info: MediaCodec.BufferInfo, onFmt: (MediaFormat) -> Unit, onPkt: (ByteArray, Long, Int) -> Unit): Boolean? {
+        if (oi == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) { onFmt(enc.outputFormat); return null }
+        if (oi < 0) return null
+        val ob = enc.getOutputBuffer(oi)
+        if (info.size > 0 && ob != null && (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
+            val p = ByteArray(info.size); ob.position(info.offset); ob.get(p)
+            onPkt(p, info.presentationTimeUs, info.flags)
+        }
+        val fin = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
+        enc.releaseOutputBuffer(oi, false)
+        return fin
+    }
+
+    /** ترميز Opus 24k مونو + كتابة حاوية Ogg (RFC 7845) يدويًا — MediaMuxer مبيعرفش Ogg. */
+    private class OggOpus(out: File) : PcmOut {
+        private val enc: MediaCodec
+        private val fos = FileOutputStream(out)
+        private val serial = java.util.Random().nextInt()
+        private var seq = 0
+        private var preskip = 312L
+        private var headDone = false
+        private var closed = false
+        private val segs = ArrayList<Int>()
+        private val payload = java.io.ByteArrayOutputStream()
+        private var pagePackets = 0
+        private var granule = 0L
+
+        init {
+            val f = MediaFormat.createAudioFormat("audio/opus", OUT_RATE, 1)
+            f.setInteger(MediaFormat.KEY_BIT_RATE, OPUS_BR)
+            val c = MediaCodec.createEncoderByType("audio/opus")   // بيرمي لو الجهاز مفيهوش (أندرويد < 10 غالبًا) ← fallback AAC
+            c.configure(f, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            c.start()
+            enc = c
+        }
+
+        override fun offer(pcm: ByteArray, off: Int, len: Int, last: Boolean) {
+            if (len <= 0 && !last) return
+            pump(enc, pcm, off, len, last,
+                { f -> if (!headDone) { writeHead(f); headDone = true } },
+                { p, pts, flags ->
+                    granule = preskip + pts * OUT_RATE / 1_000_000L
+                    addPacket(p)
+                    if ((flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) flushPage(4)
+                })
+        }
+
+        private fun addPacket(p: ByteArray) {
+            var l = p.size
+            while (l >= 255) { segs.add(255); l -= 255 }
+            segs.add(l)
+            payload.write(p); pagePackets++
+            if (segs.size >= 200 || pagePackets >= 50) flushPage(0)
+        }
+
+        private fun flushPage(type: Int) {
+            if (segs.isEmpty() && type == 0) return
+            writeRaw(type, granule, segs.toList(), payload.toByteArray())
+            segs.clear(); payload.reset(); pagePackets = 0
+        }
+
+        private fun writeHead(f: MediaFormat) {
+            var head: ByteArray? = null
+            try {
+                val c = f.getByteBuffer("csd-0")
+                if (c != null) { val b = ByteArray(c.remaining()); c.get(b); if (b.size >= 19 && String(b, 0, 8) == "OpusHead") head = b }
+            } catch (_: Throwable) {}
+            if (head == null) {
+                val b = ByteBuffer.allocate(19).order(ByteOrder.LITTLE_ENDIAN)
+                b.put("OpusHead".toByteArray()); b.put(1.toByte()); b.put(1.toByte()); b.putShort(312.toShort()); b.putInt(OUT_RATE); b.putShort(0.toShort()); b.put(0.toByte())
+                head = b.array()
+            }
+            preskip = ((head[11].toInt() and 255) shl 8 or (head[10].toInt() and 255)).toLong()
+            writeRaw(2, 0L, lacing(head.size), head)   // صفحة BOS: OpusHead لوحدها
+            val v = "Joyboy".toByteArray()
+            val t = ByteBuffer.allocate(8 + 4 + v.size + 4).order(ByteOrder.LITTLE_ENDIAN)
+            t.put("OpusTags".toByteArray()); t.putInt(v.size); t.put(v); t.putInt(0)
+            writeRaw(0, 0L, lacing(t.array().size), t.array())
+        }
+
+        private fun lacing(len: Int): List<Int> {
+            val r = ArrayList<Int>(); var l = len
+            while (l >= 255) { r.add(255); l -= 255 }
+            r.add(l); return r
+        }
+
+        private val crcTable = IntArray(256) { i ->
+            var r = i shl 24
+            repeat(8) { r = if ((r and Int.MIN_VALUE) != 0) (r shl 1) xor 0x04c11db7 else r shl 1 }
+            r
+        }
+
+        private fun writeRaw(type: Int, gran: Long, lacing: List<Int>, data: ByteArray) {
+            val h = ByteBuffer.allocate(27 + lacing.size).order(ByteOrder.LITTLE_ENDIAN)
+            h.put("OggS".toByteArray()); h.put(0.toByte()); h.put(type.toByte()); h.putLong(gran); h.putInt(serial); h.putInt(seq++); h.putInt(0)
+            h.put(lacing.size.toByte()); lacing.forEach { h.put(it.toByte()) }
+            val page = h.array() + data
+            var c = 0
+            for (x in page) c = (c shl 8) xor crcTable[((c ushr 24) xor (x.toInt() and 255)) and 255]
+            page[22] = (c and 255).toByte(); page[23] = ((c ushr 8) and 255).toByte(); page[24] = ((c ushr 16) and 255).toByte(); page[25] = ((c ushr 24) and 255).toByte()
+            fos.write(page)
+        }
+
+        override fun close() {
+            if (closed) return; closed = true
+            try { enc.stop() } catch (_: Throwable) {}
+            try { enc.release() } catch (_: Throwable) {}
+            try { fos.close() } catch (_: Throwable) {}
+        }
+    }
+
+    /** بديل أضمن: AAC-LC 32k مونو في m4a (MediaMuxer) — كوديك إجباري في أي أندرويد. */
+    private class AacM4a(out: File) : PcmOut {
+        private val enc: MediaCodec
+        private val mux = MediaMuxer(out.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        private var track = -1
+        private var started = false
+        private var closed = false
+
+        init {
+            val f = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, OUT_RATE, 1)
+            f.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+            f.setInteger(MediaFormat.KEY_BIT_RATE, AAC_BR)
+            val c = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
+            c.configure(f, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            c.start()
+            enc = c
+        }
+
+        override fun offer(pcm: ByteArray, off: Int, len: Int, last: Boolean) {
+            if (len <= 0 && !last) return
+            pump(enc, pcm, off, len, last,
+                { f -> track = mux.addTrack(f); mux.start(); started = true },
+                { p, pts, flags ->
+                    if (started) {
+                        val bi = MediaCodec.BufferInfo(); bi.set(0, p.size, pts, flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM.inv())
+                        mux.writeSampleData(track, ByteBuffer.wrap(p), bi)
+                    }
+                })
+        }
+
+        override fun close() {
+            if (closed) return; closed = true
+            try { enc.stop() } catch (_: Throwable) {}
+            try { enc.release() } catch (_: Throwable) {}
+            if (started) { try { mux.stop() } catch (_: Throwable) {} }
+            try { mux.release() } catch (_: Throwable) {}
+        }
+    }
+
+    /** السلوك القديم (v1238): نسخ مسار الصوت الخام كما هو — ملاذ أخير لو الترميز كله فشل (صيغة مفيش لها decoder مثلًا). */
+    private fun remux(ctx: Context, uri: Uri?, url: String?, hdr: Map<String, String>, title: String, onPct: (Int) -> Unit = {}): File {
+        val ex = MediaExtractor()
+        try {
+            if (uri != null && !uri.toString().startsWith("http")) ex.setDataSource(ctx, uri, null)
+            else ex.setDataSource(url ?: uri.toString(), hdr)
+            var ti = -1; var fmt: MediaFormat? = null
             for (i in 0 until ex.trackCount) {
                 val f = ex.getTrackFormat(i)
-                if ((f.getString(android.media.MediaFormat.KEY_MIME) ?: "").startsWith("audio/")) { ti = i; fmt = f; break }
+                if ((f.getString(MediaFormat.KEY_MIME) ?: "").startsWith("audio/")) { ti = i; fmt = f; break }
             }
-            if (ti < 0 || fmt == null) throw java.io.IOException("مفيش مسار صوت في الفيديو ده")
-            val mime = fmt.getString(android.media.MediaFormat.KEY_MIME) ?: ""
+            if (ti < 0 || fmt == null) throw IOException("مفيش مسار صوت في الفيديو ده")
+            val mime = fmt.getString(MediaFormat.KEY_MIME) ?: ""
             val webm = mime.contains("opus") || mime.contains("vorbis")
-            val dir = java.io.File(ctx.cacheDir, "share_audio").also { it.mkdirs() }
-            dir.listFiles()?.forEach { try { it.delete() } catch (_: Throwable) {} }
+            val dir = File(ctx.cacheDir, "share_audio").also { it.mkdirs() }
             val safe = title.replace(Regex("[^A-Za-z0-9._-]+"), "_").trim('_').take(30).ifBlank { "audio" }
-            val out = java.io.File(dir, "$safe-audio." + (if (webm) "webm" else "m4a"))
+            val out = File(dir, "$safe-audio." + (if (webm) "webm" else "m4a"))
             ex.selectTrack(ti)
-            val durUs = if (fmt.containsKey(android.media.MediaFormat.KEY_DURATION)) fmt.getLong(android.media.MediaFormat.KEY_DURATION) else 0L
-            val muxer = android.media.MediaMuxer(out.absolutePath, if (webm) android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM else android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            val durUs = if (fmt.containsKey(MediaFormat.KEY_DURATION)) fmt.getLong(MediaFormat.KEY_DURATION) else 0L
+            val muxer = MediaMuxer(out.absolutePath, if (webm) MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM else MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
             try {
                 val mt = muxer.addTrack(fmt); muxer.start()
-                val buf = java.nio.ByteBuffer.allocate(1024 * 1024); val info = android.media.MediaCodec.BufferInfo()
+                val buf = ByteBuffer.allocate(1024 * 1024); val info = MediaCodec.BufferInfo()
                 var lastP = -1
                 while (true) {
                     buf.clear(); val n = ex.readSampleData(buf, 0); if (n < 0) break
-                    info.set(0, n, ex.sampleTime, android.media.MediaCodec.BUFFER_FLAG_KEY_FRAME)
+                    info.set(0, n, ex.sampleTime, MediaCodec.BUFFER_FLAG_KEY_FRAME)
                     muxer.writeSampleData(mt, buf, info)
                     if (durUs > 0) { val p = (ex.sampleTime * 100 / durUs).toInt().coerceIn(0, 100); if (p != lastP) { lastP = p; onPct(p) } }
                     ex.advance()
                 }
                 muxer.stop()
-            } catch (e: Throwable) { try { out.delete() } catch (_: Throwable) {}; throw java.io.IOException("الصيغة دي ($mime) ما قدرتش أطلّعها لملف واحد: " + (e.message ?: "").take(60)) }
+            } catch (e: Throwable) { try { out.delete() } catch (_: Throwable) {}; throw IOException("الصيغة دي ($mime) ما قدرتش أطلّعها لملف واحد: " + (e.message ?: ""), e) }
             finally { try { muxer.release() } catch (_: Throwable) {} }
-            if (out.length() < 1024L) throw java.io.IOException("الصوت طلع فاضي")
+            if (out.length() < 1024L) throw IOException("الصوت طلع فاضي")
             return out
         } finally { try { ex.release() } catch (_: Throwable) {} }
     }
 
-    fun share(a: android.app.Activity, f: java.io.File) {
+    fun share(a: android.app.Activity, f: File) {
         val uri = androidx.core.content.FileProvider.getUriForFile(a, a.packageName + ".fmprov", f)
-        val i = android.content.Intent(android.content.Intent.ACTION_SEND).setType(if (f.name.endsWith(".webm")) "audio/webm" else "audio/mp4")
+        val i = android.content.Intent(android.content.Intent.ACTION_SEND).setType(if (f.name.endsWith(".webm")) "audio/webm" else if (f.name.endsWith(".opus")) "audio/ogg" else "audio/mp4")
             .putExtra(android.content.Intent.EXTRA_STREAM, uri).addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
         a.startActivity(android.content.Intent.createChooser(i, "ابعت الصوت"))
     }
