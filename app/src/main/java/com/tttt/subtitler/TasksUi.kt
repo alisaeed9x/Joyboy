@@ -56,6 +56,12 @@ class TasksUi(private val act: Activity, private val ui: Ui, private val th: The
         apRow.addView(ui.button("🎧 ترجمة عن طريق تحميل باتش ملف الصوت", true) { GhAudio.pickAndStart(act) }, LinearLayout.LayoutParams(0, -2, 1f))
         apRow.addView(ui.button("⚙ إعدادات الترجمة") { try { onTrSettings?.invoke() } catch (e: Throwable) { LogStore.err("TasksUi:trset", e) } }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(6) })
         root.addView(apRow, LinearLayout.LayoutParams(-1, -2))
+        // (v1366 — بطلب علي) زرار التفريغ التجريبي بـ Groq Whisper: بيظهر بس لما السويتش يتفتح من إعدادات باتش الصوت
+        if (Cfg.bool("groq_exp", false)) {
+            val gqRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(ui.dp(12), ui.dp(4), ui.dp(12), ui.dp(4)) }
+            gqRow.addView(ui.button("🧪 تفريغ Groq Whisper (تجريبي)", true) { GhAudio.pickAndStartGroq(act) }, LinearLayout.LayoutParams(0, -2, 1f))
+            root.addView(gqRow, root.indexOfChild(sv), LinearLayout.LayoutParams(-1, -2))
+        }
         root.addView(sv, LinearLayout.LayoutParams(-1, 0, 1f))
         bgSec.addView(ui.text("🌙 ترجمة الخلفية", 13f, th.primary, true).apply { setPadding(ui.dp(4), ui.dp(4), 0, ui.dp(2)) })
         bgSec.addView(bgq.content)

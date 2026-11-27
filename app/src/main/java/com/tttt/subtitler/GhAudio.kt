@@ -36,6 +36,120 @@ object GhAudio {
         } catch (e: Throwable) { LogStore.err("GhAudio:pick", e); Notice.show(act, "⚠ ما قدرتش أفتح اختيار الفيديو", 2400L) }
     }
 
+    // ===== (v1366 — بطلب علي) مسار تجريبي: تفريغ Groq Whisper (الفيديو ← باتشات صوت 10 دقايق ← Groq ← ملف SRT) — ورا سويتش في الإعدادات، من غير ما يلمس المسار الحالي =====
+    private const val GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
+    private const val GROQ_CHUNK_SEC = 600.0   // 10 دقايق ≈ 2.5MB عند 32kbps — بعيد عن حد 25MB وحدود الكوتا المجانية
+
+    fun pickAndStartGroq(act: Activity) {
+        try {
+            VideoPicker.show(act, "🧪 اختار الفيديو للتفريغ بـ Groq", { v ->
+                startGroq(act, Uri.parse(v.uri), null, emptyMap(), v.title, v.durMs)
+            }, { Notice.show(act, "الفيديوهات بتظهر هنا من مكتبة الموبايل", 2400L) })
+        } catch (e: Throwable) { LogStore.err("GhAudio:groqpick", e); Notice.show(act, "⚠ ما قدرتش أفتح اختيار الفيديو", 2400L) }
+    }
+
+    private fun startGroq(act: Activity, uri: Uri?, url: String?, hdr: Map<String, String>, title: String, durMs: Long) {
+        if (Cfg.str("groq_key", "").isBlank()) { Notice.show(act, "🔑 حط مفتاح Groq الأول من الإعدادات (قسم 🎧 باتش الصوت)", 3600L); return }
+        if (TaskCenter.items.any { it.kind == "groq" && (it.state == 0 || it.state == 1) }) { Notice.show(act, "⏳ في تفريغ Groq شغّال بالفعل", 2400L); return }
+        LogStore.add("🧪 Groq Whisper: بدأ — " + title)
+        Notice.show(act, "🧪 اتضاف لمركز التحميل — التفريغ التجريبي بـ Groq", 2600L)
+        TaskCenter.add(act, "groq", "🧪 Groq: " + BatchExport.safe(title)) { task -> workGroq(act, uri, url, hdr, title, durMs, task) }
+    }
+
+    private fun workGroq(act: Activity, uri: Uri?, url: String?, hdr: Map<String, String>, title: String, durMs: Long, task: TaskItem) {
+        val key = Cfg.str("groq_key", "").trim()
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(java.util.Date())
+        val ascii = title.replace(Regex("[^A-Za-z0-9._-]+"), "_").trim('_').take(30).ifBlank { "video" }
+        val durSec = FullAudio.durationSec(act, uri, url, hdr).let { if (it > 0.0) it else durMs / 1000.0 }
+        if (durSec <= 0.0) throw IOException("مدة الصوت غير معروفة")
+        val chunks = Math.ceil(durSec / GROQ_CHUNK_SEC).toInt().coerceAtLeast(1)
+        val lang = Cfg.str("tr_lang", "auto")
+        val srt = StringBuilder()
+        var idx = 1
+        for (ci in 0 until chunks) {
+            if (task.cancelled) throw TaskCancelled()
+            val from = ci * GROQ_CHUNK_SEC
+            val to = minOf(durSec, from + GROQ_CHUNK_SEC)
+            task.msg = "🎧 بفصل باتش " + (ci + 1) + "/" + chunks + "…"; TaskCenter.changed()
+            val f = FullAudio.extractRange(act, uri, url, hdr, title, from, to) { p ->
+                if (task.cancelled) throw TaskCancelled()
+                task.pct = ((ci * 100 + p * 40 / 100) / chunks).coerceIn(0, 96); TaskCenter.changed()
+            }
+            task.msg = "☁ Groq بيفرّغ باتش " + (ci + 1) + "/" + chunks + "…"; TaskCenter.changed()
+            val segs = groqTranscribe(key, f, lang, task)
+            try { f.delete() } catch (_: Throwable) {}
+            for (sg in segs) {
+                srt.append(idx++).append('\n')
+                srt.append(PlayerLogic.srtTime(((sg.first + from) * 1000).toLong())).append(" --> ").append(PlayerLogic.srtTime(((sg.second + from) * 1000).toLong())).append('\n')
+                srt.append(sg.third).append("\n\n")
+            }
+            task.pct = ((ci * 100 + 96) / chunks).coerceIn(0, 96); TaskCenter.changed()
+        }
+        task.msg = "💾 بحفظ ملف SRT…"; TaskCenter.changed()
+        val sf = File(act.cacheDir, "groq_" + stamp + ".srt")
+        sf.writeText(srt.toString(), Charsets.UTF_8)
+        val where = GhCi.saveToDownloads(act, sf, "joyboy_groq_" + stamp + "_" + ascii + ".srt", "text/plain")
+        task.outPath = where
+        task.msg = "✅ SRT جاهز — محفوظ في التنزيلات"
+        LogStore.add("🧪 Groq Whisper: خلص ← " + where)
+    }
+
+    /** باتش صوت واحد ← Groq Whisper: verbose_json segments. 3 محاولات مع backoff على 429/5xx. */
+    private fun groqTranscribe(key: String, f: File, lang: String, task: TaskItem): List<Triple<Double, Double, String>> {
+        var lastErr = "Groq فشل"
+        for (attempt in 1..3) {
+            if (task.cancelled) throw TaskCancelled()
+            try {
+                val B = "----JoyboyGroqBoundary91"
+                val o = java.io.ByteArrayOutputStream()
+                fun w(x: String) = o.write(x.toByteArray(Charsets.UTF_8))
+                w("--$B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-large-v3-turbo\r\n")
+                w("--$B\r\nContent-Disposition: form-data; name=\"response_format\"\r\n\r\nverbose_json\r\n")
+                w("--$B\r\nContent-Disposition: form-data; name=\"timestamp_granularities[]\"\r\n\r\nsegment\r\n")
+                if (lang.isNotBlank() && lang != "auto") w("--$B\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\n" + lang + "\r\n")
+                w("--$B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"chunk.m4a\"\r\nContent-Type: audio/mp4\r\n\r\n")
+                o.write(f.readBytes()); w("\r\n--$B--\r\n")
+                val body = o.toByteArray()
+                val c = java.net.URL(GROQ_URL).openConnection() as java.net.HttpURLConnection
+                try {
+                    c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 20000; c.readTimeout = 180000
+                    c.setRequestProperty("Authorization", "Bearer " + key)
+                    c.setRequestProperty("Content-Type", "multipart/form-data; boundary=$B")
+                    c.outputStream.use { it.write(body) }
+                    val code = c.responseCode
+                    val txt = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
+                    if (code in 200..299) {
+                        val j = org.json.JSONObject(txt)
+                        val arr = j.optJSONArray("segments")
+                        val out = ArrayList<Triple<Double, Double, String>>()
+                        if (arr != null) for (i in 0 until arr.length()) {
+                            val g = arr.optJSONObject(i) ?: continue
+                            val t = g.optString("text").trim()
+                            if (t.isNotEmpty()) out.add(Triple(g.optDouble("start"), g.optDouble("end"), t))
+                        }
+                        if (out.isEmpty()) {
+                            val t = j.optString("text").trim()
+                            if (t.isNotEmpty()) out.add(Triple(0.0, GROQ_CHUNK_SEC, t))
+                        }
+                        return out
+                    }
+                    lastErr = "Groq رفض (كود " + code + "): " + txt.take(160)
+                    if (code == 401 || code == 403) throw IOException("مفتاح Groq غلط — راجعه في الإعدادات")
+                    if (code == 429 || code >= 500) { Thread.sleep(15000L * attempt); continue }
+                    throw IOException(lastErr)
+                } finally { c.disconnect() }
+            } catch (e: IOException) {
+                if ((e.message ?: "").contains("مفتاح Groq")) throw e
+                lastErr = e.message ?: lastErr
+            } catch (e: Throwable) {
+                if (e is TaskCancelled) throw e
+                lastErr = "فشل الاتصال: " + (e.message ?: e.javaClass.simpleName)
+            }
+            if (attempt < 3) Thread.sleep(8000L)
+        }
+        throw IOException(lastErr)
+    }
+
     /** يبدأ مهمة فصل الصوت في مركز التحميل (شريط تقدّم + الوقت الفاضل) */
     fun start(act: Activity, uri: Uri?, url: String?, hdr: Map<String, String>, title: String, durMs: Long) {
         if (TaskCenter.items.any { it.kind == "ghup" && (it.state == 0 || it.state == 1) }) { Notice.show(act, "⏳ في باتش صوت لسه بيتجهّز — تابعه من «المهام»", 2200L); return }
@@ -165,6 +279,28 @@ object FullAudio {
      *  من إعدادات الترجمة يرمّز Opus 24k (أدق للترجمة وأصغر، لكن أبطأ — كوديك سوفتوير). لو أي ترميز فشل:
      *  رجوع تلقائي للنسخ الخام القديم (remux) — الميزة مستحيل تبوظ.
      *  (v1362 — بطلب علي: «الصوت طالع m4a وحجمه كبير») كان أول ترميز Opus. */
+    /** مدة مسار الصوت بالثواني (0 لو مجهولة) */
+    fun durationSec(ctx: Context, uri: Uri?, url: String?, hdr: Map<String, String>): Double {
+        val ex = MediaExtractor()
+        return try {
+            if (uri != null && !uri.toString().startsWith("http")) ex.setDataSource(ctx, uri, null)
+            else ex.setDataSource(url ?: uri.toString(), hdr)
+            val ti = Tracks.pick(ex, 0) {}
+            val fmt = ex.getTrackFormat(ti)
+            (if (fmt.containsKey(MediaFormat.KEY_DURATION)) fmt.getLong(MediaFormat.KEY_DURATION) else 0L) / 1_000_000.0
+        } catch (_: Throwable) { 0.0 } finally { try { ex.release() } catch (_: Throwable) {} }
+    }
+
+    /** (v1366) فصل مجال زمني بس [fromSec, toSec] في ملف m4a سريع (باتشات Groq التجريبية) */
+    fun extractRange(ctx: Context, uri: Uri?, url: String?, hdr: Map<String, String>, title: String, fromSec: Double, toSec: Double, onPct: (Int) -> Unit = {}): File {
+        val dir = File(ctx.cacheDir, "share_audio").also { it.mkdirs() }
+        val safe = title.replace(Regex("[^A-Za-z0-9._-]+"), "_").trim('_').take(30).ifBlank { "audio" }
+        val f = File(dir, safe + "-chunk.m4a")
+        transcode(ctx, uri, url, hdr, f, false, onPct, (fromSec * 1_000_000).toLong(), (toSec * 1_000_000).toLong())
+        if (f.length() < 256L) throw IOException("باتش الصوت طلع فاضي")
+        return f
+    }
+
     fun extract(ctx: Context, uri: Uri?, url: String?, hdr: Map<String, String>, title: String, onPct: (Int) -> Unit = {}): File {
         val dir = File(ctx.cacheDir, "share_audio").also { it.mkdirs() }
         dir.listFiles()?.forEach { try { it.delete() } catch (_: Throwable) {} }
@@ -192,7 +328,7 @@ object FullAudio {
     } catch (_: Throwable) { false }
 
     /** فك الصوت كله لـ PCM مونو 48kHz على شبابيك (ذاكرة ثابتة ~12MB مهما طال الفيديو) + ترميزه. */
-    private fun transcode(ctx: Context, uri: Uri?, url: String?, hdr: Map<String, String>, out: File, opus: Boolean, onPct: (Int) -> Unit) {
+    private fun transcode(ctx: Context, uri: Uri?, url: String?, hdr: Map<String, String>, out: File, opus: Boolean, onPct: (Int) -> Unit, fromUs: Long = 0L, uptoUs: Long = Long.MAX_VALUE) {
         val rate = OUT_RATE   // (v1365 — بطلب علي: الفصل لسه بطيء) المسار السريع بقى 48k مونو من غير DSP: الترميز بكوديك هاردوير قياسي، والتصغير لـ16k كان بيحمّل فلاتر على كل عينة
         val ex = MediaExtractor()
         var writer: PcmOut? = null
@@ -203,19 +339,22 @@ object FullAudio {
             val fmt = ex.getTrackFormat(ti)
             val durUs = if (fmt.containsKey(MediaFormat.KEY_DURATION)) fmt.getLong(MediaFormat.KEY_DURATION) else 0L
             if (durUs <= 0L) throw IOException("مدة الصوت غير معروفة")
+            val lo = fromUs.coerceIn(0L, durUs)
+            val hi = minOf(durUs, uptoUs)
+            if (hi <= lo) throw IOException("مجال الصوت فاضي")
             ex.selectTrack(ti)
             val w = if (opus) OggOpus(out) else AacM4a(out, rate)
             writer = w
             val winUs = (WIN_SEC * 1_000_000).toLong()
-            var start = 0L; var lastP = -1
-            while (start < durUs) {
-                val end = minOf(start + winUs, durUs)
+            var start = lo; var lastP = -1
+            while (start < hi) {
+                val end = minOf(start + winUs, hi)
                 ex.seekTo(start, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
                 val sink = PcmSink(WIN_SEC + 2.0, rate, !opus)   // (v1365) fast mode للمسار السريع: بلا biquad/HP/تضخيم/limiter
                 Decoder.decode(ex, fmt, start, end, sink)
                 val wav = sink.finish(start / 1_000_000.0).bytes   // WAV 48k مونو (44 بايت هيدر + PCM)
-                w.offer(wav, 44, wav.size - 44, end >= durUs)
-                val p = (end * 100 / durUs).toInt().coerceIn(0, 100)
+                w.offer(wav, 44, wav.size - 44, end >= hi)
+                val p = ((end - lo) * 100 / (hi - lo)).toInt().coerceIn(0, 100)
                 if (p != lastP) { lastP = p; onPct(p) }
                 start = end
             }

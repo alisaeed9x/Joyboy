@@ -631,7 +631,9 @@ class MainActivity : Activity() {
                 ui.section("📖 مسرد المصطلحات الثابت", false,
                     ui.noHint(), gloss),
                 ui.section("🎧 باتش الصوت (للترجمة برّه)", false,
-                    ui.switchRow("✨ تحسين الصوت قبل الحفظ: Opus + رفع الكلام الواطي (أدق وأصغر لكن أبطأ بكتير)", Cfg.bool("gh_audio_enhance", false)) { Cfg.put("gh_audio_enhance", if (it) "1" else "0") })) }),   // (v1363) الافتراضي السرعة بعد شكوى البطء
+                    ui.switchRow("✨ تحسين الصوت قبل الحفظ: Opus + رفع الكلام الواطي (أدق وأصغر لكن أبطأ بكتير)", Cfg.bool("gh_audio_enhance", false)) { Cfg.put("gh_audio_enhance", if (it) "1" else "0") },
+                    ui.switchRow("🧪 تفريغ Groq Whisper (تجريبي): زرار في مركز التحميل يطلّع SRT من Groq", Cfg.bool("groq_exp", false)) { Cfg.put("groq_exp", if (it) "1" else "0") },
+                    ui.input("🔑 مفتاح Groq API (gsk_...) — مجاني من console.groq.com", Cfg.str("groq_key", "")).apply { addTextChangedListener(object : android.text.TextWatcher { override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}; override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}; override fun afterTextChanged(s: android.text.Editable?) { Cfg.put("groq_key", s?.toString()?.trim() ?: "") } }) })) }),   // (v1363) الافتراضي السرعة بعد شكوى البطء · (v1366) مسار Groq التجريبي
             // ===== 🔑 المفاتيح: جيميناي · الوضع البصري · محركات خارجية =====
             tab("keys", { listOf<View>(
                 ui.section("🆓 من غير مفتاح؟ تمام", true,
