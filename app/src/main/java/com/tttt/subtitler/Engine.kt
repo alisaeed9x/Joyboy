@@ -1073,7 +1073,7 @@ class Engine(
                     if (drained()) {
                         val from = activeMode; activeMode = conf.keyMode
                         host.log("🔑 الباتشات الشغالة خلصت — الوضع اتبدّل من $from لـ ${KeyMode.name(activeMode)} والباتشات الجديدة هتمشي بيه")
-                        host.notice("🔑 الوضع الجديد شغّال: " + KeyMode.short(activeMode) + "\n" + ExtTranslate.setupLine())
+                        host.notice("🔑 الوضع الجديد شغّال: " + KeyMode.short(activeMode) + "\n" + whoLine())   // (v1371 — بطلب علي) العداد بيتبع المزوّد الشغّال فعلًا مش جيميناي على طول
                         if (activeMode < KeyMode.ALL_PARALLEL && detDone) try { maybeTranslateTemplate() } catch (_: Throwable) {}
                     } else {
                         host.status("🔑 بخلّص الباتشات الشغالة قبل ما أبدّل للوضع " + KeyMode.short(conf.keyMode) + "…")
@@ -1617,12 +1617,12 @@ class Engine(
                         }   // (v331) التفريغ بحرارة 0 (أدق وثابت)؛ الإعادة بعد فشل بحرارة 0.1 عشان ما يرجعش نفس الرد
                         // (v253) ترانسكريبشن أوفلاين (Whisper على الجهاز) — لو فشل جيميناي (gem) بيكمّل الباتش
                         (if (tx && Offline.on()) { Offline.batchTag.set(i); Offline.transcribe(w.bytes, w.durSec, effectiveGloss().joinToString(", ") { it.term }, { host.log(it) }, gem, { host.notice(it) }, offSession) }
-                            else if (tx && groqTxOn()) { groqResult(w.bytes, w.durSec) }   // (v1369 — بطلب علي) بلوك التفريغ ⚡ جروك
-                            else { if (tx) Offline.whyOff()?.let { m -> host.log(m); Offline.softNotice(m) { host.notice(it) } }; gem() }).also { pool.end(key, System.currentTimeMillis() - t0, true) }
+                            else if (tx && groqTxOn()) { if (tries <= 1) host.log("⚡ باتش " + (i + 1) + ": التفريغ بـ Groq (" + Cfg.str("groq_model", "whisper-large-v3-turbo") + ")"); groqResult(w.bytes, w.durSec) }   // (v1369 — بطلب علي) بلوك التفريغ ⚡ جروك · (v1371) سطر واضح بالمزوّد في اللوج
+                            else { if (tx) Offline.whyOff()?.let { m -> host.log(m); Offline.softNotice(m) { host.notice(it) } }; if (tx && Cfg.str("mt_tr_mode", "") == "groq") host.log("⚠ بلوك التفريغ ⚡ جروك مختار بس مفيش مفتاح محفوظ — باتش " + (i + 1) + " اتفرّغ بجيميناي"); gem() }).also { pool.end(key, System.currentTimeMillis() - t0, true) }   // (v1371) لو جروك مختار والمفتاح ناقص اللوج يوضّح ليه جيميناي اشتغل
                     } catch (e: Throwable) { pool.end(key, 0, false); throw e }
                 }
                 val took = System.currentTimeMillis() - t0
-                LogStore.add("⏱ [مشغّل-توقيت] باتش ${i + 1}: طلب الموديل " + took + "ms (" + mdl + (if (tx) ", تفريغ" else ", تفريغ+ترجمة") + (if (hedge) ", نسخة احتياطية" else "") + ", محاولة " + tries + ", من أول إرسال " + (startedAt[i]?.let { System.currentTimeMillis() - it } ?: -1L) + "ms)")   // (v1031 — م0)
+                LogStore.add("⏱ [مشغّل-توقيت] باتش ${i + 1}: طلب الموديل " + took + "ms (" + (if (tx && groqRan.get() == true) "groq:" + Cfg.str("groq_model", "whisper-large-v3-turbo") else mdl) + (if (tx) ", تفريغ" else ", تفريغ+ترجمة") + (if (hedge) ", نسخة احتياطية" else "") + ", محاولة " + tries + ", من أول إرسال " + (startedAt[i]?.let { System.currentTimeMillis() - it } ?: -1L) + "ms)")   // (v1031 — م0)
                 if (isClosed) return
                 if (gemCalled) { Overload.ok(); pressureClear() }
                 if (gemCalled) { flushModeMsg(); noteWho("🔑 جيميناي شغّال", " — باتش ${i + 1} بمفتاح " + pool.tail(key) + " (" + conf.keys.size + " أساسي)") }   // (v278)   // الإنجن اتقفل أثناء الطلب (خرجت من الفيديو): ارمي الرد
@@ -1999,6 +1999,13 @@ class Engine(
     /** (v1369 — بطلب علي) تفريغ Groq سحابي شغّال؟ (بلوك التفريغ = ⚡ جروك + المفتاح موجود) */
     private fun groqTxOn(): Boolean = try { Cfg.groqTx() } catch (_: Throwable) { false }
 
+    /** (v1371 — بطلب علي) سطر «مين شغّال»: في التفريغ بيذكر المفرّغ الحقيقي (جروك/وشبر/جيميناي) بعدّاد مفاتيحه بدل «جيميناي — 6 مفتاح» على طول */
+    private fun whoLine(): String {
+        if (!transOnly) return ExtTranslate.setupLine()
+        if (groqTxOn()) return "المفرّغ: ⚡ جروك — مفتاح واحد (" + Cfg.str("groq_model", "whisper-large-v3-turbo") + ")"
+        return if (Offline.on()) "المفرّغ: 🎙 وشبر على الجهاز" else "المفرّغ: 🔑 جيميناي — " + (Cfg.keys("keys").size + Cfg.keys("extra").size) + " مفتاح"
+    }
+
     /** (v1369 — بطلب علي) تفريغ باتش واحد بـ Groq — نفس عقد Offline.transcribe بالظبط: Api.Result بـJSON التفريغ، واللغة المكتشفة بتتسجّل. بيرمي IOException/Unsupported عند الفشل (لوب المحاولات العادي بيتصرف) */
     private fun groqResult(bytes: ByteArray, durSec: Double): Api.Result {
         val key = Cfg.str("groq_key", "").trim()
@@ -2006,7 +2013,7 @@ class Engine(
         val lang = try { Offline.lang() } catch (_: Throwable) { "" }   // لغة الكلام اليدوية (لو متحددة) بتتبعت لـ Groq، غير كده بيكتشف لوحده
         val wav = bytes.size > 4 && bytes[0] == 'R'.toByte() && bytes[1] == 'I'.toByte() && bytes[2] == 'F'.toByte() && bytes[3] == 'F'.toByte()   // RIFF
         val (dl, segs) = GhAudio.groqTranscribeAudio(key, model, lang, if (wav) "chunk.wav" else "chunk.m4a", if (wav) "audio/wav" else "audio/mp4", bytes) { host.log(it) }
-        groqRan.set(true); groqLang.set(dl)
+        groqRan.set(true); groqLang.set(dl); host.log("⚡ Groq (" + model + "): رجّع " + segs.size + " مقطع" + (if (dl.isNotEmpty()) " · اللغة: " + dl else ""))   // (v1371) إثبات واضح إن Groq هو اللي فرّغ
         val out = JSONArray()
         for (g in segs) {
             val t = g.third.trim()
