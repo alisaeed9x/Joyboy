@@ -272,7 +272,8 @@ This is a standalone audio segment; timestamps start at 0.0 relative to the begi
 - Keep proper names, drug names, medical and scientific terms exactly as spoken, spelled correctly.
 - Write numbers, dates and units the way they are spoken, in the script and punctuation of the spoken language. Mark a stutter or cut-off word once, never repeat it as a loop.
 - Do not write sound descriptions (music, applause, laughter) as text, and no stock hallucinations (thanks for watching, subscribe) unless truly spoken.
-"""
+- 🔴 Write the words in the everyday spoken register exactly as said. If the speech is Arabic, write the natural colloquial Arabic people actually speak today — never classical or old-fashioned bookish phrasing, and never "correct" the speaker into formal written Arabic.
+"""   // (v1376 — بطلب علي) سطر الأسلوب العامي — نفس قاعدة برومبت جروك v1375
 
     /** (v425) إدخالات جانبية بتظهر فوق الصورة: كلام الأجهزة/الخلفية + شرح المصطلحات + قصة أسماء الأفلام + التلميحات. بتطلع من الترانسكريبشن نفسه والترجمة بتحافظ عليها فوق. */
     internal const val ANNOTATE_EN = """

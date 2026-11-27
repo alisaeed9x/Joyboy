@@ -1305,7 +1305,7 @@ class Engine(
         val ki = k
         Thread {
             try {
-                val p = prepare(ki)
+                val p = prepare(ki, caller = "تجهيز مسبق")
                 if (p != null && running && !isClosed && groqTxOn() && ki !in inflight && !isDone(ki, d)) prePrepped[ki] = p
             } catch (e: Throwable) { try { LogStore.err("Engine:preprep", e) } catch (_: Throwable) {} }
             finally { prePrepping.remove(ki); try { host.changed() } catch (_: Throwable) {} }
@@ -1325,8 +1325,9 @@ class Engine(
                 try {
                     var p: Prep? = prep0
                     val tPrep0 = System.currentTimeMillis()   // (v1031 — م0) توقيت فك/تجهيز الصوت لكل باتش
-                    val ok = if (prep0 != null) { preps[i] = prep0; true } else guard(i) { val got = prepare(i, force); p = got; if (got != null) preps[i] = got }
+                    val ok = if (prep0 != null) { preps[i] = prep0; true } else guard(i) { val got = prepare(i, force, "توزيع"); p = got; if (got != null) preps[i] = got }
                     if (prep0 == null) LogStore.add("⏱ [مشغّل-توقيت] باتش ${i + 1}: فك+تجهيز الصوت " + (System.currentTimeMillis() - tPrep0) + "ms")
+                    if (prep0 == null && p == null && prepBusy.contains(i)) nap(800)   // (v1376) الباتش بيتفك في خيط التجهيز المسبق — مهلة بدل ما اللوب يلف يبعته كل ~150ms (سبام «فك+تجهيز 1ms» في اللوج)
                     if (ok) {
                         val pp = p
                         if (pp == null) failed.remove(i)
@@ -1371,7 +1372,10 @@ class Engine(
         for (i in cand) {
             if (!running) break
             gapPass[i] = (gapPass[i] ?: 0) + 1
-            try { translateChunk(i); failed.remove(i); host.log("✅ المقطع ${i + 1} اتترجم في إعادة المحاولة") }
+            try {
+                if (translateChunk(i)) { failed.remove(i); host.log("✅ المقطع ${i + 1} اتترجم في إعادة المحاولة") }
+                else host.log("⏳ المقطع ${i + 1}: صوته بيتفك في خيط تاني — الإعادة هتتجرّب اللفة الجاية")   // (v1376) مفيش «✅ اتترجم» كدابة والفشل بيفضل متسجل
+            }
             catch (e: Unsupported) { fatal = e.message; host.log("⛔ ${e.message}"); running = false; break }
             catch (e: Exception) { host.log("⚠ المقطع ${i + 1} لسه فاشل: " + (e.message ?: e.toString()).take(120)) }
         }
@@ -1383,12 +1387,12 @@ class Engine(
 
     private class Prep(val w: WavChunk, val rawStart: Double, val rawEnd: Double)
 
-    private fun translateChunk(i: Int) {
-        val pr = prepare(i) ?: return
+    private fun translateChunk(i: Int): Boolean {
+        val pr = prepare(i, caller = "ثغرة") ?: return !prepBusy.contains(i)   // (v1376) فكّ مشغول في خيط تاني ≠ اتفرّغ ولا فشل — ميتحسبش نجاح
         if (!firstReqLogged && engineStartMs > 0) { firstReqLogged = true; host.log("⏱ أول طلب جيميناي اتبعت بعد ${System.currentTimeMillis() - engineStartMs}ms من ضغطة الزرار") }   // (v1354)
         send(i, pr)
+        return true
     }
-
     /**
      * (v1065) خطوات الباتش الأول في الوضع السريع: 10ث ← 20ث ← 30ث ← الباقي. أول خطوة بتبدأ من مكان التشغيل (مش من أول الباتش)،
      * وبعد ما توصل لآخر الباتش بترجع تغطّي الجزء اللي قبل مكان التشغيل. الباتش بيفضل «مش مخلّص» لحد ما المجالات تغطّيه كله،
@@ -1415,14 +1419,15 @@ class Engine(
     /** يفك الصوت (ويقصّر المقطع لأقرب لحظة صمت). null = مفيش حاجة تتبعت (صامت / مفيش صوت). */
     /** (v1373 — بطلب علي) فكّ الصوت بيحصل مرة واحدة بس للباتش: لو خيط تاني بيفك نفس الباتش في نفس اللحظة، النداء التاني بيتخطى وصاحبه بيكمّل شغله (الفك المزدوج كان بيبوّظ صوت أول باتش أحيانًا). force=true بيتجاوز المنع عمدًا (إعادة المحاولة) */
     private val prepJobs = ConcurrentHashMap.newKeySet<Int>()
-    private fun prepare(i: Int, force: Boolean = false): Prep? {
+    private val prepBusy = ConcurrentHashMap.newKeySet<Int>()   // (v1376) null بسبب «خيط تاني بيفك» ≠ null بسبب «مفيش صوت» — الاتنين كانوا بيرجعوا null فالنداءات كانت بتفسرهم غلط
+    private fun prepare(i: Int, force: Boolean = false, caller: String = "?"): Prep? {
         if (force) return prepareInner(i, force)
-        if (!prepJobs.add(i)) {
-            val caller = Throwable().stackTrace.getOrNull(2)?.methodName ?: "?"
+        if (!prepJobs.add(i)) {   // (v1376) اسم النداء بيتمرر ثابت — stackTrace methodName بيتعمّى في الريليز ($r8$lambda$…) وبقى عديم الفايدة في اللوج
+            prepBusy.add(i)
             host.log("🔊 باتش ${i + 1}: فكّ صوته شغّال بالفعل في خيط تاني (النداء من $caller) — اتخطّى الفكّ المزدوج")
             return null
         }
-        try { return prepareInner(i, force) } finally { prepJobs.remove(i) }
+        try { return prepareInner(i, force).also { prepBusy.remove(i) } } finally { prepJobs.remove(i) }
     }
     private fun prepareInner(i: Int, force: Boolean = false): Prep? {
         claimed.remove(i)   // محاولة جديدة للباتش ده من الأول
@@ -1449,6 +1454,7 @@ class Engine(
         var retry = 0
         while (w == null && running && retry++ < maxTry) { host.log("… المقطع ${i + 1}: الصوت لسه ما طلعش — محاولة ${retry + 1}/${maxTry + 1}"); nap(waitMs); w = s0.wav(start, rawEnd) }
         if (w == null) {
+            if (isClosed || !running) return null   // (v1376 — بطلب علي: «جروك أول باتش مجاش كامل») الإلغاء أثناء محاولات فك الصوت كان بيدخل فرع «مفيش صوت» ويعلّم المجال done ويحفظه نهائي — أول خطوات الباتش كانت بتضيع
             host.log("… المقطع ${i + 1} مفيهوش صوت")
             // لو ده مش آخر ذيل الفيديو يبقى غالبًا فشل فك مش صمت حقيقي: نعلّمه ⚠ عشان يتعاد بدل ما يبان ✅ فاضي
             if (d <= 0 || (rawEnd - rawStart > 5.0 && rawStart < d - 3.0)) { incomplete.add(i); host.log("⚠ باتش ${i + 1}: مقدرتش أفك صوته — أعده من علامة التحذير") }
@@ -2065,7 +2071,7 @@ class Engine(
             var tagged = Subs.splitAll(raw).map { Subs.capPace(it).copy(chunk = i) }
             synchronized(lock) {
                 tagged = Subs.dropOverlapZone(tagged, subs.filter { it.chunk != i }, p.rawStart)
-                val keep = subs.filter { !(it.chunk == i && it.start >= p.rawStart - 0.5 && it.start < p.rawEnd + 0.5) && !(it.chunk == -1 && it.start >= p.rawStart && it.start < p.rawEnd) }
+                val keep = subs.filter { !(it.chunk == i && it.start >= p.rawStart - 0.5 && it.start < p.rawEnd + 0.5) && !(it.chunk == -1 && it.start >= p.rawStart && it.start < p.rawEnd) && tagged.none { n -> Subs.straddlerCovers(n, it, p.rawStart) } }   // (v1376) الممتدة عبر الحد بتشيل المقطوعة القديمة
                 subs = (keep + tagged).sortedBy { it.start }
             }
             previewChunks.add(i)
@@ -2079,7 +2085,7 @@ class Engine(
             var tagged = Subs.splitAll(fresh.map { it.copy(translated = it.original, pivot = "", src = src) }).map { Subs.capPace(it).copy(chunk = i) }   // (v1372) الجمل المعروضة كتفريغ بتحمل مصدرها للتلوين
             synchronized(lock) {
                 tagged = Subs.dropOverlapZone(tagged, subs.filter { it.chunk != i }, p.rawStart)
-                val keep = subs.filter { it.chunk != i && !(it.chunk == -1 && it.start >= p.rawStart && it.start < p.rawEnd) && !Subs.inMyZone(it, tagged, i, p.rawEnd) }
+                val keep = subs.filter { it.chunk != i && !(it.chunk == -1 && it.start >= p.rawStart && it.start < p.rawEnd) && !Subs.inMyZone(it, tagged, i, p.rawEnd) && tagged.none { n -> Subs.straddlerCovers(n, it, p.rawStart) } }   // (v1376) الممتدة عبر الحد بتشيل المقطوعة القديمة
                 subs = (keep + tagged).sortedBy { it.start }
             }
             previewChunks.add(i)
@@ -2870,7 +2876,7 @@ class Engine(
         val partialWin = rampOn && i == rampChunk && (rawStart > cStart(i) + 0.05 || rawEnd < cEnd(i, currentDur()) - 0.05)
         synchronized(lock) {
             tagged = Subs.dropOverlapZone(tagged, subs.filter { it.chunk != i }, rawStart)
-            val keep = subs.filter { (it.chunk != i || (partialWin && (it.start < rawStart - 0.5 || it.start >= rawEnd + 0.5))) && !(it.chunk == -1 && it.start >= rawStart && it.start < rawEnd) && !Subs.inMyZone(it, tagged, i, rawEnd) }
+            val keep = subs.filter { (it.chunk != i || (partialWin && (it.start < rawStart - 0.5 || it.start >= rawEnd + 0.5))) && !(it.chunk == -1 && it.start >= rawStart && it.start < rawEnd) && !Subs.inMyZone(it, tagged, i, rawEnd) && tagged.none { n -> Subs.straddlerCovers(n, it, rawStart) } }   // (v1376) الممتدة عبر الحد بتشيل المقطوعة القديمة
             subs = Subs.merge(Subs.dedup(keep + tagged)).sortedBy { it.start }
             Subs.refreshMain(subs)
         }

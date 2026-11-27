@@ -918,7 +918,7 @@ open class PlayerActivity : Activity(), Host {
     // (v1119) عدّاد الجمل المترجمة/المفرّغة — نفس قيمة «جمل_المحرك» في سطر التشخيص
     private fun subCountNow(): Int = try { if (::engine.isInitialized) engine.subs.size else 0 } catch (_: Throwable) { 0 }
     // (v1126) نقط حالة المفاتيح (🔵🟢🔴🟠) بره اللوج: جنب عدّاد الجمل في زرار/شارة الترجمة
-    private fun dotsNow(): String = try { val d = fastTr?.keyDots() ?: engine.keyDots(); if (d.isBlank()) "" else " $d" } catch (_: Throwable) { "" }
+    private fun dotsNow(): String = try { val d = if (trIsTx() && Cfg.groqTx() && ::engine.isInitialized) engine.keyDots() else fastTr?.keyDots() ?: engine.keyDots(); if (d.isBlank()) "" else " $d" } catch (_: Throwable) { "" }   // (v1376) في تفريغ جروك: نقطة جروك الحقيقية — fastTr الباقي من جلسة متوازنة قديمة كان بيسرّب نقط مسبح جيميناي
     private var lastDotsShown = ""
     // (v1126) كشف النت البطيء: باتشات متبعتة ومفيش ولا جملة/نسبة اتحرّكت بقالها 35ث ← إشعار (مرة/90ث) وسطر في اللوج، وإشعار تاني لما يرجع يتحرّك
     private var progKey = ""; private var progAt = 0L; private var stallNotedAt = 0L; private var stallActive = false
@@ -2969,7 +2969,7 @@ open class PlayerActivity : Activity(), Host {
                 if (!started) {
                     val tx = trIsTx()
                     val soft = hasSoftSubNow()
-                    chipB.text = if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else if (soft) "💬 سوفت سب · " + modeShort() + " ▾" else (if (tx) "✍ تفريغ · " else "▶ ترجم · ") + modeShort() + " ▾"
+                    chipB.text = if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else if (soft) "💬 سوفت سب · " + modeShort() + " ▾" else (if (tx) "" else "▶ ترجم · ") + modeShort() + " ▾"   // (v1376) modeShort في التفريغ بيبدأ بـ«✍ تفريغ» أصلًا — كانت بتطلع «تفريغ · تفريغ»
                     val aur = Design.isNew() && !soft && !tx
                     chipB.background = if (aur) auroraPill(12) else ui.box(if (soft) 0xFF2E7D32.toInt() else if (tx) 0xFF2A8C8C.toInt() else 0xFFE53935.toInt(), 0x33FFFFFF, 12)
                     if (Design.isNew()) chipB.setTextColor(if (aur && !ui.th.isLight) 0xFF0B0A18.toInt() else Color.WHITE)
@@ -2996,7 +2996,7 @@ open class PlayerActivity : Activity(), Host {
                 tr.visibility = View.VISIBLE; gearB.visibility = View.VISIBLE   // (v1097)
                 val tx = trIsTx()
                 val soft = hasSoftSubNow()
-                LoadUi.set(tr, if (!engineStarted) (if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else if (soft) "💬 سوفت سب · " + modeShort() + " ▾" else (if (tx) "✍ تفريغ · " else "▶ ترجم · ") + modeShort() + " ▾") else (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + dotsNow() + " ▾")
+                LoadUi.set(tr, if (!engineStarted) (if (sfBusy.isNotEmpty()) sfChip() else if (sfLive.isNotEmpty()) "💬 ترجمة لحظية ▾" else if (soft) "💬 سوفت سب · " + modeShort() + " ▾" else (if (tx) "" else "▶ ترجم · ") + modeShort() + " ▾") else (Offline.liveShort()?.let { "$it · " } ?: modeChipTag()) + (if (paused) "⏸ " else if (trPct >= 100) "✅ " else "⏳ ") + trPct + "%" + dotsNow() + " ▾")   // (v1376) نفس إصلاح تكرار «تفريغ · تفريغ»
                 val aur2 = Design.isNew() && !engineStarted && !soft && !tx
                 tr.background = if (aur2) auroraPill(10) else ui.box(if (!engineStarted) (if (soft) 0xFF2E7D32.toInt() else if (tx) 0xFF2A8C8C.toInt() else 0xFFE53935.toInt()) else (if (paused) 0xFF8D6E00.toInt() else if (trPct >= 100) 0xFF2E7D32.toInt() else 0xFF2A8C8C.toInt()), 0x33FFFFFF, 10)
                 if (Design.isNew()) tr.setTextColor(if (aur2 && !ui.th.isLight) 0xFF0B0A18.toInt() else Color.WHITE)
@@ -3523,10 +3523,11 @@ open class PlayerActivity : Activity(), Host {
         val pos0 = try { player.currentPosition } catch (_: Throwable) { 0L }
         val hasSaved = try { ::engine.isInitialized && engine.subs.isNotEmpty() } catch (_: Throwable) { false }   // الترجمة الناقصة/الكاملة ليها دايالوجها الخاص
         if (pos0 > 10_000L && !hasSaved) {
-            shDialog(300) { col, close ->
+            shDialog(300) { col, close ->   // (v1376 — بطلب علي) توحيد شيت بدء الترجمة على ستايل شيت الإعادة: قسم + وصف تحت كل اختيار
                 col.addView(shHead("▶ بدء الترجمة", "واقف عند " + fmtMs(pos0) + " — تبدأ منين؟"))
-                col.addView(shRow("📍 من مكان التشغيل (" + fmtMs(pos0) + ")") { close(); h.post { goTr(true) } })
-                col.addView(shRow("⏮ من أول الفيديو") { close(); h.post { goTr(false) } })
+                col.addView(shSection("تبدأ من فين؟"))
+                col.addView(shRow("📍 من مكان التشغيل (" + fmtMs(pos0) + ")", "يكمّل من اللحظة دي") { close(); h.post { goTr(true) } })
+                col.addView(shRow("⏮ من أول الفيديو", "من الصفر خالص") { close(); h.post { goTr(false) } })
             }
         } else goTr(false)
     }
@@ -3538,7 +3539,7 @@ open class PlayerActivity : Activity(), Host {
             val paused = ::engine.isInitialized && engine.userPaused
             col.addView(shHead("🌐 الترجمة", if (started) (trPct.toString() + "% · " + subCountNow() + " جملة") else "اختار وهيبدأ على طول"))
             col.addView(shRow("▶ ترجم") { close(); h.post { trMainClick(anchor, true) } })
-            col.addView(shRow("⏯ كمّل") { close(); h.post {
+            col.addView(shRow("⏯ كمّل من حيث وقفنا") { close(); h.post {
                 if (trComplete()) say("✅ الترجمة كاملة 100%")
                 else if (started && paused) beginTranslate()
                 else if (started) say("⏳ الترجمة شغّالة بالفعل")
@@ -3546,12 +3547,8 @@ open class PlayerActivity : Activity(), Host {
             col.addView(shRow("🔁 من الأول") { close(); h.post {
                 if (::engine.isInitialized) { val k = redoKeep; player.seekTo(0); redoGo("🔄 بترجم من الأول…") { syncTxFlag("إعادة من الأول"); engine.redoAll(k) } }
                 else say("المحرك لسه بيحمّل — جرّب كمان لحظة") } })
-            col.addView(shRow("🔄 إعادة الترجمة", "من الباتش الحالي وبعده") { close(); h.post {
-                if (::engine.isInitialized) {
-                    val k = redoKeep
-                    val curC = try { engine.chunkOfSec(player.currentPosition / 1000.0) } catch (_: Exception) { 0 }
-                    redoGo("🔄 بترجم من باتش ${curC + 1} وبعده…") { syncTxFlag("إعادة من باتش"); engine.redoFrom(curC, k) }
-                } else say("المحرك لسه بيحمّل — جرّب كمان لحظة") } })
+            col.addView(shRow("✍ تفريغ بس", if (curModeKey().let { it == "txg" || it == "txw" }) "✓ الحالي" else "من غير ترجمة") { close(); h.post { if (TrProfile.engine() == "off") askVideoLang { offlineQuick(true) } else startGeminiTranscribe() } })   // (v1376 — بطلب علي) تفريغ بس إجراء مباشر في قايمة ترجم
+            col.addView(shRow("🔁 إعادة الترجمة", "اختار تعيد من فين", true) { close(); h.post { if (::engine.isInitialized) redoSheet(anchor) else say("المحرك لسه بيحمّل — جرّب كمان لحظة") } })   // (v1376 — بطلب علي) بتفتح شيت الإعادة الجديد — المسار القديم الداخلي اتشال
             if (started) col.addView(shDuo(
                 shBtn(if (paused) "▶ كمّل" else "⏸ إيقاف مؤقت", if (paused) SH_BLUE else SH_GRAY) { close(); if (paused) beginTranslate() else pauseTranslate() },
                 shBtn("⏹ إلغاء", SH_RED) { close(); h.post { cancelDialog() } }))
@@ -3562,7 +3559,7 @@ open class PlayerActivity : Activity(), Host {
                 h.post { shConfirm("🔀 تغيير نظام الترجمة", "هوقف الترجمة الحالية (اللي اتترجم محفوظ) وتختار نظام تاني من القايمة.",
                     listOf(ShBtn("أوقف واختار", SH_BLUE) { cancelTranslate { trOptionsDialog(anchor) } }, ShBtn("لأ، كمّل", SH_GRAY) { })) }
             })
-            if (!started) trEngineRows(col, { close() }) { trOptionsDialog(anchor) }   // (v1326) شاشة ترجمة واحدة: اختيار النظام جوه نفس الدايلوج
+            // (v1376 — بطلب علي) صفوف اختيار النظام (سلايدر/شيبس المحرك/الأوفلاين) اتشالت من قايمة ترجم — مكانها ⚙ إعدادات الترجمة
             col.addView(shRow("⚙ إعدادات الترجمة", "", true) { close(); h.post { trSettings(anchor) } })   // (v1326)
             col.addView(shRow("إغلاق") { close() })
         }
@@ -3576,6 +3573,19 @@ open class PlayerActivity : Activity(), Host {
             return
         }
         run()
+    }
+
+    /** (v1376 — بطلب علي) اختيار لغة الكلام للويشبر من جوه شيت إعدادات الترجمة (كانت في تبويب الصوت في الإعدادات العامة بس) */
+    private fun pickWhisperLang(onDone: () -> Unit) {
+        shDialog(320) { col, close ->
+            col.addView(shHead("🗣 لغة الكلام", "لو عارفها بتقلّل أخطاء الاكتشاف التلقائي"))
+            val cur = try { Offline.lang() } catch (_: Throwable) { "" }
+            for (ix in Offline.langLabels.indices) {
+                val lid = Offline.langIds[ix]
+                col.addView(shRow(Offline.langLabels[ix], if (lid == cur) "✓ الحالية" else "") { Cfg.put("stt_lang", lid); TrWizard.syncSaved("stt_lang", lid); close(); onDone() })
+            }
+            col.addView(shRow("إغلاق") { close(); onDone() })
+        }
     }
 
     private fun trSettings(anchor: View) {
@@ -3722,6 +3732,7 @@ open class PlayerActivity : Activity(), Host {
                     val wm = Offline.model(); val wdl = try { Offline.downloaded() } catch (_: Throwable) { false }
                     col.addView(shNote("الموديل: " + wm.label + " (~" + wm.approxMb + "MB) — " + (if (wdl) "✅ متنزّل" else "❌ مش متنزّل"), !wdl))
                     col.addView(shRow(if (wdl) "🎙 تغيير موديل الويشبر" else "⬇ تحميل موديل الويشبر", "اختار الموديل الأول (tiny/base/small/medium/turbo)، بعدين نزّله بروجرس أو في الخلفية") { close(); h.post { whisperModelPick { h.post { if (!wdl) beginTranslate() } } } })   // (v1341) اختيار الموديل قبل التحميل + الدايلوج فوق الشيت (بطلب علي)
+                    col.addView(shRow("🗣 لغة الكلام", try { TrWizard.langLabel(Offline.lang()) } catch (_: Throwable) { "تلقائي" }) { close(); h.post { pickWhisperLang { h.post { trSettings(anchor) } } } })   // (v1376 — بطلب علي) خيارات الويشبر تظهر تحت شيبها مباشرة: اللغة جنب الموديل
                 } else if (sttSel == "groq") {
                     val gk = Cfg.str("groq_key", "").isNotBlank()
                     col.addView(shNote("الموديل: " + Cfg.str("groq_model", "whisper-large-v3-turbo").ifBlank { "whisper-large-v3-turbo" } + " — المفتاح: " + (if (gk) "✅ محفوظ" else "❌ ناقص — ضيفه من الإعدادات ← 🔑 المفاتيح"), !gk))
@@ -4578,7 +4589,7 @@ open class PlayerActivity : Activity(), Host {
         diagAt = now; diagN++
         val txtOff = try { player.exo()?.trackSelectionParameters?.disabledTrackTypes?.contains(C.TRACK_TYPE_TEXT) == true } catch (_: Throwable) { false }
         // (v1116) FIX 1: النقط من المحرك الشغّال فعلًا — المتوازن (FastTr) ليه حوض مفاتيح خاص بيه، والمحرك القديم حوضه في Engine
-        val dots = try { fastTr?.keyDots() ?: engine.keyDots() } catch (_: Throwable) { "" }
+        val dots = try { if (trIsTx() && Cfg.groqTx()) engine.keyDots() else fastTr?.keyDots() ?: engine.keyDots() } catch (_: Throwable) { "" }   // (v1376) نفس تفضيل نقطة جروك في التشخيص
         diagLog("🔬 عرض @" + fmtMs(cur) + " · حلقة_وقعت=" + bad + "(" + errN + ") · cc=" + ccOn + " · أصلية=" + nativeCue.length + "ح · مسارات_نص=" + sfNativeCountNow() + " · نص_مقفول=" + txtOff +
             " · hide=" + sfHideNative + " · ترجمة_شغالة=" + engineStarted + " · جمل_المحرك=" + engine.subs.size + " · نوع=" + (if (trIsTx()) "تفريغ" else "ترجمة") + "/علم=" + engine.transOnly + " · " + SongHint.state() + " · مفاتيح=" + dots + " · ظاهر=" + (sub.visibility == View.VISIBLE) + "/" + sub.height + " · curIdx=" + curIdx)
     }

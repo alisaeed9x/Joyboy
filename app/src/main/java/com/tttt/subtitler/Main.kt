@@ -687,14 +687,14 @@ class MainActivity : Activity() {
                 ui.section("🔑 مفتاح الوضع البصري فقط", true,
                     ui.noHint(), visKeysUi)) } }),   // (v1014) مفتاح الوضع البصري مع باقي المفاتيح
             // ===== 🎙 التفريغ والصوت: موديلات الجهاز + إعدادات الصوت =====
-            tab("audio", { listOf<View>(
+            tab("audio", { listOfNotNull<View>(
                 ui.noHint(),
                 ui.section("🔊 الصوت", true, atrack, audioPresetTitle, audioPresetChips, audioPresetDesc, *fl("soundtags", "hitiming")),
                 ModelsUi.section(this, ui, th),
                 ui.section("🔀 محرك الترجمة والتفريغ", true,
                     ui.text("التفريغ (صوت ← نص):", 12f, th.muted),
                     ui.chips(listOf("☁ جيميناي", "🎙 ويشبر (على الجهاز)"), { if (Cfg.bool("stt_offline", false)) "🎙 ويشبر (على الجهاز)" else "☁ جيميناي" }) { n ->
-                        if (n.startsWith("🎙")) { Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper"); Cfg.put("tr_engine", "off"); if (!Offline.downloaded()) Notice.show(this, "🎙 موديل الويشبر مش متنزّل — نزّله من «📴 التفريغ على الجهاز» فوق", 3200L) }   // (v1375 — بطلب علي) مزامنة tr_engine — التحويل الصامت لجيميناي
+                        if (n.startsWith("🎙")) { Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper"); Cfg.put("tr_engine", "off"); if (!Offline.downloaded()) Notice.show(this, "🎙 موديل الويشبر مش متنزّل — نزّله من خيارات الويشبر تحت", 3200L) }   // (v1375 — بطلب علي) مزامنة tr_engine — التحويل الصامت لجيميناي
                         else { Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "gemini"); Cfg.put("tr_engine", "gem") }
                         recreate()
                     },
@@ -708,11 +708,12 @@ class MainActivity : Activity() {
                         recreate()
                     },
                     ui.noHint()),
-                ui.section("📴 التفريغ على الجهاز (من غير مفتاح)", true,
+                // (v1376 — بطلب علي: «لما نختار الويشبر تظهر تحتها خياراتها») قسم الويشبر تحت اختيار المحرك مباشرة، وبيظهر بس لو الويشبر مختار
+                if (Cfg.bool("stt_offline", false)) ui.section("📴 خيارات الويشبر — التفريغ على الجهاز (من غير مفتاح)", true,
                     ui.noHint(),
                     ui.text("حجم موديل Whisper:", 12f, th.muted), offModelChips, ui.text("⚡ خانات التفريغ المتوازي:", 12f, th.muted), parChips, parNote, offStatus, offDlBtn, offProg,
                     ui.text("لغة الكلام (لو عارفها بتقلّل أخطاء الاكتشاف التلقائي):", 12f, th.muted), offLangChips,
-                    ui.noHint()),
+                    ui.noHint()) else null,
                 ) }),
             // ===== 🤖 الموديل والأداء =====
             tab("perf", { listOf<View>(

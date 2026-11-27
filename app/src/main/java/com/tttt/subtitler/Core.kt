@@ -1420,6 +1420,13 @@ object Subs {
             else existing.none { o -> !o.isSound && coversMost(n, o) }
         }
     }
+    /** (v1376) جملة جديدة ركبت حد البداية (بدأت قبل rawStart بس منتصفها بعده) وغطّت جملة قديمة نصها بادئة من نصها: القديمة نسخة مقطوعة منها عند حد الباتش (زي «لو مليت من نفسك» المقطوعة جنب الكاملة) — القديمة بتتشال بدل ما يظهروا الاتنين متداخلين */
+    fun straddlerCovers(n: Sub, o: Sub, rawStart: Double): Boolean {
+        if (n.isSound || o.isSound || n.start >= rawStart - 0.05 || (n.start + n.end) / 2 < rawStart) return false
+        if (!coversMost(n, o)) return false
+        val a = norm(n.original); val b = norm(o.original)
+        return b.length >= 6 && a.startsWith(b) || a.length >= 6 && b.startsWith(a)
+    }
     /** عكس اللي فوق: مقطع لاحق خلّص قبل السابق، فجمله اللي في ذيل المقطع الحالي (قبل rawEnd) وفوق جمل جديدة بتتشال */
     fun inMyZone(o: Sub, mine: List<Sub>, i: Int, rawEnd: Double): Boolean =
         o.chunk > i && !o.isSound && (o.start + o.end) / 2 < rawEnd && mine.any { n -> !n.isSound && coversMost(n, o) }
