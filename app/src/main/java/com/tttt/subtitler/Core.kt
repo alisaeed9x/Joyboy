@@ -271,6 +271,9 @@ object Cfg {
         return Triple(all.take(nt), all.drop(nt).take(nr), all.drop(nt + nr))
     }
 
+    /** (v1369 — بطلب علي) تفريغ Groq سحابي مختار وشغّال؟ (المفتاح لازم يكون موجود) */
+    fun groqTx(): Boolean = str("mt_tr_mode", "") == "groq" && str("groq_key", "").isNotBlank()
+
     fun snapshot(): Conf {
         val (main0, rf0, bk0) = roles()
         // (v369) وضع أومني روت: مفاتيح جيميناي مابتتلمسش خالص (المحرك يشتغل بمفتاح محلي وهمي، والطلبات كلها بأومني روت)
@@ -291,7 +294,7 @@ object Cfg {
             emptyList() /* جدول الشخصيات اليدوي اتشال — الشخصيات بتتحلل تلقائيًا */, str("gloss"),
             true, true, true,   // (v229) تحليل الشخصيات · تصحيح الضمائر · ترجمة القالب: أوتوماتيك دايمًا (اتشال مفتاحهم من الإعدادات)
             1 /* (v141) طلب واحد لكل مفتاح */, bool("hitiming", false), true /* (v229) سد الفجوات أوتوماتيك دايمًا */,
-            bool("soundtags", true), if (strict || srvOnly) emptyList() else keys("viskeys"), bool("prefine", true), rf, if (Offline.configured()) KeyMode.TRANSCRIBE_ALL else KeyMode.SPLIT_A   // جيميناي = ٧٥٪ نسخ + ٢٥٪ ترجمة سياقية (بطلب صاحب التطبيق) · (v253) أوفلاين = وضع 4
+            bool("soundtags", true), if (strict || srvOnly) emptyList() else keys("viskeys"), bool("prefine", true), rf, if (Offline.configured() || groqTx()) KeyMode.TRANSCRIBE_ALL else KeyMode.SPLIT_A   // جيميناي = ٧٥٪ نسخ + ٢٥٪ ترجمة سياقية (بطلب صاحب التطبيق) · (v253) أوفلاين = وضع 4 · (v1369) Groq = وضع 4 زي الويشبر
         )
     }
 }

@@ -163,8 +163,8 @@ object TrWizard {
     fun convLabel(id: String): String = if (id.isBlank()) "جيميناي" else (ExtLlm.byId(id)?.label ?: id)
     /** «google» = بعد التفريغ الأوفلاين النص بيتترجم بجوجل (من غير API)، غير كده جيميناي بالسياق */
     fun method(): String = if (Cfg.str("tr_method", "gemini") == "google") "google" else "gemini"
-    /** المحرك بيسأل: الترجمة بجوجل دلوقتي؟ (لازم الأوفلاين شغّال فعلًا، لأن جوجل بيترجم النص المفرّغ بس) */
-    fun googleOn(): Boolean = method() == "google" && Offline.configured()
+    /** المحرك بيسأل: الترجمة بجوجل دلوقتي؟ (لازم تفريغ محلي/سحابي منفصل شغّال فعلًا — ويشبر أو Groq — لأن جوجل بيترجم النص المفرّغ بس) */
+    fun googleOn(): Boolean = method() == "google" && (Offline.configured() || Cfg.groqTx())   // (v1369) Groq زي الويشبر (بطلب علي)
     /** كود لغة المصدر لجوجل من لغة الأوفلاين */
     fun googleLang(): String = when (val l = Offline.lang()) { "" -> "auto"; "zh" -> "zh-CN"; else -> l }
 

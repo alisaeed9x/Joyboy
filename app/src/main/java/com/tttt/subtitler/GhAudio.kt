@@ -36,102 +36,57 @@ object GhAudio {
         } catch (e: Throwable) { LogStore.err("GhAudio:pick", e); Notice.show(act, "⚠ ما قدرتش أفتح اختيار الفيديو", 2400L) }
     }
 
-    // ===== (v1366 — بطلب علي) مسار تجريبي: تفريغ Groq Whisper (الفيديو ← باتشات صوت 10 دقايق ← Groq ← ملف SRT) — جوه المشغّل (v1367) وبعرض لحظي على الفيديو (v1368)، من غير ما يلمس مسار Gemini =====
+    // ===== (v1369 — بطلب علي) Groq Whisper: مساعدات الـAPI المشتركة — المحرك بيفرّغ بيها باتش-باتش (بلوك التفريغ ⚡ جروك) =====
     private const val GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
-    private const val GROQ_CHUNK_SEC = 600.0   // 10 دقايق ≈ 2.5MB عند 32kbps — بعيد عن حد 25MB وحدود الكوتا المجانية
+    private const val GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models"
 
-    /** (v1368 — بطلب علي) هوك لحظي: بعد كل باتش متفرّغ يتبعت (بدايته بالثواني + جمله بتوقيتاتها) للمشغّل يعرضها فورًا على الفيديو */
-    @Volatile var groqChunkHook: ((Double, List<Triple<Double, Double, String>>) -> Unit)? = null
-
-    /** (v1367 — بطلب علي) تفريغ Groq من جوه المشغّل: الفيديو الحالي على طول من غير اختيار ملف */
-    fun startGroqCurrent(act: Activity, uri: Uri?, url: String?, hdr: Map<String, String>, title: String, durMs: Long) {
-        if (uri == null && url == null) { Notice.show(act, "افتح الفيديو الأول", 2400L); return }
-        startGroq(act, uri, url, hdr, title, durMs)
+    /** فحص مفتاح Groq: بيطلب قائمة الموديلات كتجربة — (شغال؟، رسالة حالة للمستخدم) */
+    fun groqCheckKey(key: String): Pair<Boolean, String> {
+        if (key.isBlank()) return false to "المفتاح فاضي"
+        val c = java.net.URL(GROQ_MODELS_URL).openConnection() as java.net.HttpURLConnection
+        return try {
+            c.requestMethod = "GET"; c.connectTimeout = 15000; c.readTimeout = 20000
+            c.setRequestProperty("Authorization", "Bearer " + key)
+            val code = c.responseCode
+            val txt = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
+            if (code in 200..299) true to "✅ المفتاح شغال"
+            else if (code == 401 || code == 403) false to "❌ المفتاح مرفوض (كود " + code + ")"
+            else false to "⚠ رد غير متوقع (كود " + code + "): " + txt.take(80)
+        } catch (e: Throwable) { false to "⚠ فشل الاتصال: " + (e.message ?: e.javaClass.simpleName).take(80) } finally { c.disconnect() }
     }
 
-    /** (v1367 — بطلب علي) مفتاح Groq بقى في قايمة المشغّل بدل قسم الإعدادات: لصق/تعديل/مسح */
-    fun groqKeyDialog(act: Activity, onSaved: (() -> Unit)? = null) {
-        try {
-            val et = android.widget.EditText(act)
-            et.hint = "gsk_..."
-            et.setText(Cfg.str("groq_key", ""))
-            et.setSelection(et.text.length)
-            GAlert(act).setTitle("🔑 مفتاح Groq API")
-                .setMessage("مجاني من console.groq.com — بيتحفظ على الموبايل بس ومش بيتبعت لأي حد غير Groq")
-                .setView(et)
-                .setPositiveButton("حفظ") { _, _ ->
-                    Cfg.put("groq_key", et.text.toString().trim())
-                    Notice.show(act, "✅ اتحفظ المفتاح", 2200L)
-                    onSaved?.invoke()
-                }
-                .setNeutralButton("مسح") { _, _ -> Cfg.put("groq_key", ""); Notice.show(act, "🗑 اتمسح المفتاح", 2200L) }
-                .setNegativeButton("إلغاء", null)
-                .show()
-        } catch (e: Throwable) { LogStore.err("GhAudio:groqkey", e) }
+    /** موديلات التفريغ المتاحة للمفتاح (اللي id بتاعها فيه whisper)، مرتبة. null = فشل الجلب */
+    fun groqModels(key: String): List<String>? {
+        if (key.isBlank()) return null
+        val c = java.net.URL(GROQ_MODELS_URL).openConnection() as java.net.HttpURLConnection
+        return try {
+            c.requestMethod = "GET"; c.connectTimeout = 15000; c.readTimeout = 25000
+            c.setRequestProperty("Authorization", "Bearer " + key)
+            val code = c.responseCode
+            val txt = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
+            if (code !in 200..299) return null
+            val arr = org.json.JSONObject(txt).optJSONArray("data") ?: return null
+            val out = ArrayList<String>()
+            for (i in 0 until arr.length()) arr.optJSONObject(i)?.optString("id")?.takeIf { it.contains("whisper") }?.let { out.add(it) }
+            out.sort()
+            out
+        } catch (_: Throwable) { null } finally { c.disconnect() }
     }
 
-    private fun startGroq(act: Activity, uri: Uri?, url: String?, hdr: Map<String, String>, title: String, durMs: Long) {
-        if (Cfg.str("groq_key", "").isBlank()) { groqKeyDialog(act) { startGroq(act, uri, url, hdr, title, durMs) }; return }   // (v1367) المفتاح بقى بدايلوج جوه المشغّل
-        if (TaskCenter.items.any { it.kind == "groq" && (it.state == 0 || it.state == 1) }) { Notice.show(act, "⏳ في تفريغ Groq شغّال بالفعل", 2400L); return }
-        LogStore.add("🧪 Groq Whisper: بدأ — " + title)
-        Notice.show(act, "🧪 اتضاف لمركز التحميل — التفريغ التجريبي بـ Groq", 2600L)
-        TaskCenter.add(act, "groq", "🧪 Groq: " + BatchExport.safe(title)) { task -> workGroq(act, uri, url, hdr, title, durMs, task) }
-    }
-
-    private fun workGroq(act: Activity, uri: Uri?, url: String?, hdr: Map<String, String>, title: String, durMs: Long, task: TaskItem) {
-        val key = Cfg.str("groq_key", "").trim()
-        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(java.util.Date())
-        val ascii = title.replace(Regex("[^A-Za-z0-9._-]+"), "_").trim('_').take(30).ifBlank { "video" }
-        val durSec = FullAudio.durationSec(act, uri, url, hdr).let { if (it > 0.0) it else durMs / 1000.0 }
-        if (durSec <= 0.0) throw IOException("مدة الصوت غير معروفة")
-        val chunks = Math.ceil(durSec / GROQ_CHUNK_SEC).toInt().coerceAtLeast(1)
-        val lang = Cfg.str("tr_lang", "auto")
-        val srt = StringBuilder()
-        var idx = 1
-        for (ci in 0 until chunks) {
-            if (task.cancelled) throw TaskCancelled()
-            val from = ci * GROQ_CHUNK_SEC
-            val to = minOf(durSec, from + GROQ_CHUNK_SEC)
-            task.msg = "🎧 بفصل باتش " + (ci + 1) + "/" + chunks + "…"; TaskCenter.changed()
-            val f = FullAudio.extractRange(act, uri, url, hdr, title, from, to) { p ->
-                if (task.cancelled) throw TaskCancelled()
-                task.pct = ((ci * 100 + p * 40 / 100) / chunks).coerceIn(0, 96); TaskCenter.changed()
-            }
-            task.msg = "☁ Groq بيفرّغ باتش " + (ci + 1) + "/" + chunks + "…"; TaskCenter.changed()
-            val segs = groqTranscribe(key, f, lang, task)
-            try { f.delete() } catch (_: Throwable) {}
-            try { groqChunkHook?.invoke(from, segs) } catch (_: Throwable) {}   // (v1368) عرض لحظي في المشغّل جملة-جملة
-            for (sg in segs) {
-                srt.append(idx++).append('\n')
-                srt.append(PlayerLogic.srtTime(((sg.first + from) * 1000).toLong())).append(" --> ").append(PlayerLogic.srtTime(((sg.second + from) * 1000).toLong())).append('\n')
-                srt.append(sg.third).append("\n\n")
-            }
-            task.pct = ((ci * 100 + 96) / chunks).coerceIn(0, 96); TaskCenter.changed()
-        }
-        task.msg = "💾 بحفظ ملف SRT…"; TaskCenter.changed()
-        val sf = File(act.cacheDir, "groq_" + stamp + ".srt")
-        sf.writeText(srt.toString(), Charsets.UTF_8)
-        val where = GhCi.saveToDownloads(act, sf, "joyboy_groq_" + stamp + "_" + ascii + ".srt", "text/plain")
-        task.outPath = where
-        task.msg = "✅ SRT جاهز — محفوظ في التنزيلات"
-        LogStore.add("🧪 Groq Whisper: خلص ← " + where)
-    }
-
-    /** باتش صوت واحد ← Groq Whisper: verbose_json segments. 3 محاولات مع backoff على 429/5xx. */
-    private fun groqTranscribe(key: String, f: File, lang: String, task: TaskItem): List<Triple<Double, Double, String>> {
+    /** تفريغ بايتات صوت بـ Groq Whisper: بيرجّع (اللغة المكتشفة، الجمل [بداية، نهاية، نص] بالثواني من أول المقطع). 3 محاولات مع backoff على 429/5xx. Unsupported = المفتاح مرفوض (مفيش إعادة). */
+    fun groqTranscribeAudio(key: String, model: String, lang: String, fileName: String, mime: String, bytes: ByteArray, log: (String) -> Unit): Pair<String, List<Triple<Double, Double, String>>> {
         var lastErr = "Groq فشل"
         for (attempt in 1..3) {
-            if (task.cancelled) throw TaskCancelled()
             try {
                 val B = "----JoyboyGroqBoundary91"
                 val o = java.io.ByteArrayOutputStream()
                 fun w(x: String) = o.write(x.toByteArray(Charsets.UTF_8))
-                w("--$B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-large-v3-turbo\r\n")
+                w("--$B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n" + model + "\r\n")
                 w("--$B\r\nContent-Disposition: form-data; name=\"response_format\"\r\n\r\nverbose_json\r\n")
                 w("--$B\r\nContent-Disposition: form-data; name=\"timestamp_granularities[]\"\r\n\r\nsegment\r\n")
                 if (lang.isNotBlank() && lang != "auto") w("--$B\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\n" + lang + "\r\n")
-                w("--$B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"chunk.m4a\"\r\nContent-Type: audio/mp4\r\n\r\n")
-                o.write(f.readBytes()); w("\r\n--$B--\r\n")
+                w("--$B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" + fileName + "\"\r\nContent-Type: " + mime + "\r\n\r\n")
+                o.write(bytes); w("\r\n--$B--\r\n")
                 val body = o.toByteArray()
                 val c = java.net.URL(GROQ_URL).openConnection() as java.net.HttpURLConnection
                 try {
@@ -143,6 +98,7 @@ object GhAudio {
                     val txt = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
                     if (code in 200..299) {
                         val j = org.json.JSONObject(txt)
+                        val dl = j.optString("language").trim()
                         val arr = j.optJSONArray("segments")
                         val out = ArrayList<Triple<Double, Double, String>>()
                         if (arr != null) for (i in 0 until arr.length()) {
@@ -152,20 +108,19 @@ object GhAudio {
                         }
                         if (out.isEmpty()) {
                             val t = j.optString("text").trim()
-                            if (t.isNotEmpty()) out.add(Triple(0.0, GROQ_CHUNK_SEC, t))
+                            if (t.isNotEmpty()) out.add(Triple(0.0, 0.0, t))
                         }
-                        return out
+                        return dl to out
                     }
                     lastErr = "Groq رفض (كود " + code + "): " + txt.take(160)
-                    if (code == 401 || code == 403) throw IOException("مفتاح Groq غلط — صلّحه من «🔑 مفتاح Groq API» في قايمة المشغّل")
-                    if (code == 429 || code >= 500) { Thread.sleep(15000L * attempt); continue }
+                    if (code == 401 || code == 403) throw Unsupported("مفتاح Groq غلط أو مرفوض — صحّحه من الإعدادات ← 🔑 المفاتيح")
+                    if (code == 429 || code >= 500) { log("⏳ Groq ضغط/كوتا (كود " + code + ") — إعادة بعد سواني"); Thread.sleep(15000L * attempt); continue }
                     throw IOException(lastErr)
                 } finally { c.disconnect() }
             } catch (e: IOException) {
-                if ((e.message ?: "").contains("مفتاح Groq")) throw e
                 lastErr = e.message ?: lastErr
             } catch (e: Throwable) {
-                if (e is TaskCancelled) throw e
+                if (e is Unsupported) throw e
                 lastErr = "فشل الاتصال: " + (e.message ?: e.javaClass.simpleName)
             }
             if (attempt < 3) Thread.sleep(8000L)

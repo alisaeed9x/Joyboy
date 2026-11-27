@@ -631,10 +631,45 @@ class MainActivity : Activity() {
                 ui.section("📖 مسرد المصطلحات الثابت", false,
                     ui.noHint(), gloss)) }),
             // ===== 🔑 المفاتيح: جيميناي · الوضع البصري · محركات خارجية =====
-            tab("keys", { listOf<View>(
+            tab("keys", { run {
+                // (v1369 — بطلب علي) قسم Groq تحت «من غير مفتاح؟ تمام»: مفتاح + فحص + اختيار موديل التفريغ من Groq نفسها
+                val groqKeyInp = ui.input("gsk_… الصق مفتاح Groq هنا", Cfg.str("groq_key", ""))
+                groqKeyInp.addTextChangedListener(object : android.text.TextWatcher {
+                    override fun afterTextChanged(s: android.text.Editable?) { val v = s?.toString()?.trim() ?: ""; if (v != Cfg.str("groq_key", "")) { Cfg.put("groq_key", v); Cfg.put("groq_key_state", "") } }
+                    override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                    override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                })
+                val groqState = ui.text(when (Cfg.str("groq_key_state", "")) { "ok" -> "✅ المفتاح شغال (اتفحص)"; "bad" -> "❌ آخر فحص رفض المفتاح"; else -> if (Cfg.str("groq_key", "").isBlank()) "لسه مفيش مفتاح محفوظ" else "المفتاح محفوظ — اضغط «فحص المفتاح» للتأكد" }, 12f, th.muted)
+                val groqModelBtn = ui.button("🧠 موديل التفريغ: " + Cfg.str("groq_model", "whisper-large-v3-turbo").ifBlank { "whisper-large-v3-turbo" }) {
+                    val k = Cfg.str("groq_key", "").trim()
+                    if (k.isBlank()) { Notice.show(this, "🔑 الصق مفتاح Groq الأول", 2600L); return@button }
+                    Notice.show(this, "⏳ بجيب الموديلات من Groq…", 1800L)
+                    Thread {
+                        val ms = GhAudio.groqModels(k)
+                        runOnUiThread {
+                            if (ms.isNullOrEmpty()) { Notice.show(this, "⚠ فشل جلب الموديلات — اتأكد من المفتاح والنت", 3000L); return@runOnUiThread }
+                            GAlert(this).setTitle("🧠 موديل التفريغ من Groq").setItems(ms.toTypedArray()) { _, w2 -> Cfg.put("groq_model", ms[w2]); groqModelBtn.text = "🧠 موديل التفريغ: " + ms[w2] }.setNegativeButton("إلغاء", null).show()
+                        }
+                    }.start()
+                }
+                listOf<View>(
                 ui.section("🆓 من غير مفتاح؟ تمام", true,
                     ui.text("المفتاح اختياري. من غيره البرنامج بيشتغل بتفريغ على الجهاز (أوفلاين) + ترجمة جوجل المجانية. ومعاه الترجمة بتبقى أدق وأسرع (جيميناي بيفهم السياق).", 13f, th.text),
                     ui.button("🎙 جهّز التفريغ على الجهاز (من غير مفتاح)") { settingsShow?.invoke("audio") }),
+                ui.section("⚡ جروك (تفريغ Whisper سحابي سريع)", true,
+                    ui.text("تفريغ الصوت بـWhisper على سيرفرات Groq — أسرع بكتير من تفريغ الجهاز. المفتاح مجاني من console.groq.com وبيتحفظ على الموبايل بس ومش بيتبعت لأي حد غير Groq.", 13f, th.text),
+                    groqKeyInp,
+                    groqState,
+                    ui.button("🔍 فحص المفتاح") {
+                        val k = groqKeyInp.text.toString().trim()
+                        groqState.text = "⏳ بفحص المفتاح…"
+                        Thread {
+                            val res = GhAudio.groqCheckKey(k)
+                            Cfg.put("groq_key_state", if (res.first) "ok" else "bad")
+                            runOnUiThread { groqState.text = res.second }
+                        }.start()
+                    },
+                    groqModelBtn),
                 ui.section("✨ جيميناي", false,
                 ui.button("❓ إزاي أجيب مفتاح Gemini؟ (وألصقه)", true) {
                     showKeyGuide { k ->
@@ -649,7 +684,7 @@ class MainActivity : Activity() {
                                 ui.section("🔑 كل المفاتيح", true,
                     ui.noHint(), KeyStatus.row(this, ui, th), fetchModelsBtnKeys, keysUi, backupUi, extraUi)),   // (v1303) حالة المفاتيح هنا بعد حذف تبويب الشات + (v1320) زرار جلب الموديلات
                 ui.section("🔑 مفتاح الوضع البصري فقط", true,
-                    ui.noHint(), visKeysUi)) }),   // (v1014) مفتاح الوضع البصري مع باقي المفاتيح
+                    ui.noHint(), visKeysUi)) } }),   // (v1014) مفتاح الوضع البصري مع باقي المفاتيح
             // ===== 🎙 التفريغ والصوت: موديلات الجهاز + إعدادات الصوت =====
             tab("audio", { listOf<View>(
                 ui.noHint(),

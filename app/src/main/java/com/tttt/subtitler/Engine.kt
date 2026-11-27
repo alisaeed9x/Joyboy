@@ -67,6 +67,8 @@ class Engine(
     @Volatile private var srcLang = ""
     @Volatile private var detDone = false
     private val offSession = Offline.Session()   // (v267) قفل لغة الأوفلاين للفيديو ده
+    private val groqRan = ThreadLocal<Boolean?>()   // (v1369) الباتش ده اتفرّغ بـ Groq
+    private val groqLang = ThreadLocal<String?>()   // (v1369) لغة التفريغ اللي Groq اكتشفها
     private val chunkLang = ConcurrentHashMap<Int, String>()   // (v413) اللغة اللي اتفرّغ بيها كل باتش أوفلاين
     init { Offline.detectedLang = "" }
     private val langVote = OffLang.Vote()   // (v411) لغة المصدر للترجمة: Whisper + فحص الحروف (كانا/هانجول/هان)
@@ -120,7 +122,7 @@ class Engine(
     private fun rampAllWanted(): Boolean = try { !Cfg.bool("fastmode", false) && !Cfg.bool("tr_bal", false) && Cfg.bool("ramp_all", true) } catch (_: Throwable) { false }
     private val rampOn: Boolean get() = fastLatched || (rampAllLatched && activeMode < KeyMode.TRANSCRIBE_ALL)
     private val RAMP_ALL = doubleArrayOf(10.0, 20.0, 30.0, 45.0, 60.0)
-    private fun rampSizes(): DoubleArray = if (!fastLatched) RAMP_ALL else if (!Offline.on() && pool.usableCount() >= 2) doubleArrayOf(FAST_SPLIT_SECS) else RAMP_SECS
+    private fun rampSizes(): DoubleArray = if (!fastLatched) RAMP_ALL else if (!Offline.on() && !groqTxOn() && pool.usableCount() >= 2) doubleArrayOf(FAST_SPLIT_SECS) else RAMP_SECS
     private fun scaleTimes(j: JSONObject, k: Double) {
         val a = j.optJSONArray("subtitles") ?: return
         for (x in 0 until a.length()) {
@@ -176,6 +178,7 @@ class Engine(
     private val startedAt = ConcurrentHashMap<Int, Long>()          // وقت بداية الباتش الشغال
     private val preps = ConcurrentHashMap<Int, Prep>()              // صوت الباتش الشغال (عشان النسخة الاحتياطية ماتفكوش تاني)
     private val offOf = ConcurrentHashMap<Int, Boolean>()               // (v413) الباتش ده ماشي على Whisper أوفلاين (مش جيميناي)
+    private val groqOf = ConcurrentHashMap<Int, Boolean>()              // (v1369) الباتش ده ماشي على Groq
     private val keyOf = ConcurrentHashMap<Int, String>()            // المفتاح اللي الباتش شغال عليه دلوقتي
     private val hedged = ConcurrentHashMap.newKeySet<Int>()         // باتشات اتبعتلها نسخة احتياطية
     private val claimed = ConcurrentHashMap.newKeySet<Int>()        // باتشات نتيجتها اتطبّقت (أول نسخة تخلص تكسب)
@@ -589,7 +592,7 @@ class Engine(
             val r = runs[i]
             var fast = false
             if (mark == "⏳" && k != null) {
-                if (offOf[i] == true) sb.append(" · 🎙 Whisper أوفلاين") else sb.append(" · 🔑").append(keyNo(k)).append(" ").append(shortModel(conf.model))
+                if (offOf[i] == true) sb.append(" · 🎙 Whisper أوفلاين") else if (groqOf[i] == true) sb.append(" · ⚡ Groq") else sb.append(" · 🔑").append(keyNo(k)).append(" ").append(shortModel(conf.model))
                 startedAt[i]?.let { sb.append(" · ").append(fmtSec(System.currentTimeMillis() - it)) }
             } else if (r != null && (mark == "✅" || mark == "🔇" || mark == "🔁")) {
                 fast = fastest[i / cap] == i
@@ -1299,7 +1302,7 @@ class Engine(
      */
     private fun hedgeTick() {
         if (quotaCooling() || Overload.busy()) return   // (v1094) 429 / (v1237) ضغط جيميناي: ماتبعتش نسخ تانية من الباتشات
-        if (!TrSlider.on("hedge") || inflight.isEmpty() || hedgeBusy.get() >= 1 || pool.usableCount() < 2 || Offline.on()) return   // (v1100) T2b: السلايدر · (v253) الأوفلاين: نسخة احتياطية بتستنى نفس المعالج
+        if (!TrSlider.on("hedge") || inflight.isEmpty() || hedgeBusy.get() >= 1 || pool.usableCount() < 2 || Offline.on() || groqTxOn()) return   // (v1100) T2b: السلايدر · (v253) الأوفلاين: نسخة احتياطية بتستنى نفس المعالج
         val now = System.currentTimeMillis()
         val ms = recentMs.toList().sorted()
         val med = if (ms.isEmpty()) 0L else ms[ms.size / 2]
@@ -1534,19 +1537,20 @@ class Engine(
         var srv = 0   // (v459) مفيش موديل بديل: أخطاء السيرفر بتتعاد على نفس الموديل الواحد (كان في v227 بيبدّل لموديل تاني)
         val fastStep = fastLatched && !hedge && !backupFirst && i == rampChunk && rampStep < 2
         val spd = if (fastStep && FAST_SPEED > 1.0 && w.durSec >= 4.0 && !easternSrc() && !SongHint.on()) FAST_SPEED else 1.0   // (v1171) أغنية: من غير تسريع صوت   // (v1147) من غير تسريع صوت للغات الشرقية   // (v1067) تسريع الصوت
-        val canSplit = fastStep && !Overload.busy() && rampStep == 0 && w.durSec >= 16.0 && !Offline.on() && pool.usableCount() >= 2 && TrSlider.on("race")   // (v1067) طلبين بالتوازي   // (v1097) T2: TrSlider
+        val canSplit = fastStep && !Overload.busy() && rampStep == 0 && w.durSec >= 16.0 && !Offline.on() && !groqTxOn() && pool.usableCount() >= 2 && TrSlider.on("race")   // (v1067) طلبين بالتوازي   // (v1097) T2: TrSlider
         val sendBytes = if (spd > 1.0) { try { AudioTools.speedUp(w.bytes, spd) } catch (_: Throwable) { w.bytes } } else w.bytes
         val spdEff = if (sendBytes === w.bytes) 1.0 else spd
         val tx = activeMode >= KeyMode.SPLIT_A && i !in fullChunks && !fastLatched && !(rampOn && i == rampChunk)   // (v1141) خطوات التصاعد: تفريغ+ترجمة في طلب واحد // (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
         while (running && tries++ < MAX_TRIES) {
             if (claimed.contains(i)) return   // نسخة تانية من الباتش ده خلصت وطُبّقت قبلنا
-            if (!hedge) { keyOf[i] = key; offOf[i] = (tx && Offline.on()) }
+            if (!hedge) { keyOf[i] = key; offOf[i] = (tx && Offline.on()); groqOf[i] = (tx && groqTxOn()) }
             val prompt = buildPrompt(w.durSec / spdEff, w.startSec, langBad > 0 || (tx && empties > 0), i, tx = tx)
             try {
                 val t0 = System.currentTimeMillis()
                 val mdl = fbModel ?: curModel()   // (v459) موديل واحد بس دايمًا (v1237: إلا وقت ضغط جيميناي)
                 var resScale = 1.0   // (v1067) معامل إرجاع الأوقات للأصل (الصوت المتسرّع)
                 var gemCalled = false   // (v413) هل جيميناي اتنده فعلًا للباتش ده؟ (false = Whisper لوحده)
+                groqRan.set(false); groqLang.set("")   // (v1369) تصفير علامة Groq قبل كل محاولة
                 val r = run {
                     sentReq.add(i); pool.begin(key, i)
                     try {
@@ -1577,6 +1581,7 @@ class Engine(
                         }   // (v331) التفريغ بحرارة 0 (أدق وثابت)؛ الإعادة بعد فشل بحرارة 0.1 عشان ما يرجعش نفس الرد
                         // (v253) ترانسكريبشن أوفلاين (Whisper على الجهاز) — لو فشل جيميناي (gem) بيكمّل الباتش
                         (if (tx && Offline.on()) { Offline.batchTag.set(i); Offline.transcribe(w.bytes, w.durSec, effectiveGloss().joinToString(", ") { it.term }, { host.log(it) }, gem, { host.notice(it) }, offSession) }
+                            else if (tx && groqTxOn()) { groqResult(w.bytes, w.durSec) }   // (v1369 — بطلب علي) بلوك التفريغ ⚡ جروك
                             else { if (tx) Offline.whyOff()?.let { m -> host.log(m); Offline.softNotice(m) { host.notice(it) } }; gem() }).also { pool.end(key, System.currentTimeMillis() - t0, true) }
                     } catch (e: Throwable) { pool.end(key, 0, false); throw e }
                 }
@@ -1599,16 +1604,16 @@ class Engine(
                 }
                 if (off.isNotEmpty()) fresh = fixForeign(fresh)
                 // (v267) الباتش اتفرّغ أوفلاين وطلع فاضي: Whisper بيرجّع نفس النتيجة لو أعدناه — بنعيد مرة واحدة بس لو اللغة اتقفلت بعد ما بدأ، وإلا بنقبله (مفيهوش كلام/موسيقى)
-                val offRan = tx && Offline.ranOffline.get() == true
+                val offRan = tx && (Offline.ranOffline.get() == true || groqRan.get() == true)   // (v1369) Groq بيتحسب زي الويشبر هنا
                 if (offRan) {   // (v413) سجّل لغة التفريغ؛ ولو اليوزر غيّر اللغة والباتش شغّال بالقديمة: أعده بالجديدة
                     val ul = Offline.usedLang.get().orEmpty(); val man = Offline.lang()
-                    if (!hedge && man.isNotEmpty() && ul != man && langSwitchRetry++ < 1) { host.log("🌐 المقطع ${i + 1}: اللغة اتغيّرت أثناء التفريغ (${ul.ifEmpty { "تلقائي" }} ← $man) — إعادة بالجديدة"); continue }
-                    chunkLang[i] = ul.ifEmpty { Offline.gotLang.get().orEmpty() }
+                    if (!hedge && groqRan.get() != true && man.isNotEmpty() && ul != man && langSwitchRetry++ < 1) { host.log("🌐 المقطع ${i + 1}: اللغة اتغيّرت أثناء التفريغ (${ul.ifEmpty { "تلقائي" }} ← $man) — إعادة بالجديدة"); continue }
+                    chunkLang[i] = if (groqRan.get() == true) groqLang.get().orEmpty() else ul.ifEmpty { Offline.gotLang.get().orEmpty() }
                 }
                 if (fresh.isEmpty() && offRan) {
                     val lk = offSession.lang
-                    if (!w.silent && !hedge && lk.isNotEmpty() && lk != Offline.usedLang.get().orEmpty() && langRetry++ < 1) { host.log("🌐 المقطع ${i + 1}: فاضي — إعادة واحدة باللغة المقفولة ($lk)"); continue }
-                    host.log("🔇 المقطع ${i + 1}: Whisper ما لقاش كلام — اتقبل من غير إعادة")
+                    if (!w.silent && !hedge && groqRan.get() != true && lk.isNotEmpty() && lk != Offline.usedLang.get().orEmpty() && langRetry++ < 1) { host.log("🌐 المقطع ${i + 1}: فاضي — إعادة واحدة باللغة المقفولة ($lk)"); continue }
+                    host.log("🔇 المقطع ${i + 1}: " + (if (groqRan.get() == true) "Groq" else "Whisper") + " ما لقاش كلام — اتقبل من غير إعادة")
                 }
                 // (v1094) الوضع السريع: خطوة جزئية من الباتش الأول رجعت فاضية وفيه جمل متترجمة قبلها = موسيقى/صمت. بتتقبل «خلصانة» بدل ما تتعاد 4 مرات وتتحط أولوية وتاخد مفاتيح الباتشات 2 و3 و4
                 if (!offRan && !tx && !hedge && fresh.isEmpty() && rampOn && i == rampChunk && (rawStart > cStart(i) + 0.05 || rawEnd < cEnd(i, currentDur()) - 0.05) && subCount(i, currentDur()) > 0) {
@@ -1639,7 +1644,7 @@ class Engine(
                 pool.good(key)
                 if (!claimed.add(i)) { host.log("↩ باتش ${i + 1}: نسخة تانية خلصته قبلها — اتجاهلت دي"); return }
                 if (i > maxApplied) maxApplied = i
-                runs[i] = KeyRun(keyNo(key), mdl, took, gemCalled)
+                runs[i] = KeyRun(keyNo(key), if (tx && groqRan.get() == true) "groq:" + Cfg.str("groq_model", "whisper-large-v3-turbo") else mdl, took, gemCalled)   // (v1369) موديل Groq يظهر باسمه في سجل الباتشات
                 if (tx && fresh.isNotEmpty()) {
                     // (v210) الباتش ما بيتطبّقش دلوقتي: بيتحط في المجمّع لحد ما يتترجم (applyChunk + سدّ الثغرات بيحصلوا بعد الترجمة)
                     val xc = crossCheck(i, w, fresh, key)   // (v742) تسميع مزدوج: مفتاح تاني يسمع نفس الباتش وأي اختلاف يتحسم بسماع تالت على الجملة
@@ -1953,7 +1958,30 @@ class Engine(
         host.log(msg); try { host.notice(msg) } catch (_: Throwable) {}
     }
     /** (v283) سدّ الثغرات/الفجوات بالأوفلاين نفسه (Whisper / SenseVoice / السحابي) بدل صوت جيميناي: في «تفريغ بس» وفي مسار جوجل/الخارجي وبدون مفتاح جيميناي. جيميناي مترجم = الطريقة القديمة (جيميناي) */
-    private fun offFill(): Boolean = Offline.configured() && (transOnly || keyless || TrWizard.googleOn())
+    private fun offFill(): Boolean = (Offline.configured() || groqTxOn()) && (transOnly || keyless || TrWizard.googleOn())   // (v1369) Groq زي الويشبر
+
+    /** (v1369 — بطلب علي) تفريغ Groq سحابي شغّال؟ (بلوك التفريغ = ⚡ جروك + المفتاح موجود) */
+    private fun groqTxOn(): Boolean = try { Cfg.groqTx() } catch (_: Throwable) { false }
+
+    /** (v1369 — بطلب علي) تفريغ باتش واحد بـ Groq — نفس عقد Offline.transcribe بالظبط: Api.Result بـJSON التفريغ، واللغة المكتشفة بتتسجّل. بيرمي IOException/Unsupported عند الفشل (لوب المحاولات العادي بيتصرف) */
+    private fun groqResult(bytes: ByteArray, durSec: Double): Api.Result {
+        val key = Cfg.str("groq_key", "").trim()
+        val model = Cfg.str("groq_model", "whisper-large-v3-turbo").trim().ifEmpty { "whisper-large-v3-turbo" }
+        val lang = try { Offline.lang() } catch (_: Throwable) { "" }   // لغة الكلام اليدوية (لو متحددة) بتتبعت لـ Groq، غير كده بيكتشف لوحده
+        val wav = bytes.size > 4 && bytes[0] == 'R'.toByte() && bytes[1] == 'I'.toByte() && bytes[2] == 'F'.toByte() && bytes[3] == 'F'.toByte()   // RIFF
+        val (dl, segs) = GhAudio.groqTranscribeAudio(key, model, lang, if (wav) "chunk.wav" else "chunk.m4a", if (wav) "audio/wav" else "audio/mp4", bytes) { host.log(it) }
+        groqRan.set(true); groqLang.set(dl)
+        val out = JSONArray()
+        for (g in segs) {
+            val t = g.third.trim()
+            if (t.isEmpty() || t.startsWith("[") && t.endsWith("]") || t.startsWith("(") && t.endsWith(")")) continue   // [موسيقى] (تصفيق) — مش كلام
+            out.put(JSONObject().put("start", g.first).put("end", g.second).put("original", t)
+                .put("gender", "unknown").put("addressee", "unknown").put("topic_gender", "none")
+                .put("people", JSONArray()).put("places", JSONArray()).put("is_song", false).put("emotion", "neutral")
+                .put("low_confidence", false).put("overlap", false).put("speaker_tag", "").put("is_continuation", false).put("faint", false))
+        }
+        return Api.Result(JSONObject().put("subtitles", out).apply { if (dl.isNotEmpty()) put("detected_source_language", dl) }.toString(), "STOP")
+    }
     private fun fillOk(): Boolean = !isClosed && (!sideOff() || offFill())
     /**
      * (v1065) ⚡ عرض الجمل المترجمة وهي لسه بتوصل من الـ stream (قبل ما الباتش يخلص): بتتعرض مؤقتًا بنفس شكل معاينة التفريغ،
@@ -2041,7 +2069,7 @@ class Engine(
     private fun crossCheck(i: Int, w: WavChunk, fresh: List<Sub>, key0: String): Pair<List<Sub>, Set<Double>> {
         val none: Pair<List<Sub>, Set<Double>> = fresh to emptySet()
         val mode = try { Cfg.int("dual_listen", 1) } catch (_: Throwable) { 1 }
-        if (mode == 0 || !TrSlider.on("cross") || Offline.on() || !running || isClosed || w.silent || fresh.isEmpty()) return none   // (v1100) T2b: السلايدر
+        if (mode == 0 || !TrSlider.on("cross") || Offline.on() || groqTxOn() || !running || isClosed || w.silent || fresh.isEmpty()) return none   // (v1100) T2b: السلايدر
         if (mode == 1 && !nonEnglishSrc() && !TrSlider.on("crossall")) return none   // (v1097) T2: TrSlider
         if (pool.usableCount() < 2) return none
         val keyB = pool.pickFree(key0, rr.getAndIncrement()) ?: return none
@@ -2122,7 +2150,7 @@ class Engine(
      * بنستبدل النص بس لو الرد منطقي (مش فاضي ولا أطول بكتير)؛ التوقيت والباقي زي ما هو. أقصى 4 جمل للباتش. مش بيشتغل مع التفريغ الأوفلاين.
      */
     private fun relistenLow(i: Int, fresh: List<Sub>, key0: String, skip: Set<Double> = emptySet()): List<Sub> {
-        if (!TrSlider.on("relisten") || Offline.on() || !running || isClosed) return fresh
+        if (!TrSlider.on("relisten") || Offline.on() || groqTxOn() || !running || isClosed) return fresh
         val idx = fresh.indices.filter { fresh[it].lowConf && !fresh[it].isSound && !fresh[it].isSong && fresh[it].original.isNotBlank() && fresh[it].start !in skip }.take(if (nonEnglishSrc()) 8 else 4)   // (v742) 8 للغات غير الإنجليزي · اللي اتحكم فيه بالتسميع المزدوج بيتخطّى
         if (idx.isEmpty()) return fresh
         val out = fresh.toMutableList()
@@ -2449,7 +2477,7 @@ class Engine(
         val nowT = System.currentTimeMillis()
         val avail = tHold.keys.filter { it !in tTaken && (trRetryAt[it] ?: 0L) <= nowT }.sorted()   // (v399) باتش جوجل فشل: بيستنى شوية قبل المحاولة الجاية
         if (avail.isEmpty()) return false
-        if (!ctxReady() && Offline.configured() && !Strict.mt() && partTick(avail)) return true   // (v253) جزء كامل اتنسخ ← يتترجم فورًا
+        if (!ctxReady() && (Offline.configured() || groqTxOn()) && !Strict.mt() && partTick(avail)) return true   // (v253) جزء كامل اتنسخ ← يتترجم فورًا
         if (!ctxReady()) {
             val m = if (Offline.configured()) { offRefresh(); offD.replace("\n", " · ") } else "📝 ترانسكريبشن: ${avail.size} باتش جاهز — الترجمة السياقية بتبدأ لما كل الباتشات تتنسخ"
             if (m != ctxMsg) { ctxMsg = m; host.status(m) }
@@ -2473,7 +2501,7 @@ class Engine(
      * بيتبعتوا لجيميناي يترجمهم. الباقي (اللي أقل من جزء) بيتترجم لما كل الباتشات تخلص زي الوضع 4 العادي.
      */
     private fun partTick(avail0: List<Int>): Boolean {
-        val k0 = ctxBatches().takeIf { it > 0 } ?: if (Offline.live() || (TrWizard.googleOn() && Cfg.str("ctx_min", "").isEmpty())) 1 else maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())   // (v399) جوجل: باتش بباتش · (v400) وضع السياق: 2–3 باتشات
+        val k0 = ctxBatches().takeIf { it > 0 } ?: if (groqTxOn() && !TrWizard.googleOn()) 3 else if (Offline.live() || (TrWizard.googleOn() && Cfg.str("ctx_min", "").isEmpty())) 1 else maxOf(1, (Offline.partMin() * 60.0 / ch).toInt())   // (v399) جوجل: باتش بباتش · (v400) وضع السياق: 2–3 باتشات · (v1369) Groq: كل 3 باتشات (بطلب علي)
         val k = if (partsSent.get() == 0) 1 else k0   // (v748) أول جزء باتش واحد (الترجمة تظهر بدري)
         // (v739) الترجمة بتبدأ من مكان المشاهد ومن بعده (مش من أقدم باتش في الفيديو): قبل كده الجزء كان بيتاخد من الأقدم، فلو التفريغ ماشي عند مكانك والجزء ده مستني جاره
         // كان المحرك يترجم جزء قديم/بعيد الأول وبعدين يرجع لمكانك. ولو الباتش اللي المشاهد واصله جاهز بيتترجم على طول من غير ما يستنى يكمّل الجزء.
@@ -2497,7 +2525,7 @@ class Engine(
                 finally { tTaken.removeAll(head.toSet()); trBusy.decrementAndGet(); host.changed() }
             }
         } catch (_: RejectedExecutionException) { tTaken.removeAll(head.toSet()); trBusy.decrementAndGet(); return false }
-        host.log("📴 جزء جاهز (${head.size} باتش" + (if (k > 1 && ctxBatches() == 0) " ≈ ${Offline.partMin()} دقيقة" else "") + ") — اتبعت " + (if (TrWizard.googleOn()) (if (ExtTranslate.semiLibre()) "لـ LibreTranslate" else "لجوجل") else "لجيميناي") + " يترجمه")
+        host.log("📴 جزء جاهز (${head.size} باتش" + (if (k > 1 && ctxBatches() == 0) " ≈ " + (if (Offline.configured()) Offline.partMin().toString() else maxOf(1, (head.size * ch / 60.0).toInt()).toString()) + " دقيقة" else "") + ") — اتبعت " + (if (TrWizard.googleOn()) (if (ExtTranslate.semiLibre()) "لـ LibreTranslate" else "لجوجل") else "لجيميناي") + " يترجمه")
         return true
     }
 
@@ -2687,7 +2715,7 @@ class Engine(
         host.status("🧠 بترجم بالسياق الكامل (${flatAll.size} جملة)…")
         val tp = trPool
         val doneTr = ArrayList<Sub>()
-        if (Offline.configured() && flatAll.isNotEmpty()) {   // (v253) الأجزاء بتتترجم أول بأول: آخر جمل اتترجمت قبل الجزء ده بتتبعت كسياق
+        if ((Offline.configured() || groqTxOn()) && flatAll.isNotEmpty()) {   // (v253) الأجزاء بتتترجم أول بأول: آخر جمل اتترجمت قبل الجزء ده بتتبعت كسياق · (v1369) Groq زي الويشبر
             val f0 = flatAll.first().start
             doneTr.addAll(synchronized(lock) { subs.filter { it.start < f0 && it.translated.isNotBlank() && it.translated != it.original }.takeLast(if (ctxBatches() > 0) 40 else 12) })
         }
@@ -3807,7 +3835,7 @@ class Engine(
      */
     private fun txFillOffline(w: WavChunk, near: Boolean): List<Sub> {
         val none = Api.Result("{\"subtitles\":[]}", "STOP")
-        val r = Offline.transcribe(w.bytes, w.durSec, effectiveGloss().joinToString(", ") { it.term }, { host.log(it) }, { none }, { host.notice(it) }, offSession)
+        val r = if (groqTxOn()) try { groqResult(w.bytes, w.durSec) } catch (e: Throwable) { host.log("⚠ Groq سدّ الثغرات فشل: " + (e.message ?: e.javaClass.simpleName).take(80)); none } else Offline.transcribe(w.bytes, w.durSec, effectiveGloss().joinToString(", ") { it.term }, { host.log(it) }, { none }, { host.notice(it) }, offSession)   // (v1369) Groq بيسد ثغراته بنفسه
         val j = if (r.text.isBlank()) null else Parse.json(r.text)
         if (j == null) return emptyList()
         val seen = HashMap<String, Int>()
