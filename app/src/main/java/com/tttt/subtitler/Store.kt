@@ -16,7 +16,9 @@ class Saved(
     /** حدود المقاطع بعد تعديلها لأقرب صمت: رقم المقطع -> بدايته بالثواني */
     val bounds: Map<Int, Double> = emptyMap(),
     /** الفجوات اللي اتحاولت قبل كده (عشان متتعادش كل جلسة) */
-    val gapTried: List<DoubleArray> = emptyList()
+    val gapTried: List<DoubleArray> = emptyList(),
+    /** (v1379) الجمل دي مستوردة من ملف ترجمة (SRT) مش من تفريغ المحرك — بتتفصل عند بدء ترجمة/تفريغ جديد */
+    val imp: Boolean = false
 )
 
 class Store(private val dir: File, key: String) {
@@ -58,7 +60,7 @@ class Store(private val dir: File, key: String) {
 
     fun save(s: Saved) {
         val j = JSONObject().put("v", 2).put("chunkSec", s.chunkSec).put("srcLang", s.srcLang).put("detDone", s.detDone)
-            .put("pos", s.pos).put("charsTried", s.charsTried)
+            .put("pos", s.pos).put("charsTried", s.charsTried).put("imp", s.imp)
         val subs = JSONArray(); for (x in s.subs) subs.put(subJ(x)); j.put("subs", subs)
         j.put("done", ranges(s.done)).put("failed", ranges(s.failed))
         val ch = JSONArray(); for (c in s.chars) ch.put(JSONObject().put("n", c.name).put("g", c.gender).put("r", c.role)); j.put("chars", ch)
@@ -92,7 +94,7 @@ class Store(private val dir: File, key: String) {
             try { Subs.refreshMain(subs) } catch (_: Throwable) {}
             Saved(j.optInt("chunkSec", 60), j.optString("srcLang"), j.optBoolean("detDone"), subs,
                 rangesOf(j.optJSONArray("done")), rangesOf(j.optJSONArray("failed")), chars, gloss, tp,
-                j.optDouble("pos", 0.0), j.optInt("charsTried", 0), bnd, rangesOf(j.optJSONArray("gapTried")))
+                j.optDouble("pos", 0.0), j.optInt("charsTried", 0), bnd, rangesOf(j.optJSONArray("gapTried")), j.optBoolean("imp", false))
         } catch (e: Exception) {
             try { f.renameTo(File(dir, f.name + ".bad")) } catch (_: Exception) {}
             null

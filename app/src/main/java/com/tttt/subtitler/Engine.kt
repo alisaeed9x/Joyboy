@@ -120,7 +120,7 @@ class Engine(
     /** (v1141) تصاعد أول باتش (10←20←30←45←60ث) في الوضع الدقيق كمان (مش بس السريع). بيتثبّت وقت بداية الترجمة. في ٧٥/٢٥ (٣) خطوات أول باتش بتتفرّغ وتتترجم في نفس الطلب (زي fullChunks) عشان تظهر على طول؛ مش بيشتغل في الوضع ٤ (ترجمة سياقية بعد التفريغ كله) ولا المتوازن (محرك تاني) */
     @Volatile private var rampAllLatched = false
     private fun rampAllWanted(): Boolean = try { !Cfg.bool("fastmode", false) && !Cfg.bool("tr_bal", false) && Cfg.bool("ramp_all", true) } catch (_: Throwable) { false }
-    private val rampOn: Boolean get() = fastLatched || (rampAllLatched && activeMode < KeyMode.TRANSCRIBE_ALL)
+    private val rampOn: Boolean get() = (fastLatched || (rampAllLatched && activeMode < KeyMode.TRANSCRIBE_ALL)) && !groqTxOn()   // (v1379 — بطلب علي) مفيش ramp صغير في مود جروك: الباتش ٣٠ د من أول ضغطة
     private val RAMP_ALL = doubleArrayOf(10.0, 20.0, 30.0, 45.0, 60.0)
     private fun rampSizes(): DoubleArray = if (!fastLatched) RAMP_ALL else if (!Offline.on() && !groqTxOn() && pool.usableCount() >= 2) doubleArrayOf(FAST_SPLIT_SECS) else RAMP_SECS
     private fun scaleTimes(j: JSONObject, k: Double) {
@@ -556,7 +556,7 @@ class Engine(
     private val bg = Executors.newFixedThreadPool(2) { r -> Thread(r).also { it.isDaemon = true } }
     private val ch get() = conf.chunkSec.toDouble()
     /** عدد المقاطع قدّام = الأكبر بين الإعداد وعدد الطلبات المتوازية، عشان كل المفاتيح تشتغل مع بعض */
-    private val window get() = maxOf(conf.ahead.coerceAtLeast(1), pool.capacity(ppk))
+    private val window get() = if (groqTxOn()) 1 else maxOf(conf.ahead.coerceAtLeast(1), pool.capacity(ppk))   // (v1379) جروك باتش-باتش (بطلب علي): باتش ٣٠د واحد بيرفع لوحده والتجهيز المسبق بيجهّز اللي بعده — رفع متوازي بيأخر أول جملة
 
     // ===== واجهة للـ UI =====
     fun failedCount() = failed.count { it.value >= MAX_FAILS }
@@ -957,8 +957,10 @@ class Engine(
     /** (v259) مفيش ولا مفتاح جيميناي حقيقي — بس المفتاح المحلي الوهمي (أوفلاين + جوجل). المهام اللي محتاجة جيميناي بتتخطّى */
     private val keyless: Boolean get() = conf.keys.isNotEmpty() && conf.keys.all { it == LocalKey.ID } && conf.backup.isEmpty() && conf.refine.isEmpty()
     fun saveNow() = doPersist(true)
+    /** (v1379 — بطلب علي) الجمل الحالية مستوردة من ملف ترجمة (SRT) مش من تفريغ المحرك — عند ضغطة ترجم/تفريغ بتتفصل (نسخة في 🗂) ومابتدمجش مع الجديد */
+    @Volatile var imported = false
     /** استيراد ترجمة جاهزة (SRT) لفيديو من غير ترجمة */
-    fun importSubs(l: List<Sub>) { subs = l }
+    fun importSubs(l: List<Sub>) { subs = l; imported = l.isNotEmpty() }
     /** (v685) ترجمة جاهزة اتحطت من ملف ترجمة: الفيديو كله يتعلّم «مخلّص» — عشان تتحفظ كاملة وتتحمّل أوفلاين، و«ترجم»/البدء التلقائي ما يعيدوهاش */
     fun markAllDone(lastEnd: Double) { val d = currentDur(); done.add(0.0, if (d > 0) maxOf(d, lastEnd) else lastEnd + 1.0) }
     fun retryFailed() {
@@ -1007,6 +1009,7 @@ class Engine(
             if (s.chunkSec == conf.chunkSec) bounds.putAll(s.bounds)
             for (r in s.gapTried) gapTried.add(r[0], r[1])
         }
+        imported = s.imp
         host.log("♻ استرجعت ${s.subs.size} جملة و${(done.total() / 60).toInt()} دقيقة مترجمة من الجلسة اللي فاتت")
         host.changed()
         return s.pos
@@ -1598,6 +1601,7 @@ class Engine(
         var key = firstKey?.takeIf { pool.ok(it) } ?: (pool.pickIdle(i, avoidKey, perKey) ?: nextKey(avoidKey)) ?: throw Exception("كل المفاتيح معطلة مؤقتًا — راجع المفاتيح")   // (v459) أول اختيار = مفتاح فاضي فعلًا (الاحتياطي داخل لما الأساسيين مشغولين): كل مفتاح ليه باتش بالتوازي
         var partial = false
         var trunc = 0; var empties = 0; var bad = 0; var net = 0; var tries = 0; var langBad = 0
+        val maxTries = if (groqTxOn()) 4 else MAX_TRIES   // (v1379) كل إعادة في جروك بتحرق ثواني صوت من حصة ASH/ASD (باتش ٣٠د = ١٨٠٠ث) — ٤ محاولات كفاية
         // (v1114) الرد الفاسد (BadReply) بيعيد الطلب من غير stream — الـ stream هو اللي بيرجّع JSON مكسور
         var badStream = false
         var langRetry = 0; var langSwitchRetry = 0
@@ -1609,7 +1613,7 @@ class Engine(
         val sendBytes = if (spd > 1.0) { try { AudioTools.speedUp(w.bytes, spd) } catch (_: Throwable) { w.bytes } } else w.bytes
         val spdEff = if (sendBytes === w.bytes) 1.0 else spd
         val tx = activeMode >= KeyMode.SPLIT_A && i !in fullChunks && !fastLatched && !(rampOn && i == rampChunk)   // (v1141) خطوات التصاعد: تفريغ+ترجمة في طلب واحد // (v210) ترانسكريبشن بس، والترجمة بعدين مجمّعة على مفاتيح الترجمة
-        while (running && tries++ < MAX_TRIES) {
+        while (running && tries++ < maxTries) {
             if (claimed.contains(i)) return   // نسخة تانية من الباتش ده خلصت وطُبّقت قبلنا
             if (!hedge) { keyOf[i] = key; offOf[i] = (tx && Offline.on()); groqOf[i] = (tx && groqTxOn()) }
             val prompt = buildPrompt(w.durSec / spdEff, w.startSec, langBad > 0 || (tx && empties > 0), i, tx = tx)
@@ -4005,7 +4009,7 @@ class Engine(
         if (isClosed && !force) return   // خيط متأخر من إنجن اتقفل: ممنوع يكتب
         val saved = synchronized(lock) {
             val fr = failed.filter { it.value >= MAX_FAILS }.keys.sorted().map { doubleArrayOf(cStart(it), cStart(it + 1)) }
-            Saved(conf.chunkSec, srcLang, detDone, Subs.readabilityAll(subs), done.list(), fr, chars.toList(), gloss.toList(), synchronized(tplCache) { HashMap(tplCache) }, host.position(), autoCharsAttempts, HashMap(bounds), gapTried.list())   // (v469) A9: محسّن قراءة (≤42 حرف/سطر) على نسخة الحفظ بس — حالة الذاكرة ما بتتغيّرش
+            Saved(conf.chunkSec, srcLang, detDone, Subs.readabilityAll(subs), done.list(), fr, chars.toList(), gloss.toList(), synchronized(tplCache) { HashMap(tplCache) }, host.position(), autoCharsAttempts, HashMap(bounds), gapTried.list(), imported)   // (v469) A9: محسّن قراءة (≤42 حرف/سطر) على نسخة الحفظ بس — حالة الذاكرة ما بتتغيّرش
         }
         try { st.save(saved) } catch (e: Exception) { warnUser("save", "⚠ مقدرتش أحفظ تقدّم الترجمة — راجع مساحة التخزين، ممكن تضيع لو التطبيق اتقفل"); host.log("⚠ تعذر حفظ التقدم: " + (e.message ?: "").take(80)) }
     }

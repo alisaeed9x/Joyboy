@@ -700,7 +700,7 @@ open class PlayerActivity : Activity(), Host {
             "ab_a" -> abSet(0)
             "ab_b" -> abSet(1)
             "ab_x" -> abClear()
-            "redo" -> redoSheet(anchor)
+            "redo" -> trStartSheet(anchor)   // (v1379) شيت الإعادة القديم اتشال — الشيت الجديد بالـ٤ زراير
             "modeset" -> trSettings(anchor)
             "posy" -> { val n = (Cfg.int("sub_posy", 0) + v.toInt()).coerceIn(-60, 240); Cfg.put("sub_posy", n.toString()); runOnUiThread { try { restyleFn(); applyChromeFn() } catch (_: Throwable) {}; curIdx = -2 }; say("↕ موضع الترجمة: $n") }   // (v759) كان بيحفظ القيمة من غير ما يطبّق الهامش (applyChromeFn) — ودلوقتي بينزل تحت كمان (-60)
             "pip" -> runOnUiThread { try { enterPip() } catch (e: Throwable) { LogStore.err("Player:rpip", e) } }   // (v712) نافذة صغيرة من الريموت
@@ -2746,6 +2746,15 @@ open class PlayerActivity : Activity(), Host {
         // (v467) اللغة الأساسية: البدء التلقائي بيحترمها، واليدوي (زرار «ترجم») بيفرض الترجمة ويلغي أي تخطي حصل في نفس الجلسة
         if (::engine.isInitialized) { engine.baseLangCode = Cfg.str("base_lang", "ar"); if (auto) engine.skipIfBaseLang = true else { engine.skipIfBaseLang = false; if (engine.baseSkipped) { engine.baseSkipped = false; engine.transOnly = false } } }
         if (::engine.isInitialized && !engineReady) { pendingBegin = true; LogStore.add("⏳ بدء الترجمة/التفريغ مؤجّل — بيانات الفيديو المحفوظة لسه بتتحمّل (هيبدأ لوحده)"); return }   // البيانات المحفوظة لسه بتتحمّل: هتبدأ لوحدها أول ما تخلص
+        // (v1379 — بطلب علي: «عند ضغطة ترجم/تفريغ القديم يتفصل ومتظهرش متداخل مع الجديد») ترجمة مستوردة من ملف SRT جنب الفيديو مابتدمجش مع التفريغ/الترجمة الجديدة: نسخة تتحفظ في 🗂 والقايمة ترجع فاضية للجديد
+        if (!auto && ::engine.isInitialized && !engineStarted && engine.imported && engine.subs.isNotEmpty()) {
+            try {
+                LogStore.add("🔀 ترجمة مستوردة من ملف — انفصلت قبل البدء (محفوظة في 🗂)")
+                engine.saveVersion("قبل ترجمة جديدة — فصل الترجمة المستوردة من الملف")
+                engine.redoAll(keep = false); engine.imported = false
+                Notice.show(this, "🔀 الترجمة القديمة بتاعة الملف اتفصلت واتحفظت في 🗂 — الجديد هيشتغل لوحده", 3000L)
+            } catch (e: Throwable) { LogStore.err("Player:detachImp", e) }
+        }
         // (v203) لو الفيديو مترجم 100% (مثلًا بعد تحديث لينكه): مفيش ترجمة تاني، الترجمة المحفوظة شغّالة. ولو ناقص بيكمّل الباقي بس (المخلّص بيتخطّى)
         if (::engine.isInitialized && !engineStarted && !freshOnce && (try { engine.fullyDone() } catch (_: Throwable) { false })) {
             dismissStrip()
@@ -2756,11 +2765,11 @@ open class PlayerActivity : Activity(), Host {
                 touchSubs()
                 LogStore.add("✍ تفريغ: الفيديو متفرّغ بالكامل — اتعرض النص الأصلي واتفتح شيت الإعادة")
                 Notice.show(this, "✍ الفيديو ده متفرّغ بالفعل 100% — عرضت النص الأصلي، اختار تعيد من فين", 4200L)
-                if (!auto && !asked && !remote) h.post { try { redoSheet(window.decorView) } catch (_: Throwable) {} }   // (v1374 — بطلب علي) الإعادة متاحة في التفريغ برضه
+                if (!auto && !asked && !remote) h.post { try { trStartSheet(window.decorView) } catch (_: Throwable) {} }   // (v1379) الشيت الجديد   // (v1374 — بطلب علي) الإعادة متاحة في التفريغ برضه
                 return
             }
             Notice.show(this, "✓ الفيديو ده مترجم 100% — اختار تعيد من فين", 3600L)
-            if (!auto && !asked && !remote) h.post { try { redoSheet(window.decorView) } catch (_: Throwable) {} }   // (v1374 — بطلب علي) كانت بتتجاهل الدايلوج في التصميم الجديد فمابيحصلش حاجة
+            if (!auto && !asked && !remote) h.post { try { trStartSheet(window.decorView) } catch (_: Throwable) {} }   // (v1379) الشيت الجديد   // (v1374 — بطلب علي) كانت بتتجاهل الدايلوج في التصميم الجديد فمابيحصلش حاجة
             return
         }
         // (v685) فيه ترجمة محفوظة ناقصة: اسأل (كمّل الباقي / من مكان التشغيل / من الأول وجديد) بدل ما يكمّل لوحده
@@ -3481,7 +3490,7 @@ open class PlayerActivity : Activity(), Host {
                 shBtn(if (paused) "▶ كمّل" else "⏸ إيقاف مؤقت", if (paused) SH_BLUE else SH_GRAY) { close(); if (paused) beginTranslate() else pauseTranslate() },
                 shBtn("⏹ إلغاء الترجمة", SH_RED) { close(); h.post { cancelDialog() } }))
             col.addView(shSection("🛠 أدوات"))
-            col.addView(shRow("🔁 إعادة ترجمة", "", true) { close(); h.post { redoSheet(anchor) } })
+            col.addView(shRow("🔁 إعادة ترجمة", "", true) { close(); h.post { trStartSheet(anchor) } })   // (v1379) redoSheet اتشالت من كل الكود — الصف بيفتح الشيت الجديد
             col.addView(shRow("📊 تقدم الباتشات", "", true) { close(); batchDialog() })
             col.addView(shRow("🌙 كمّل في الخلفية") { close(); translateInBackground() })
         }
@@ -3499,7 +3508,7 @@ open class PlayerActivity : Activity(), Host {
     private fun trIsTx(): Boolean = TrProfile.kind() == "transcribe"
     /** قبل البداية: بيبدأ على طول بالنوع والمحرك المحفوظين (⚙). بعد البداية (أو سوفت صب شغّال): قايمة الأدوات زي الأول */
     private fun trMainClick(anchor: View, direct: Boolean = false) {
-        if (Design.isNew() && !direct) { trOptionsDialog(anchor); return }
+        if (Design.isNew() && !direct) { trStartSheet(anchor); return }   // (v1379 — بطلب علي) الشيت الجديد بالـ٤ زراير بدل قايمة الخيارات
         if (Design.isNew() && (engineStarted || sfBusy.isNotEmpty() || sfLive.isNotEmpty())) {   // (v1239) من غير أي صفحة قديمة
             say("⏳ الترجمة شغّالة بالفعل — التقدم في الشريط")
             return
@@ -3533,35 +3542,35 @@ open class PlayerActivity : Activity(), Host {
     }
 
     /** (v1236) التصميم الجديد: دوسة على زرار ترجم/دبلج بتفتح خيارات في نص الشاشة: ترجم · كمّل · من الأول · إعادة الترجمة */
-    private fun trOptionsDialog(anchor: View) {
+    /** (v1379 — بطلب علي في الفويس نوت) شيت «ترجم» الجديد: ٤ زراير بس (كمّل باسم المود · إعادة من الأول · إلغاء · الإعدادات) + سطر «الوضع الحالي» فوقهم، و«🚀 يلا ابدا» بيظهر بعد ما الإعدادات تتغيّر. مفيش أي حاجة تانية */
+    private var trStartArmed = false
+    private fun trStartSheet(anchor: View, armed: Boolean = false) {
+        val armedNow = armed || trStartArmed; trStartArmed = false
         shDialog(320) { col, close ->
             val started = engineStarted
             val paused = ::engine.isInitialized && engine.userPaused
+            val modeNow = modeName()
             col.addView(shHead("🌐 الترجمة", if (started) (trPct.toString() + "% · " + subCountNow() + " جملة") else "اختار وهيبدأ على طول"))
-            col.addView(shRow("▶ ترجم") { close(); h.post { trMainClick(anchor, true) } })
-            col.addView(shRow("⏯ كمّل من حيث وقفنا") { close(); h.post {
+            col.addView(shNote("الوضع الحالي: " + modeNow))   // (v1379 — بطلب علي) سطر الوضع الحالي فوق الزراير
+            val start = {   // كمّل ويلا ابدا نفس الإجراء: استكمال أو بدء بالمود الحالي
                 if (trComplete()) say("✅ الترجمة كاملة 100%")
                 else if (started && paused) beginTranslate()
                 else if (started) say("⏳ الترجمة شغّالة بالفعل")
-                else trMainClick(anchor, true) } })
-            col.addView(shRow("🔁 من الأول") { close(); h.post {
+                else trMainClick(anchor, true)
+            }
+            col.addView(shRow("▶ كمّل " + modeNow, if (started && !paused) "شغّالة بالفعل" else "") { close(); h.post { start() } })   // (v1379 — بطلب علي) الكمّل باسم المود بالظبط (تفريغ / ترجمة فصحى / ترجمة لهجة)
+            col.addView(shRow("🔁 إعادة من الأول", "القديمة تتحفظ في 🗂") { close(); h.post {
                 if (::engine.isInitialized) { val k = redoKeep; player.seekTo(0); redoGo("🔄 بترجم من الأول…") { syncTxFlag("إعادة من الأول"); engine.redoAll(k) } }
                 else say("المحرك لسه بيحمّل — جرّب كمان لحظة") } })
-            col.addView(shRow("✍ تفريغ بس", if (curModeKey().let { it == "txg" || it == "txw" }) "✓ الحالي" else "من غير ترجمة") { close(); h.post { if (TrProfile.engine() == "off") askVideoLang { offlineQuick(true) } else startGeminiTranscribe() } })   // (v1376 — بطلب علي) تفريغ بس إجراء مباشر في قايمة ترجم
-            col.addView(shRow("🔁 إعادة الترجمة", "اختار تعيد من فين", true) { close(); h.post { if (::engine.isInitialized) redoSheet(anchor) else say("المحرك لسه بيحمّل — جرّب كمان لحظة") } })   // (v1376 — بطلب علي) بتفتح شيت الإعادة الجديد — المسار القديم الداخلي اتشال
-            if (started) col.addView(shDuo(
-                shBtn(if (paused) "▶ كمّل" else "⏸ إيقاف مؤقت", if (paused) SH_BLUE else SH_GRAY) { close(); if (paused) beginTranslate() else pauseTranslate() },
-                shBtn("⏹ إلغاء", SH_RED) { close(); h.post { cancelDialog() } }))
-            if (started) col.addView(shRow("📊 تقدم الباتشات", "", true) { close(); h.post { batchDialog() } })   // (v1326) أدوات الشيت اتلمّت هنا
-            if (started) col.addView(shRow("🌙 كمّل في الخلفية") { close(); translateInBackground() })   // (v1326)
-            if (started) col.addView(shRow("🔀 غيّر النظام", "", true) {   // (v1326)
-                close()
-                h.post { shConfirm("🔀 تغيير نظام الترجمة", "هوقف الترجمة الحالية (اللي اتترجم محفوظ) وتختار نظام تاني من القايمة.",
-                    listOf(ShBtn("أوقف واختار", SH_BLUE) { cancelTranslate { trOptionsDialog(anchor) } }, ShBtn("لأ، كمّل", SH_GRAY) { })) }
-            })
-            // (v1376 — بطلب علي) صفوف اختيار النظام (سلايدر/شيبس المحرك/الأوفلاين) اتشالت من قايمة ترجم — مكانها ⚙ إعدادات الترجمة
-            col.addView(shRow("⚙ إعدادات الترجمة", "", true) { close(); h.post { trSettings(anchor) } })   // (v1326)
-            col.addView(shRow("إغلاق") { close() })
+            if (started) col.addView(shRow("⏹ إلغاء", "إيقاف الترجمة الحالية خالص") { close(); h.post { cancelDialog() } })   // (v1379 — بطلب علي) ⏹ = إلغاء الترجمة الحالية
+            col.addView(shRow("⚙ الإعدادات", "", true) { close(); h.post {
+                val sk = listOf("lang", "style", "model", "conv_dialect", "tone_style", "tone_strength", "mt_tr_mode", "stt_offline", "tr_engine", "tr_method", "stt_lang", "groq_model", "fastmode", "tr_bal", "groq_chunk")
+                fun snap() = sk.joinToString("|") { k -> try { Cfg.str(k, "�") } catch (_: Throwable) { "�" } }
+                val before = snap()
+                trSettings(anchor) {   // (v1379 — بطلب علي) الإعدادات اتغيّرت ← «🚀 يلا ابدا» يظهر في الشيت
+                    if (snap() != before) { trStartArmed = true; Notice.show(this@PlayerActivity, "⚙ الإعدادات اتحفظت — دوس «ترجم» وهتلاقي 🚀 يلا ابدا", 3000L) }
+                } } })
+            if (armedNow) col.addView(shBtn("🚀 يلا ابدا", SH_BLUE) { close(); h.post { start() } })   // (v1379 — بطلب علي) زرار البدء بعد تغيير الإعدادات
         }
     }
 
@@ -3588,9 +3597,9 @@ open class PlayerActivity : Activity(), Host {
         }
     }
 
-    private fun trSettings(anchor: View) {
+    private fun trSettings(anchor: View, onClosed: (() -> Unit)? = null) {
         trAnchor = anchor   // (v1099) T4: بيستخدمه الرجوع من تفريغ لترجمة
-        shDialog(340) { col, close ->
+        val d = shDialog(340) { col, close ->
             fun build() {
                 col.removeAllViews()   // (v1374 — بطلب علي) إعادة بناء المحتوى في نفس الشيت من غير وميض قفل/فتح
                 val off = TrProfile.engine() == "off"
@@ -3752,6 +3761,7 @@ open class PlayerActivity : Activity(), Host {
             }
             build()
         }
+        if (onClosed != null) d.setOnDismissListener { onClosed.invoke() }   // (v1379) الشيت الجديد بيسنّد على قفل الإعدادات عشان يقارن قبل/بعد («🚀 يلا ابدا»)
     }
 
     // ===================== (v1099) T4: تطبيق فوري وبأثر رجعي من ⚙ الترجمة + الأقواس =====================
@@ -4253,27 +4263,10 @@ open class PlayerActivity : Activity(), Host {
         setPop = showSheet(anchor, col, 340, "modeSettings") { pw -> if (setPop === pw) setPop = null }
     }
 
-    private var redoPop: android.widget.PopupWindow? = null
     private var redoKeep = true
     /** (v740) 🔁 إعادة الترجمة: من الأول / من الباتش ده وبعده / الباتش ده بس / باتش معين — مع اختيار نحتفظ بالقديمة (🗂) ولا نمسحها */
     /** (v1374 — بطلب علي: «امسحها بالكامل من الكود واعمل واحدة جديدة») شيت إعادة الترجمة الجديد — اتكتب من الصفر بدل القديم اللي كان بيختفي */
-    fun redoSheet(anchor: View) {
-        redoPop?.let { if (it.isShowing) { it.dismiss(); redoPop = null; return } }
-        if (!::engine.isInitialized) return
-        val curC = try { engine.chunkOfSec(player.currentPosition / 1000.0) } catch (_: Exception) { 0 }
-        val col = LinearLayout(this)
-        fun close() { redoPop?.dismiss() }
-        col.addView(shHead("🔁 إعادة الترجمة", "الفيديو واقف عند باتش ${curC + 1}"))
-        val keepRow = shRow("💾 الترجمة القديمة", if (redoKeep) "✅ بتتحفظ في 🗂" else "🗑 بتتمسح") { }
-        keepRow.setOnClickListener { redoKeep = !redoKeep; (keepRow.getChildAt(1) as? TextView)?.text = if (redoKeep) "✅ بتتحفظ في 🗂" else "🗑 بتتمسح" }
-        col.addView(keepRow)
-        col.addView(shSection("أعيد من فين؟"))
-        col.addView(shRow("⏮ من أول الفيديو خالص", "كل الباتشات من الصفر") { close(); val k = redoKeep; player.seekTo(0); redoGo("🔄 بترجم من الأول…") { syncTxFlag("إعادة من الأول"); engine.redoAll(k) } })
-        col.addView(shRow("▶ من باتش ${curC + 1} لآخر الفيديو", "من مكان التشغيل الحالي وبعده") { close(); val k = redoKeep; redoGo("🔄 بترجم من باتش ${curC + 1} وبعده…") { syncTxFlag("إعادة من باتش"); engine.redoFrom(curC, k) } })
-        col.addView(shRow("☝ باتش ${curC + 1} بس", "الباتش ده لوحده") { close(); val k = redoKeep; redoGo("🔄 بترجم باتش ${curC + 1} لوحده…") { syncTxFlag("إعادة باتش واحد"); engine.redoOnly(curC, k) } })
-        col.addView(shRow("📋 اختار باتش معين…", "", true) { close(); batchDialog() })
-        redoPop = showSheet(anchor, col, 300, "redoSheet") { pw -> if (redoPop === pw) redoPop = null }
-    }
+
 
     /** يوقف المشغّل خالص، يسلّم الترجمة لخدمة الخلفية (إشعار بالتقدم والوقت المتبقي) ويطلع بره التطبيق من غير ما يقفله */
     fun translateInBackground(goHome: Boolean = true, src: String = "المشغّل (زرار 🌙)") {

@@ -289,6 +289,15 @@ class MainActivity : Activity() {
             addView(ui.text("طول المقطع", 14f, th.text, true))
             addView(ui.chips(chunkOpts.map { chunkLbl(it) }, { chunkLbl(chunkOpts.minByOrNull { Math.abs(it - chunkSec) }!!) }) { pick -> chunkSec = chunkOpts.first { chunkLbl(it) == pick } })
         }
+        // (v1379 — بطلب علي) طول باتش جروك بيتعدّل من الإعدادات اللي بره: فيديو أقصر من الطول ده = باتش واحد كامل
+        var groqChunkSec = Cfg.int("groq_chunk", 1800).coerceIn(600, 3600)
+        val groqChunkOpts = listOf(600, 1200, 1800, 2700, 3600)
+        fun groqChunkLbl(v: Int) = (v / 60).toString() + " دقيقة"
+        val groqChunk = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(ui.text("⚡ طول باتش جروك", 14f, th.text, true))
+            addView(ui.chips(groqChunkOpts.map { groqChunkLbl(it) }, { groqChunkLbl(groqChunkOpts.minByOrNull { Math.abs(it - groqChunkSec) }!!) }) { pick -> groqChunkSec = groqChunkOpts.first { groqChunkLbl(it) == pick } })
+        }
         val ahead = ui.input("عدد المقاطع اللي بتترجم قدّام مكان التشغيل", Cfg.str("ahead", "3"))
         val hlsAhead = ui.input("روابط m3u8: عدد الباتشات اللي بتتحمّل مقدّمًا قدّام الترجمة (الباقي مابيتحمّلش لحد ما توصله)", Cfg.str("hls_ahead", "3"))
         val atrack = ui.input("رقم مسار الصوت (لو الفيديو فيه أكتر من لغة)", Cfg.str("atrack", "1"))
@@ -381,7 +390,7 @@ class MainActivity : Activity() {
         fun save() {
             if (noSaveCfg) return
             val e = Cfg.p.edit().putString("keys", keys.text.toString()).putString("backup", backup.text.toString())
-                .putString("model", model.text.toString().trim()).putInt("chunk", chunkSec).putString("extra", extra.text.toString())
+                .putString("model", model.text.toString().trim()).putInt("chunk", chunkSec).putInt("groq_chunk", groqChunkSec).putString("extra", extra.text.toString())
                 .putString("gloss", gloss.text.toString())   // (v458) كان بيكتب "" دايمًا فالمسرد بيتمسح مع كل حفظ رغم إن المحرك بيقراه
                 .putString("lang", lang).putString("style", style).putString("theme", themeId)
                 .putString("viskeys", vkeys.text.toString())
@@ -723,7 +732,7 @@ class MainActivity : Activity() {
                     ui.noHint()),   // (v1014) كان تبويب «الصورة» لوحده
                                 ui.section("🤖 الموديل والسرعة", true, modelChips, fetchModelsBtn, model, modelDesc,
                     ui.noHint(), speedBtn, speedOut, speedUseBtn),
-                ui.section("⏱ التقطيع والتنقيح", false, chunk, ahead, hlsAhead,
+                ui.section("⏱ التقطيع والتنقيح", false, chunk, groqChunk, ahead, hlsAhead,
                     ui.noHint(), offPartChips,
                     ui.switchRow("كمّل ترجمة باقي الفيديو بعد ما توصل لمكان التشغيل (بيرجع للأول لو فيه جزء ناقص)", Cfg.bool("keepgoing", true)) { Cfg.put("keepgoing", if (it) "1" else "0") },
                     *fl("fastmode", "prefine"))) }),

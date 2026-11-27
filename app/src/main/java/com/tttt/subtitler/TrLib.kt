@@ -248,7 +248,7 @@ object TrLib {
             val subs = sv.subs.toMutableList()
             subs[index] = subs[index].copy(translated = newText)
             Store(File(c.filesDir, "progress"), Store.keyFor(id)).save(Saved(sv.chunkSec, sv.srcLang, sv.detDone, subs, sv.done, sv.failed,
-                sv.chars, sv.gloss, sv.tpl, sv.pos, sv.charsTried, sv.bounds, sv.gapTried))
+                sv.chars, sv.gloss, sv.tpl, sv.pos, sv.charsTried, sv.bounds, sv.gapTried, sv.imp))
             true
         } catch (e: Throwable) { LogStore.err("TrLib:edit", e); false }
     }
