@@ -700,7 +700,7 @@ open class PlayerActivity : Activity(), Host {
             "ab_a" -> abSet(0)
             "ab_b" -> abSet(1)
             "ab_x" -> abClear()
-            "redo" -> redoDialog(anchor)
+            "redo" -> redoSheet(anchor)
             "modeset" -> trSettings(anchor)
             "posy" -> { val n = (Cfg.int("sub_posy", 0) + v.toInt()).coerceIn(-60, 240); Cfg.put("sub_posy", n.toString()); runOnUiThread { try { restyleFn(); applyChromeFn() } catch (_: Throwable) {}; curIdx = -2 }; say("↕ موضع الترجمة: $n") }   // (v759) كان بيحفظ القيمة من غير ما يطبّق الهامش (applyChromeFn) — ودلوقتي بينزل تحت كمان (-60)
             "pip" -> runOnUiThread { try { enterPip() } catch (e: Throwable) { LogStore.err("Player:rpip", e) } }   // (v712) نافذة صغيرة من الريموت
@@ -2754,12 +2754,13 @@ open class PlayerActivity : Activity(), Host {
             if (engine.transOnly) {
                 try { if (::realEngine.isInitialized && !remote) realEngine.origView = true } catch (_: Throwable) {}
                 touchSubs()
-                LogStore.add("✍ تفريغ: الفيديو متفرّغ/مترجم بالكامل — اتعرض النص الأصلي (للتفريغ من الأول: 🔁 إعادة)")
-                Notice.show(this, "✍ الفيديو ده متفرّغ بالفعل 100% — عرضت النص الأصلي (للتفريغ من الأول: 🔁 إعادة)", 4200L)
+                LogStore.add("✍ تفريغ: الفيديو متفرّغ بالكامل — اتعرض النص الأصلي واتفتح شيت الإعادة")
+                Notice.show(this, "✍ الفيديو ده متفرّغ بالفعل 100% — عرضت النص الأصلي، اختار تعيد من فين", 4200L)
+                if (!auto && !asked && !remote) h.post { try { redoSheet(window.decorView) } catch (_: Throwable) {} }   // (v1374 — بطلب علي) الإعادة متاحة في التفريغ برضه
                 return
             }
             Notice.show(this, "✓ الفيديو ده مترجم 100% — اختار تعيد من فين", 3600L)
-            if (!auto && !asked && !remote && !Design.isNew()) h.post { try { redoDialog(window.decorView) } catch (_: Throwable) {} }
+            if (!auto && !asked && !remote) h.post { try { redoSheet(window.decorView) } catch (_: Throwable) {} }   // (v1374 — بطلب علي) كانت بتتجاهل الدايلوج في التصميم الجديد فمابيحصلش حاجة
             return
         }
         // (v685) فيه ترجمة محفوظة ناقصة: اسأل (كمّل الباقي / من مكان التشغيل / من الأول وجديد) بدل ما يكمّل لوحده
@@ -3452,8 +3453,12 @@ open class PlayerActivity : Activity(), Host {
         col.addView(shRow("✍ تفريغ بس", if (mk == "txg" || mk == "txw") "✓ الحالي" else "من غير ترجمة") { closeSheet(); h.post { if (TrProfile.engine() == "off") askVideoLang { offlineQuick(true) } else startGeminiTranscribe() } })
         col.addView(shSection("✍ التفريغ بـ:"))
         val engRow = shFlow()
-        engRow.addView(shChip("☁ جيميناي", TrProfile.engine() != "off") { Cfg.put("tr_engine", "gem"); updateTr(); closeSheet(); h.post { reopen() } }, shChipLp())
-        engRow.addView(shChip("📴 وشبر", TrProfile.engine() == "off") { Cfg.put("tr_engine", "off"); updateTr(); closeSheet(); h.post { reopen() } }, shChipLp())
+        fun paintEngRow() {   // (v1374 — بطلب علي) التبديل بيحصل في مكانه من غير ما الشيت يقفل ويفتح
+            engRow.removeAllViews()
+            engRow.addView(shChip("☁ جيميناي", TrProfile.engine() != "off") { Cfg.put("tr_engine", "gem"); updateTr(); paintEngRow() }, shChipLp())
+            engRow.addView(shChip("📴 وشبر", TrProfile.engine() == "off") { Cfg.put("tr_engine", "off"); updateTr(); paintEngRow() }, shChipLp())
+        }
+        paintEngRow()
         col.addView(engRow, LinearLayout.LayoutParams(-1, -2))
     }
 
@@ -3476,7 +3481,7 @@ open class PlayerActivity : Activity(), Host {
                 shBtn(if (paused) "▶ كمّل" else "⏸ إيقاف مؤقت", if (paused) SH_BLUE else SH_GRAY) { close(); if (paused) beginTranslate() else pauseTranslate() },
                 shBtn("⏹ إلغاء الترجمة", SH_RED) { close(); h.post { cancelDialog() } }))
             col.addView(shSection("🛠 أدوات"))
-            col.addView(shRow("🔁 إعادة ترجمة", "", true) { close(); h.post { redoDialog(anchor) } })
+            col.addView(shRow("🔁 إعادة ترجمة", "", true) { close(); h.post { redoSheet(anchor) } })
             col.addView(shRow("📊 تقدم الباتشات", "", true) { close(); batchDialog() })
             col.addView(shRow("🌙 كمّل في الخلفية") { close(); translateInBackground() })
         }
@@ -3576,161 +3581,165 @@ open class PlayerActivity : Activity(), Host {
     private fun trSettings(anchor: View) {
         trAnchor = anchor   // (v1099) T4: بيستخدمه الرجوع من تفريغ لترجمة
         shDialog(340) { col, close ->
-            val off = TrProfile.engine() == "off"
-            fun again() { close(); h.post { trSettings(anchor) } }
-            fun engSync() { try { if (::engine.isInitialized) engine.convDialect = Cfg.str("conv_dialect", "") } catch (_: Throwable) {} }
-            col.addView(shHead("⚙ إعدادات الترجمة", "زرار «ترجم» بيشتغل على طول بالإعدادات دي"))
-            // (v1371 — بطلب علي) نظام البلوكات: سلايدر السرعة فوق (بيظهر مع جيميناي بس) ← سلايدر النوع (ظاهر دايمًا) ← 3 أعمدة جنب بعض: 🎙 تفريغ · 🌐 فصحى · 🗣 لهجة — الأعمدة اللي تحت موضع السلايدر رمادية بس قابلة للدوس (طريقة الخروج من «تفريغ»)
-            fun pickStt(kind: String) {
-                when (kind) {
-                    "whisper" -> {
-                        Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper")
-                        val rdy = try { Offline.engine().ready() || Offload.wanted() } catch (_: Throwable) { false }
-                        if (!rdy) { close(); h.post { whisperModelPick { h.post { beginTranslate() } } }; return } else say("🎙 وشبر — التفريغ على الجهاز")   // (v1341) الدايلوج بيفتح بعد قفل الشيت — كان بيطلع وراها (بطلب علي)
+            fun build() {
+                col.removeAllViews()   // (v1374 — بطلب علي) إعادة بناء المحتوى في نفس الشيت من غير وميض قفل/فتح
+                val off = TrProfile.engine() == "off"
+                fun again() { build() }   // (v1374 — بطلب علي) التحديث بيحصل في مكانه — الشيت مابيقفلش ويفتح تاني مع كل اختيار
+                fun engSync() { try { if (::engine.isInitialized) engine.convDialect = Cfg.str("conv_dialect", "") } catch (_: Throwable) {} }
+                col.addView(shHead("⚙ إعدادات الترجمة", "زرار «ترجم» بيشتغل على طول بالإعدادات دي"))
+                // (v1371 — بطلب علي) نظام البلوكات: سلايدر السرعة فوق (بيظهر مع جيميناي بس) ← سلايدر النوع (ظاهر دايمًا) ← 3 أعمدة جنب بعض: 🎙 تفريغ · 🌐 فصحى · 🗣 لهجة — الأعمدة اللي تحت موضع السلايدر رمادية بس قابلة للدوس (طريقة الخروج من «تفريغ»)
+                fun pickStt(kind: String) {
+                    when (kind) {
+                        "whisper" -> {
+                            Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper")
+                            val rdy = try { Offline.engine().ready() || Offload.wanted() } catch (_: Throwable) { false }
+                            if (!rdy) { close(); h.post { whisperModelPick { h.post { beginTranslate() } } }; return } else say("🎙 وشبر — التفريغ على الجهاز")   // (v1341) الدايلوج بيفتح بعد قفل الشيت — كان بيطلع وراها (بطلب علي)
+                        }
+                        "groq" -> {
+                            Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "groq"); say("⚡ جروك — تفريغ Whisper سحابي سريع")
+                            if (Cfg.str("groq_key", "").isBlank()) Notice.show(this, "🔑 مفتاح Groq ناقص — ضيفه من الإعدادات ← 🔑 المفاتيح", 3400L)
+                        }
+                        else -> { Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "gemini"); say("☁ جيميناي بيفرّغ الصوت") }
                     }
-                    "groq" -> {
-                        Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "groq"); say("⚡ جروك — تفريغ Whisper سحابي سريع")
-                        if (Cfg.str("groq_key", "").isBlank()) Notice.show(this, "🔑 مفتاح Groq ناقص — ضيفه من الإعدادات ← 🔑 المفاتيح", 3400L)
-                    }
-                    else -> { Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "gemini"); say("☁ جيميناي بيفرّغ الصوت") }
+                    again()
                 }
-                again()
-            }
-            fun pickMt(kind: String) {
-                when (kind) {
-                    "none" -> TrProfile.setMode(TrProfile.TX)
-                    "gemini" -> { Cfg.put("tr_method", "gemini"); if (TrProfile.uiMode() == TrProfile.TX) TrProfile.setMode(TrProfile.MSA) }
-                    else -> {
-                        Cfg.put("tr_method", "google")
-                        if (TrProfile.uiMode() == TrProfile.TX) TrProfile.setMode(TrProfile.MSA)
-                        if (Cfg.str("mt_tr_mode", "") == "groq") { say("🌐 جوجل ترانسليت بيترجم تفريغ جروك"); again(); return }   // (v1369) جوجل مابيحوّلش التفريغ لوشبر لو جروك مختار
-                        Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper")
-                        say("🌐 جوجل ترانسليت بيترجم تفريغ الويشبر — التفريغ اتحوّل لوشبر تلقائيًا")
-                        val rdy = try { Offline.engine().ready() || Offload.wanted() } catch (_: Throwable) { false }
-                        if (!rdy) { close(); h.post { whisperModelPick { } }; return }   // (v1341) نفس ترتيب الفتح فوق الشيت
+                fun pickMt(kind: String) {
+                    when (kind) {
+                        "none" -> TrProfile.setMode(TrProfile.TX)
+                        "gemini" -> { Cfg.put("tr_method", "gemini"); if (TrProfile.uiMode() == TrProfile.TX) TrProfile.setMode(TrProfile.MSA) }
+                        else -> {
+                            Cfg.put("tr_method", "google")
+                            if (TrProfile.uiMode() == TrProfile.TX) TrProfile.setMode(TrProfile.MSA)
+                            if (Cfg.str("mt_tr_mode", "") == "groq") { say("🌐 جوجل ترانسليت بيترجم تفريغ جروك"); again(); return }   // (v1369) جوجل مابيحوّلش التفريغ لوشبر لو جروك مختار
+                            Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper")
+                            say("🌐 جوجل ترانسليت بيترجم تفريغ الويشبر — التفريغ اتحوّل لوشبر تلقائيًا")
+                            val rdy = try { Offline.engine().ready() || Offload.wanted() } catch (_: Throwable) { false }
+                            if (!rdy) { close(); h.post { whisperModelPick { } }; return }   // (v1341) نفس ترتيب الفتح فوق الشيت
+                        }
                     }
+                    again()
                 }
-                again()
-            }
-            val sttSel = if (Cfg.bool("stt_offline", false)) "whisper" else if (Cfg.str("mt_tr_mode", "") == "groq") "groq" else "gemini"
-            val mtSel = if (TrProfile.uiMode() == TrProfile.TX) "none" else if (TrWizard.method() == "google") "google" else "gemini"
-            val diaSel = if (TrProfile.uiMode() == TrProfile.DIA) "gemini" else "none"
-            val modeTitle = ui.text("", 14f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(2), 0, ui.dp(2)) }
-            val diaBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-            val qBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-            val msaViews = ArrayList<View>()
-            val diaViews = ArrayList<View>()
-            fun paintSave() { try { TrProfile.save() } catch (_: Throwable) {} }   // (v1140) حفظ تلقائي: أي تغيير بيتحفظ لكل الفيديوهات على طول (مفيش زرار حفظ)
-            fun paintDia() {
-                diaBox.removeAllViews()
-                val cd = TrProfile.dialect()
-                val dTitle = ui.text("🗣 اللهجة: " + cd, 14f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(2), 0, ui.dp(2)) }
-                diaBox.addView(dTitle, LinearLayout.LayoutParams(-1, -2))
-                diaBox.addView(shNote("اللهجة بتتبع لغة الكيبورد/النظام أوتوماتيك — عربي مصري = «مصري»، أي لغة تانية = فصحى"))   // (v1341) سلايدر اللهجة اتشال: كان بلا وظيفة (لهجة واحدة بس) — بطلب علي
-                diaBox.addView(shNote("الشدة"))
-                val rs = shFlow(); val cg = TrProfile.degree()
-                for (g in TrProfile.degrees) rs.addView(shChip(g, g == cg) { TrProfile.setDegree(g); try { if (::engine.isInitialized) engine.toneStrength = g } catch (_: Throwable) {}; paintDia(); paintSave(); if (g != cg) trLiveApply("deg", TrProfile.DIA) }, shChipLp())
-                diaBox.addView(rs, LinearLayout.LayoutParams(-1, -2))
-                if (TrProfile.styleIsLiteral()) diaBox.addView(shNote("الأسلوب حرفي — الشدة مش هتأثر (غيّره من 🌐 اللهجة والأسلوب)", true))
-            }
-            fun refresh() {
-                val m = TrProfile.uiMode()
-                val none = m == TrProfile.TX   // (v1332) «بدون ترجمة»: كل ما يخص الترجمة بيختفي
-                modeTitle.text = when (m) { TrProfile.TX -> "✍ تفريغ بس (من غير ترجمة)"; TrProfile.MSA -> "🔤 ترجمة فصحى"; else -> "🗣 ترجمة بلهجة" }
-                modeTitle.visibility = if (none) View.GONE else View.VISIBLE
-                diaBox.visibility = if (m == TrProfile.DIA && !off && !none) View.VISIBLE else View.GONE
-                val gem = sttSel == "gemini" || (m >= TrProfile.MSA && TrWizard.method() == "gemini")   // (v1371 — بطلب علي) السلايدر بيظهر بس لو جيميناي فعلًا في المسار (تفريغ ولا ترجمة)
-                qBox.visibility = if (gem && !off) View.VISIBLE else View.GONE   // (v1371) بيختفي بالكامل من غير بقايا نص
-                for (v in msaViews) { v.alpha = if (m >= TrProfile.MSA) 1f else 0.35f }   // (v1369) رمادي لحد ما السلايدر يوصله (بطلب علي) · (v1371) رمادي بس بيفضل شغّال — دي طريقة الخروج من «تفريغ»
-                for (v in diaViews) { v.alpha = if (m >= TrProfile.DIA) 1f else 0.35f }   // (v1371) نفس الفكرة
-            }
-            fun setModeChip(mm: Int) {   // (v1369) لازم تتعريف بعد paintSave/paintDia/refresh — الكوتلن مابيسمحش باستخدام فانكشن محلية قبل تعريفها
-                val prevM = TrProfile.uiMode(); if (mm == prevM) return
-                val pd = curEngDia(); TrProfile.setMode(mm); engSync(); updateTr(); paintDia(); refresh(); trLiveApply("mode", prevM, pd); paintSave()
-            }
-            // ⚡ سلايدر السرعة فوق — بيظهر مع جيميناي بس
-            trSliderSection(qBox) { paintSave() }
-            col.addView(qBox, LinearLayout.LayoutParams(-1, -2))
-            col.addView(shSection("النوع"))
-            col.addView(modeTitle, LinearLayout.LayoutParams(-1, -2))
-            val mModes = if (off) listOf(TrProfile.TX, TrProfile.MSA) else listOf(TrProfile.TX, TrProfile.MSA, TrProfile.DIA)   // (v1358) موضع الدبلجة اتشال من السلايدر
-            var lastM = TrProfile.uiMode().let { if (off && it == TrProfile.DIA) TrProfile.MSA else it }
-            val msb = SeekBar(this).apply {
-                layoutDirection = View.LAYOUT_DIRECTION_LTR; max = mModes.size - 1; progress = mModes.indexOf(lastM).coerceAtLeast(0)
-                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                    override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
-                        if (!u) return
-                        val mm = mModes.getOrNull(p) ?: return
-                        if (mm == lastM) return
-                        val prevM = lastM; val pd = curEngDia(); lastM = mm; TrProfile.setMode(mm); engSync(); updateTr(); paintDia(); refresh(); trLiveApply("mode", prevM, pd); paintSave()   // (v1099) T4
+                val sttSel = if (Cfg.bool("stt_offline", false)) "whisper" else if (Cfg.str("mt_tr_mode", "") == "groq") "groq" else "gemini"
+                val mtSel = if (TrProfile.uiMode() == TrProfile.TX) "none" else if (TrWizard.method() == "google") "google" else "gemini"
+                val diaSel = if (TrProfile.uiMode() == TrProfile.DIA) "gemini" else "none"
+                val modeTitle = ui.text("", 14f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(2), 0, ui.dp(2)) }
+                val diaBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+                val qBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+                val msaViews = ArrayList<View>()
+                val diaViews = ArrayList<View>()
+                fun paintSave() { try { TrProfile.save() } catch (_: Throwable) {} }   // (v1140) حفظ تلقائي: أي تغيير بيتحفظ لكل الفيديوهات على طول (مفيش زرار حفظ)
+                fun paintDia() {
+                    diaBox.removeAllViews()
+                    val cd = TrProfile.dialect()
+                    val dTitle = ui.text("🗣 اللهجة: " + cd, 14f, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(2), 0, ui.dp(2)) }
+                    diaBox.addView(dTitle, LinearLayout.LayoutParams(-1, -2))
+                    diaBox.addView(shNote("اللهجة بتتبع لغة الكيبورد/النظام أوتوماتيك — عربي مصري = «مصري»، أي لغة تانية = فصحى"))   // (v1341) سلايدر اللهجة اتشال: كان بلا وظيفة (لهجة واحدة بس) — بطلب علي
+                    diaBox.addView(shNote("الشدة"))
+                    val rs = shFlow(); val cg = TrProfile.degree()
+                    for (g in TrProfile.degrees) rs.addView(shChip(g, g == cg) { TrProfile.setDegree(g); try { if (::engine.isInitialized) engine.toneStrength = g } catch (_: Throwable) {}; paintDia(); paintSave(); if (g != cg) trLiveApply("deg", TrProfile.DIA) }, shChipLp())
+                    diaBox.addView(rs, LinearLayout.LayoutParams(-1, -2))
+                    if (TrProfile.styleIsLiteral()) diaBox.addView(shNote("الأسلوب حرفي — الشدة مش هتأثر (غيّره من 🌐 اللهجة والأسلوب)", true))
+                }
+                fun refresh() {
+                    val m = TrProfile.uiMode()
+                    val none = m == TrProfile.TX   // (v1332) «بدون ترجمة»: كل ما يخص الترجمة بيختفي
+                    modeTitle.text = when (m) { TrProfile.TX -> "✍ تفريغ بس (من غير ترجمة)"; TrProfile.MSA -> "🔤 ترجمة فصحى"; else -> "🗣 ترجمة بلهجة" }
+                    modeTitle.visibility = if (none) View.GONE else View.VISIBLE
+                    diaBox.visibility = if (m == TrProfile.DIA && !off && !none) View.VISIBLE else View.GONE
+                    val gem = sttSel == "gemini" || (m >= TrProfile.MSA && TrWizard.method() == "gemini")   // (v1371 — بطلب علي) السلايدر بيظهر بس لو جيميناي فعلًا في المسار (تفريغ ولا ترجمة)
+                    qBox.visibility = if (gem && !off) View.VISIBLE else View.GONE   // (v1371) بيختفي بالكامل من غير بقايا نص
+                    for (v in msaViews) { v.alpha = if (m >= TrProfile.MSA) 1f else 0.35f }   // (v1369) رمادي لحد ما السلايدر يوصله (بطلب علي) · (v1371) رمادي بس بيفضل شغّال — دي طريقة الخروج من «تفريغ»
+                    for (v in diaViews) { v.alpha = if (m >= TrProfile.DIA) 1f else 0.35f }   // (v1371) نفس الفكرة
+                }
+                fun setModeChip(mm: Int) {   // (v1369) لازم تتعريف بعد paintSave/paintDia/refresh — الكوتلن مابيسمحش باستخدام فانكشن محلية قبل تعريفها
+                    val prevM = TrProfile.uiMode(); if (mm == prevM) return
+                    val pd = curEngDia(); TrProfile.setMode(mm); engSync(); updateTr(); paintDia(); refresh(); trLiveApply("mode", prevM, pd); paintSave()
+                }
+                // ⚡ سلايدر السرعة فوق — بيظهر مع جيميناي بس
+                trSliderSection(qBox) { paintSave() }
+                col.addView(qBox, LinearLayout.LayoutParams(-1, -2))
+                col.addView(shSection("النوع"))
+                col.addView(modeTitle, LinearLayout.LayoutParams(-1, -2))
+                val mModes = if (off) listOf(TrProfile.TX, TrProfile.MSA) else listOf(TrProfile.TX, TrProfile.MSA, TrProfile.DIA)   // (v1358) موضع الدبلجة اتشال من السلايدر
+                var lastM = TrProfile.uiMode().let { if (off && it == TrProfile.DIA) TrProfile.MSA else it }
+                val msb = SeekBar(this).apply {
+                    layoutDirection = View.LAYOUT_DIRECTION_LTR; max = mModes.size - 1; progress = mModes.indexOf(lastM).coerceAtLeast(0)
+                    setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                        override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
+                            if (!u) return
+                            val mm = mModes.getOrNull(p) ?: return
+                            if (mm == lastM) return
+                            val prevM = lastM; val pd = curEngDia(); lastM = mm; TrProfile.setMode(mm); engSync(); updateTr(); paintDia(); refresh(); trLiveApply("mode", prevM, pd); paintSave()   // (v1099) T4
+                        }
+                        override fun onStartTrackingTouch(s: SeekBar?) {}
+                        override fun onStopTrackingTouch(s: SeekBar?) {}
+                    })
+                }
+                col.addView(msb, LinearLayout.LayoutParams(-1, -2))
+                val mends = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
+                mends.addView(ui.text("✍ تفريغ", 11.5f, 0xFF9AA0A6.toInt()), LinearLayout.LayoutParams(0, -2, 1f))
+                mends.addView(ui.text("🔤 فصحى", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
+                if (!off) mends.addView(ui.text("🗣 لهجة", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
+                col.addView(mends, LinearLayout.LayoutParams(-1, -2))
+                // (v1371 — بطلب علي) البلوكات 3 أعمدة جنب بعض مهما كان حجم الشاشة: 🎙 تفريغ (جيميناي/جروك/ويشبر) · 🌐 فصحى (جيميناي/جوجل ترانسليت/بدون) · 🗣 لهجة (جيميناي/بدون)
+                fun colChip(label: String, on: Boolean, f: () -> Unit): View = ui.text(label, 11.5f, Color.WHITE, on).apply {
+                    gravity = Gravity.CENTER; isFocusable = true; setPadding(ui.dp(3), 0, ui.dp(3), 0)
+                    maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
+                    background = ui.box(if (on) 0xFF8B6B50.toInt() else 0x1AFFFFFF, if (on) 0x55FFFFFF else 0x22FFFFFF, 10); setOnClickListener { f() }
+                    tvRing(this)
+                }
+                fun blkChip(cc: LinearLayout, label: String, on: Boolean, f: () -> Unit) { cc.addView(colChip(label, on, f), LinearLayout.LayoutParams(-1, ui.dp(38)).apply { setMargins(ui.dp(2), ui.dp(2), ui.dp(2), ui.dp(2)) }) }
+                fun blkCol(title: String, chips: (LinearLayout) -> Unit): LinearLayout {
+                    val c = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+                    c.addView(ui.text(title, 12.5f, 0xFF9AA0A6.toInt(), true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(6), 0, ui.dp(2)) }, LinearLayout.LayoutParams(-1, -2))
+                    chips(c)
+                    return c
+                }
+                val cols = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+                val sttCol = blkCol("🎙 تفريغ") { cc ->
+                    blkChip(cc, "☁ جيميناي", sttSel == "gemini") { pickStt("gemini") }
+                    blkChip(cc, "⚡ جروك", sttSel == "groq") { pickStt("groq") }
+                    blkChip(cc, "🎙 ويشبر", sttSel == "whisper") { pickStt("whisper") }
+                }
+                cols.addView(sttCol, LinearLayout.LayoutParams(0, -2, 1f))
+                val msaCol = blkCol("🌐 فصحى") { cc ->
+                    blkChip(cc, "☁ جيميناي", mtSel == "gemini") { pickMt("gemini") }
+                    blkChip(cc, "🌐 جوجل ترانسليت", mtSel == "google") { pickMt("google") }
+                    blkChip(cc, "🚫 بدون", mtSel == "none") { pickMt("none") }
+                }
+                msaViews.add(msaCol)
+                cols.addView(msaCol, LinearLayout.LayoutParams(0, -2, 1f))
+                if (!off) {
+                    val diaCol = blkCol("🗣 لهجة") { cc ->
+                        blkChip(cc, "☁ جيميناي", diaSel == "gemini") { setModeChip(TrProfile.DIA); again() }
+                        blkChip(cc, "🚫 بدون", diaSel == "none") { setModeChip(TrProfile.MSA); again() }
                     }
-                    override fun onStartTrackingTouch(s: SeekBar?) {}
-                    override fun onStopTrackingTouch(s: SeekBar?) {}
-                })
-            }
-            col.addView(msb, LinearLayout.LayoutParams(-1, -2))
-            val mends = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_LTR; setPadding(ui.dp(10), 0, ui.dp(10), 0) }
-            mends.addView(ui.text("✍ تفريغ", 11.5f, 0xFF9AA0A6.toInt()), LinearLayout.LayoutParams(0, -2, 1f))
-            mends.addView(ui.text("🔤 فصحى", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
-            if (!off) mends.addView(ui.text("🗣 لهجة", 11.5f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
-            col.addView(mends, LinearLayout.LayoutParams(-1, -2))
-            // (v1371 — بطلب علي) البلوكات 3 أعمدة جنب بعض مهما كان حجم الشاشة: 🎙 تفريغ (جيميناي/جروك/ويشبر) · 🌐 فصحى (جيميناي/جوجل ترانسليت/بدون) · 🗣 لهجة (جيميناي/بدون)
-            fun colChip(label: String, on: Boolean, f: () -> Unit): View = ui.text(label, 11.5f, Color.WHITE, on).apply {
-                gravity = Gravity.CENTER; isFocusable = true; setPadding(ui.dp(3), 0, ui.dp(3), 0)
-                maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
-                background = ui.box(if (on) 0xFF8B6B50.toInt() else 0x1AFFFFFF, if (on) 0x55FFFFFF else 0x22FFFFFF, 10); setOnClickListener { f() }
-                tvRing(this)
-            }
-            fun blkChip(cc: LinearLayout, label: String, on: Boolean, f: () -> Unit) { cc.addView(colChip(label, on, f), LinearLayout.LayoutParams(-1, ui.dp(38)).apply { setMargins(ui.dp(2), ui.dp(2), ui.dp(2), ui.dp(2)) }) }
-            fun blkCol(title: String, chips: (LinearLayout) -> Unit): LinearLayout {
-                val c = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-                c.addView(ui.text(title, 12.5f, 0xFF9AA0A6.toInt(), true).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(6), 0, ui.dp(2)) }, LinearLayout.LayoutParams(-1, -2))
-                chips(c)
-                return c
-            }
-            val cols = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-            val sttCol = blkCol("🎙 تفريغ") { cc ->
-                blkChip(cc, "☁ جيميناي", sttSel == "gemini") { pickStt("gemini") }
-                blkChip(cc, "⚡ جروك", sttSel == "groq") { pickStt("groq") }
-                blkChip(cc, "🎙 ويشبر", sttSel == "whisper") { pickStt("whisper") }
-            }
-            cols.addView(sttCol, LinearLayout.LayoutParams(0, -2, 1f))
-            val msaCol = blkCol("🌐 فصحى") { cc ->
-                blkChip(cc, "☁ جيميناي", mtSel == "gemini") { pickMt("gemini") }
-                blkChip(cc, "🌐 جوجل ترانسليت", mtSel == "google") { pickMt("google") }
-                blkChip(cc, "🚫 بدون", mtSel == "none") { pickMt("none") }
-            }
-            msaViews.add(msaCol)
-            cols.addView(msaCol, LinearLayout.LayoutParams(0, -2, 1f))
-            if (!off) {
-                val diaCol = blkCol("🗣 لهجة") { cc ->
-                    blkChip(cc, "☁ جيميناي", diaSel == "gemini") { setModeChip(TrProfile.DIA); again() }
-                    blkChip(cc, "🚫 بدون", diaSel == "none") { setModeChip(TrProfile.MSA); again() }
+                    diaViews.add(diaCol)
+                    cols.addView(diaCol, LinearLayout.LayoutParams(0, -2, 1f))
                 }
-                diaViews.add(diaCol)
-                cols.addView(diaCol, LinearLayout.LayoutParams(0, -2, 1f))
+                col.addView(cols, LinearLayout.LayoutParams(-1, -2))
+                if (sttSel == "whisper") {
+                    val wm = Offline.model(); val wdl = try { Offline.downloaded() } catch (_: Throwable) { false }
+                    col.addView(shNote("الموديل: " + wm.label + " (~" + wm.approxMb + "MB) — " + (if (wdl) "✅ متنزّل" else "❌ مش متنزّل"), !wdl))
+                    col.addView(shRow(if (wdl) "🎙 تغيير موديل الويشبر" else "⬇ تحميل موديل الويشبر", "اختار الموديل الأول (tiny/base/small/medium/turbo)، بعدين نزّله بروجرس أو في الخلفية") { close(); h.post { whisperModelPick { h.post { if (!wdl) beginTranslate() } } } })   // (v1341) اختيار الموديل قبل التحميل + الدايلوج فوق الشيت (بطلب علي)
+                } else if (sttSel == "groq") {
+                    val gk = Cfg.str("groq_key", "").isNotBlank()
+                    col.addView(shNote("الموديل: " + Cfg.str("groq_model", "whisper-large-v3-turbo").ifBlank { "whisper-large-v3-turbo" } + " — المفتاح: " + (if (gk) "✅ محفوظ" else "❌ ناقص — ضيفه من الإعدادات ← 🔑 المفاتيح"), !gk))
+                } else {
+                    col.addView(shRow("🔄 جلب الموديلات واختيار واحد", "بيتطبّق على كل المفاتيح") { close(); h.post { modelsPick() } })
+                }
+                if (mtSel == "google") col.addView(shNote("جوجل ترانسليت بيترجم النص المفرّغ بس — التفريغ بيتم بالويشبر على الجهاز أو بجروك."))
+                col.addView(diaBox, LinearLayout.LayoutParams(-1, -2))
+                if (off) col.addView(shNote("الأوفلاين بيترجم فصحى بس — اللهجة والشدة محتاجين جيميناي"))
+                paintDia()
+                trSongSection(col)   // (v1171) 🎵 وضع الأغاني
+                if (::realEngine.isInitialized && !remote && realEngine.applied.isNotEmpty())
+                    col.addView(shRow("( ) شيل الأقواس من الجمل المتغيّرة", realEngine.applied.size.toString() + " جملة") { realEngine.clearMarks(); touchSubs(); again() })   // (v1099) T4
+                // (v1098) حفظ: الإعدادات دي بتتطبّق تلقائي على أي فيديو تاني تفتحه بعد كده
+                col.addView(shRow("إغلاق") { close() })
+                refresh()
             }
-            col.addView(cols, LinearLayout.LayoutParams(-1, -2))
-            if (sttSel == "whisper") {
-                val wm = Offline.model(); val wdl = try { Offline.downloaded() } catch (_: Throwable) { false }
-                col.addView(shNote("الموديل: " + wm.label + " (~" + wm.approxMb + "MB) — " + (if (wdl) "✅ متنزّل" else "❌ مش متنزّل"), !wdl))
-                col.addView(shRow(if (wdl) "🎙 تغيير موديل الويشبر" else "⬇ تحميل موديل الويشبر", "اختار الموديل الأول (tiny/base/small/medium/turbo)، بعدين نزّله بروجرس أو في الخلفية") { close(); h.post { whisperModelPick { h.post { if (!wdl) beginTranslate() } } } })   // (v1341) اختيار الموديل قبل التحميل + الدايلوج فوق الشيت (بطلب علي)
-            } else if (sttSel == "groq") {
-                val gk = Cfg.str("groq_key", "").isNotBlank()
-                col.addView(shNote("الموديل: " + Cfg.str("groq_model", "whisper-large-v3-turbo").ifBlank { "whisper-large-v3-turbo" } + " — المفتاح: " + (if (gk) "✅ محفوظ" else "❌ ناقص — ضيفه من الإعدادات ← 🔑 المفاتيح"), !gk))
-            } else {
-                col.addView(shRow("🔄 جلب الموديلات واختيار واحد", "بيتطبّق على كل المفاتيح") { close(); h.post { modelsPick() } })
-            }
-            if (mtSel == "google") col.addView(shNote("جوجل ترانسليت بيترجم النص المفرّغ بس — التفريغ بيتم بالويشبر على الجهاز أو بجروك."))
-            col.addView(diaBox, LinearLayout.LayoutParams(-1, -2))
-            if (off) col.addView(shNote("الأوفلاين بيترجم فصحى بس — اللهجة والشدة محتاجين جيميناي"))
-            paintDia()
-            trSongSection(col)   // (v1171) 🎵 وضع الأغاني
-            if (::realEngine.isInitialized && !remote && realEngine.applied.isNotEmpty())
-                col.addView(shRow("( ) شيل الأقواس من الجمل المتغيّرة", realEngine.applied.size.toString() + " جملة") { realEngine.clearMarks(); touchSubs(); again() })   // (v1099) T4
-            // (v1098) حفظ: الإعدادات دي بتتطبّق تلقائي على أي فيديو تاني تفتحه بعد كده
-            col.addView(shRow("إغلاق") { close() })
-            refresh()
+            build()
         }
     }
 
@@ -3829,20 +3838,21 @@ open class PlayerActivity : Activity(), Host {
         } catch (_: Throwable) { base }
     }
 
-    /** (v1171) 🎵 وضع الأغاني: تلقائي (من العنوان/is_song) · دايمًا أغنية · مقفول + مفتاح الكلمات المرجعية من LRCLIB — بيتطبّق على الباتشات الجاية */
+    /** (v1374 — بطلب علي: «شيل زرار تلقائي خالص وخلي وضع الأغاني أون/أوف») زرار واحد: شغّال = أغنية + كلمات LRCLIB · مقفول = ترجمة/تفريغ مباشر */
     private fun trSongSection(col: LinearLayout) {
         col.addView(shSection("🎵 وضع الأغاني"))
-        val row = shFlow(); val lyr = shFlow()
+        val row = shFlow()
         val note = shNote("")
         fun paint() {
-            val m = SongHint.mode(); val lw = SongHint.lyricsWanted()
-            row.removeAllViews(); lyr.removeAllViews()
-            row.addView(shChip("🤖 تلقائي", m == "auto") { SongHint.setMode("auto"); paint() }, shChipLp())
-            lyr.addView(shChip(if (lw) "📜 كلمات مرجعية LRCLIB: شغّال" else "📜 كلمات مرجعية LRCLIB: مقفول", lw) { SongHint.setLyricsWanted(!lw); paint() }, shChipLp())
-            (note as? TextView)?.text = "الأغنية بتتعرف من العنوان أو من رد الموديل. وقتها: البرومبت الخفيف وتسريع الصوت بيتقفلوا، وقاعدة «تجاهل الموسيقى» بتتلغي، والكلمات المرجعية (للإملاء بس) بتتجاب من LRCLIB بإنترنت. بيتطبّق على الباتشات الجاية.\nدلوقتي: " + SongHint.state()
+            val on = SongHint.mode() == "on"
+            row.removeAllViews()
+            row.addView(shChip(if (on) "🎵 وضع الأغاني: شغّال (كلمات LRCLIB)" else "🎵 وضع الأغاني: مقفول", on) {
+                SongHint.setMode(if (on) "off" else "on"); SongHint.setLyricsWanted(!on); paint()
+            }, shChipLp())
+            (note as? TextView)?.text = if (on) "شغّال: البرومبت الخفيف وتسريع الصوت متقفلين، قاعدة «تجاهل الموسيقى» ملغية، والكلمات المرجعية (للإملاء بس) بتتجاب من LRCLIB بإنترنت. بيتطبّق على الباتشات الجاية.\nدلوقتي: " + SongHint.state()
+                else "مقفول: ترجمة/تفريغ مباشر من غير معاملة أغاني ولا كلمات مرجعية."
         }
         col.addView(row, LinearLayout.LayoutParams(-1, -2))
-        col.addView(lyr, LinearLayout.LayoutParams(-1, -2))
         col.addView(note)
         paint()
     }
@@ -4235,23 +4245,23 @@ open class PlayerActivity : Activity(), Host {
     private var redoPop: android.widget.PopupWindow? = null
     private var redoKeep = true
     /** (v740) 🔁 إعادة الترجمة: من الأول / من الباتش ده وبعده / الباتش ده بس / باتش معين — مع اختيار نحتفظ بالقديمة (🗂) ولا نمسحها */
-    fun redoDialog(anchor: View) {
+    /** (v1374 — بطلب علي: «امسحها بالكامل من الكود واعمل واحدة جديدة») شيت إعادة الترجمة الجديد — اتكتب من الصفر بدل القديم اللي كان بيختفي */
+    fun redoSheet(anchor: View) {
         redoPop?.let { if (it.isShowing) { it.dismiss(); redoPop = null; return } }
         if (!::engine.isInitialized) return
         val curC = try { engine.chunkOfSec(player.currentPosition / 1000.0) } catch (_: Exception) { 0 }
         val col = LinearLayout(this)
-        fun keepVal() = if (redoKeep) "✅ احتفظ" else "🗑 امسح"
         fun close() { redoPop?.dismiss() }
-        col.addView(shHead("🔁 إعادة ترجمة", "الباتش الحالي: ${curC + 1}"))
-        val keepRow = shRow("💾 القديمة (في 🗂)", keepVal()) { }
-        keepRow.setOnClickListener { redoKeep = !redoKeep; (keepRow.getChildAt(1) as? TextView)?.text = keepVal() }
+        col.addView(shHead("🔁 إعادة الترجمة", "الفيديو واقف عند باتش ${curC + 1}"))
+        val keepRow = shRow("💾 الترجمة القديمة", if (redoKeep) "✅ بتتحفظ في 🗂" else "🗑 بتتمسح") { }
+        keepRow.setOnClickListener { redoKeep = !redoKeep; (keepRow.getChildAt(1) as? TextView)?.text = if (redoKeep) "✅ بتتحفظ في 🗂" else "🗑 بتتمسح" }
         col.addView(keepRow)
-        col.addView(shSection("من فين؟"))
-        col.addView(shRow("🔁 من الأول خالص") { close(); val k = redoKeep; player.seekTo(0); redoGo("🔄 بترجم من الأول…") { syncTxFlag("إعادة من الأول"); engine.redoAll(k) } })
-        col.addView(shRow("▶ من الباتش ده وبعده", "باتش ${curC + 1}") { close(); val k = redoKeep; redoGo("🔄 بترجم من باتش ${curC + 1} وبعده…") { syncTxFlag("إعادة من باتش"); engine.redoFrom(curC, k) } })
-        col.addView(shRow("☝ الباتش ده بس", "باتش ${curC + 1}") { close(); val k = redoKeep; redoGo("🔄 بترجم باتش ${curC + 1} لوحده…") { syncTxFlag("إعادة باتش واحد"); engine.redoOnly(curC, k) } })
+        col.addView(shSection("أعيد من فين؟"))
+        col.addView(shRow("⏮ من أول الفيديو خالص", "كل الباتشات من الصفر") { close(); val k = redoKeep; player.seekTo(0); redoGo("🔄 بترجم من الأول…") { syncTxFlag("إعادة من الأول"); engine.redoAll(k) } })
+        col.addView(shRow("▶ من باتش ${curC + 1} لآخر الفيديو", "من مكان التشغيل الحالي وبعده") { close(); val k = redoKeep; redoGo("🔄 بترجم من باتش ${curC + 1} وبعده…") { syncTxFlag("إعادة من باتش"); engine.redoFrom(curC, k) } })
+        col.addView(shRow("☝ باتش ${curC + 1} بس", "الباتش ده لوحده") { close(); val k = redoKeep; redoGo("🔄 بترجم باتش ${curC + 1} لوحده…") { syncTxFlag("إعادة باتش واحد"); engine.redoOnly(curC, k) } })
         col.addView(shRow("📋 اختار باتش معين…", "", true) { close(); batchDialog() })
-        redoPop = showSheet(anchor, col, 300, "redo") { pw -> if (redoPop === pw) redoPop = null }
+        redoPop = showSheet(anchor, col, 300, "redoSheet") { pw -> if (redoPop === pw) redoPop = null }
     }
 
     /** يوقف المشغّل خالص، يسلّم الترجمة لخدمة الخلفية (إشعار بالتقدم والوقت المتبقي) ويطلع بره التطبيق من غير ما يقفله */

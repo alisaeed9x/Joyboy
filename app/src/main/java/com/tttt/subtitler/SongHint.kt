@@ -58,8 +58,8 @@ object SongHint {
     }
 
     /** auto (الافتراضي) · on = دايمًا أغنية · off = مقفول */
-    fun mode(): String = try { Cfg.str("song_mode", "auto").let { if (it == "on" || it == "off") it else "auto" } } catch (_: Throwable) { "auto" }
-    fun setMode(m: String) { try { Cfg.put("song_mode", if (m == "on" || m == "off") m else "auto") } catch (_: Throwable) {} }
+    fun mode(): String = try { if (Cfg.str("song_mode", "off") == "on") "on" else "off" } catch (_: Throwable) { "off" }   // (v1374 — بطلب علي) مفيش «تلقائي» تاني: أون/أوف بس
+    fun setMode(m: String) { try { Cfg.put("song_mode", if (m == "on") "on" else "off") } catch (_: Throwable) {} }
     fun lyricsWanted(): Boolean = try { Cfg.bool("song_lyrics", true) } catch (_: Throwable) { true }
     fun setLyricsWanted(v: Boolean) { try { Cfg.put("song_lyrics", if (v) "1" else "0") } catch (_: Throwable) {} }
 

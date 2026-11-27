@@ -1442,8 +1442,12 @@ class Engine(
         val s0 = src()
         var w = s0.wav(start, rawEnd)
         // فك الصوت ساعات بيرجع null مؤقتًا (المصدر لسه بيفتح / شبكة) — نعيد قبل ما نعتبر المقطع من غير صوت
+        // (v1374 — بطلب علي: «أول باتش مبيتفرغش») الفك ساعات بيبقى مش جاهز في أول ~١٥ ثانية بعد ضغطة الزرار (ويسبر وجروك) — نعيد محاولات أكتر وبرده أطول في فترة البداية قبل ما نحكم إن المقطع فاضي
+        val startup = engineStartMs > 0 && System.currentTimeMillis() - engineStartMs < 15_000
+        val maxTry = if (startup) 9 else 2
+        val waitMs = if (startup) 1400L else 700L
         var retry = 0
-        while (w == null && running && retry++ < 2) { host.log("… المقطع ${i + 1}: الصوت لسه ما طلعش — محاولة ${retry + 1}/3"); nap(700); w = s0.wav(start, rawEnd) }
+        while (w == null && running && retry++ < maxTry) { host.log("… المقطع ${i + 1}: الصوت لسه ما طلعش — محاولة ${retry + 1}/${maxTry + 1}"); nap(waitMs); w = s0.wav(start, rawEnd) }
         if (w == null) {
             host.log("… المقطع ${i + 1} مفيهوش صوت")
             // لو ده مش آخر ذيل الفيديو يبقى غالبًا فشل فك مش صمت حقيقي: نعلّمه ⚠ عشان يتعاد بدل ما يبان ✅ فاضي
