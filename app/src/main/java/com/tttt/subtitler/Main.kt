@@ -640,7 +640,8 @@ class MainActivity : Activity() {
                     override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                 })
                 val groqState = ui.text(when (Cfg.str("groq_key_state", "")) { "ok" -> "✅ المفتاح شغال (اتفحص)"; "bad" -> "❌ آخر فحص رفض المفتاح"; else -> if (Cfg.str("groq_key", "").isBlank()) "لسه مفيش مفتاح محفوظ" else "المفتاح محفوظ — اضغط «فحص المفتاح» للتأكد" }, 12f, th.muted)
-                val groqModelBtn = ui.button("🧠 موديل التفريغ: " + Cfg.str("groq_model", "whisper-large-v3-turbo").ifBlank { "whisper-large-v3-turbo" }) {
+                var groqModelBtn: IconButton? = null   // (v1369) var nullable عشان الكولباك جوه نفس الزرار يقدر يحدّث نصه
+                groqModelBtn = ui.button("🧠 موديل التفريغ: " + Cfg.str("groq_model", "whisper-large-v3-turbo").ifBlank { "whisper-large-v3-turbo" }) {
                     val k = Cfg.str("groq_key", "").trim()
                     if (k.isBlank()) { Notice.show(this, "🔑 الصق مفتاح Groq الأول", 2600L); return@button }
                     Notice.show(this, "⏳ بجيب الموديلات من Groq…", 1800L)
@@ -648,7 +649,7 @@ class MainActivity : Activity() {
                         val ms = GhAudio.groqModels(k)
                         runOnUiThread {
                             if (ms.isNullOrEmpty()) { Notice.show(this, "⚠ فشل جلب الموديلات — اتأكد من المفتاح والنت", 3000L); return@runOnUiThread }
-                            GAlert(this).setTitle("🧠 موديل التفريغ من Groq").setItems(ms.toTypedArray()) { _, w2 -> Cfg.put("groq_model", ms[w2]); groqModelBtn.text = "🧠 موديل التفريغ: " + ms[w2] }.setNegativeButton("إلغاء", null).show()
+                            GAlert(this).setTitle("🧠 موديل التفريغ من Groq").setItems(ms.toTypedArray()) { _, w2 -> Cfg.put("groq_model", ms[w2]); groqModelBtn?.text = "🧠 موديل التفريغ: " + ms[w2] }.setNegativeButton("إلغاء", null).show()
                         }
                     }.start()
                 }

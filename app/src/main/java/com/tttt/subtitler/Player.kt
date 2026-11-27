@@ -3612,10 +3612,6 @@ open class PlayerActivity : Activity(), Host {
                 }
                 again()
             }
-            fun setModeChip(mm: Int) {
-                val prevM = TrProfile.uiMode(); if (mm == prevM) return
-                val pd = curEngDia(); TrProfile.setMode(mm); engSync(); updateTr(); paintDia(); refresh(); trLiveApply("mode", prevM, pd); paintSave()
-            }
             val sttSel = if (Cfg.bool("stt_offline", false)) "whisper" else if (Cfg.str("mt_tr_mode", "") == "groq") "groq" else "gemini"
             val mtSel = if (TrProfile.uiMode() == TrProfile.TX) "none" else if (TrWizard.method() == "google") "google" else "gemini"
             val diaSel = if (TrProfile.uiMode() == TrProfile.DIA) "gemini" else "none"
@@ -3652,6 +3648,10 @@ open class PlayerActivity : Activity(), Host {
                 qNote.visibility = if (qBox.visibility == View.GONE && !none) View.VISIBLE else View.GONE
                 for (v in msaViews) { v.alpha = if (m >= TrProfile.MSA) 1f else 0.35f; setEnabledDeep(v, m >= TrProfile.MSA) }   // (v1369) رمادي لحد ما السلايدر يوصله (بطلب علي)
                 for (v in diaViews) { v.alpha = if (m >= TrProfile.DIA) 1f else 0.35f; setEnabledDeep(v, m >= TrProfile.DIA) }
+            }
+            fun setModeChip(mm: Int) {   // (v1369) لازم تتعريف بعد paintSave/paintDia/refresh — الكوتلن مابيسمحش باستخدام فانكشن محلية قبل تعريفها
+                val prevM = TrProfile.uiMode(); if (mm == prevM) return
+                val pd = curEngDia(); TrProfile.setMode(mm); engSync(); updateTr(); paintDia(); refresh(); trLiveApply("mode", prevM, pd); paintSave()
             }
             fun arrow(): View = ui.text("⬇", 18f, 0xFF9AA0A6.toInt(), true).apply { gravity = Gravity.CENTER }   // (v1369) سهم بين كل بلوك والتاني (بطلب علي)
             // ⚡ سلايدر السرعة فوق — بيظهر مع جيميناي بس

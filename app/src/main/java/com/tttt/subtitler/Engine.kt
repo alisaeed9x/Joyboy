@@ -177,6 +177,8 @@ class Engine(
     // ===== توزيع الباتشات على المفاتيح + نسخة احتياطية للباتش المتأخر (كل باتش يتحسب مرة واحدة بس) =====
     private val startedAt = ConcurrentHashMap<Int, Long>()          // وقت بداية الباتش الشغال
     private val preps = ConcurrentHashMap<Int, Prep>()              // صوت الباتش الشغال (عشان النسخة الاحتياطية ماتفكوش تاني)
+    private val prePrepped = ConcurrentHashMap<Int, Prep>()         // (v1370 — بطلب علي) صوت باتش اتفكّ مسبقًا أثناء إرسال اللي قبله — بيتبعت فورًا
+    private val prePrepping = ConcurrentHashMap.newKeySet<Int>()    // (v1370) باتش صوته بيتفكّ في الخلفية دلوقتي
     private val offOf = ConcurrentHashMap<Int, Boolean>()               // (v413) الباتش ده ماشي على Whisper أوفلاين (مش جيميناي)
     private val groqOf = ConcurrentHashMap<Int, Boolean>()              // (v1369) الباتش ده ماشي على Groq
     private val keyOf = ConcurrentHashMap<Int, String>()            // المفتاح اللي الباتش شغال عليه دلوقتي
@@ -1052,6 +1054,7 @@ class Engine(
                 hedgeTick()
                 autoRetryTick()
                 holeDeferTick()
+                if (groqTxOn() && !userPaused && !paused) prePrepTick(d)   // (v1370 — بطلب علي: «عايزه يبعت باتش باتش») فك صوت الباتش الجاي أثناء إرسال الحالي
                 // (v151) باتش فشل: يتبعت الأول لأقرب مفتاح خلّص باتشه (مفيش باتشين على مفتاح واحد) وبعدين الترجمة تكمّل باقي الباتشات عادي
                 val riPick = rehomeQ.keys.filter { !(hotNow && it < pcNow) }.minOrNull()   // (v1094) إعادة باتش ورا المشاهد تستنى لحد ما اللي قدامه يتترجم
                 if (rehomeQ.isNotEmpty() && riPick != null) {
@@ -1102,7 +1105,7 @@ class Engine(
                 var next = -1
                 for (i in lo..hi) {
                     if (d > 0 && cStart(i) >= d) break
-                    if (isDone(i, d) || (failed[i] ?: 0) >= MAX_FAILS || i in inflight || tHold.containsKey(i) || rehomeQ.containsKey(i)) continue
+                    if (isDone(i, d) || (failed[i] ?: 0) >= MAX_FAILS || i in inflight || tHold.containsKey(i) || rehomeQ.containsKey(i) || prePrepping.contains(i)) continue   // (v1370) اللي بيتجهز في الخلفية يتخطّاه لحد ما يجهز ويتبعت بنسخته
                     next = i; break
                 }
                 if (next < 0 && only == null && keepGoing && d > 0) next = nextUndone(c + window, d)
@@ -1111,7 +1114,7 @@ class Engine(
                 if (next >= 0) {
                     // أول مقطع لوحده (عشان نعرف لغة الفيديو ونختار القالب الصح)، وبعدين بالتوازي — إلا الوضع 2+ (برومبت إنجليزي ثابت: مفيش قالب يتختار)
                     if (activeInflight() >= cap || (activeMode < KeyMode.ALL_PARALLEL && !anyApplied && !detDone && inflight.isNotEmpty())) { gapTick(); nap(150); continue }   // (v209) الوضع 2+: كل المفاتيح بالتوازي من الأول · (v1354) وفي كل الأوضاع: أول ما لغة الفيديو تتحدد (detDone) الباتشات كلها بتتبعت بالتوازي — مفيش استنى لحد أول باتش يتطبّق بالكامل (بطلب علي: زرار الباتش كان بيفتح مفتاح واحد ويقعد)
-                    dispatch(next, ex); continue
+                    dispatch(next, ex, prep0 = prePrepped.remove(next)); continue   // (v1370) صوت جاهز من التجهيز المسبق بينعدي مرحلة الفك
                 }
                 if (inflight.isEmpty() && retryGaps()) continue
                 if (inflight.isEmpty() && repairForeignTick()) continue
@@ -1269,6 +1272,39 @@ class Engine(
             } else nap(4000)
         }
         return false
+    }
+
+    /**
+     * (v1370 — بطلب علي: «عايزه يبعت باتش باتش») خط أنابيب Groq: باتش واحد قدام بيتفكّ صوته في خيط خلفي أثناء إرسال الباتش الحالي.
+     * قبل كده مع مفتاح واحد كان الشغل تناوبي: فك ١ ← بعت ١ ← فك ٢ ← بعت ٢ — فالفك باين مرحلة واحدة طويلة والمستخدم مستني كل الباتشات من غير ما يشوف تفريغ.
+     * دلوقتي: فك ١ ← بعت ١ (وفي نفس الوقت فك ٢) ← بعت ٢ فورًا لأن صوته جاهز — والتفريغ بيظهر على الشاشة باتش باتش بدري.
+     * باتش الانطلاقة (ramp) مستثنى لأن خطواته السريعة ليها تجهيز خاص، والباتش اللي بيتجهز بيتخطّاه منتقي الحلقة لحد ما يجهز ويتبعت بنسخته من prePrepped.
+     */
+    private fun prePrepTick(d: Double) {
+        if (!running || isClosed || d <= 0.0) return
+        if (rampOn && rampChunk < 0) return   // باتش الانطلاقة لسه ما اتحددش — سيبه للمسار العادي
+        for (e in prePrepped.entries) if (isDone(e.key, d) || e.key in inflight || (failed[e.key] ?: 0) >= MAX_FAILS) prePrepped.remove(e.key)   // نضّف الجاهز المنسي
+        if (prePrepped.size + prePrepping.size >= 1) return   // باتش واحد قدام يكفي — الذاكرة
+        val c = if (headless) firstUndone(d) else (try { host.position() } catch (_: Throwable) { 0.0 } / ch).toInt().coerceAtLeast(0)
+        val only = onlyChunks
+        val lo = only?.first ?: c
+        val hi = minOf(only?.last ?: (c + window + 1), c + window + 1)
+        var k = -1
+        for (i in lo..hi) {
+            if (cStart(i) >= d) break
+            if (i == rampChunk) continue   // الانطلاقة ليها تجهيز خاص (خطوات بتكبر) — متتفكش مسبقًا
+            if (isDone(i, d) || (failed[i] ?: 0) >= MAX_FAILS || i in inflight || tHold.containsKey(i) || rehomeQ.containsKey(i) || prePrepped.containsKey(i) || prePrepping.contains(i)) continue
+            k = i; break
+        }
+        if (k < 0 || !prePrepping.add(k)) return
+        val ki = k
+        Thread {
+            try {
+                val p = prepare(ki)
+                if (p != null && running && !isClosed && groqTxOn() && ki !in inflight && !isDone(ki, d)) prePrepped[ki] = p
+            } catch (e: Throwable) { try { LogStore.err("Engine:preprep", e) } catch (_: Throwable) {} }
+            finally { prePrepping.remove(ki); try { host.changed() } catch (_: Throwable) {} }
+        }.apply { isDaemon = true }.start()
     }
 
     /** فك صوت المقطع + الإرسال لجيميناي كله في خيط من الحوض: عدة باتشات بتفك صوتها وتتبعت بالتوازي على كل المفاتيح (قبل كده الفك كان بالترتيب في حلقة واحدة فالباتشات كانت بتمشي واحد ورا التاني) */
