@@ -8136,11 +8136,35 @@ open class PlayerActivity : Activity(), Host {
         GhAudio.start(this, u, su, HashMap(hdr), t, durMs)
     }
 
-    /** (v1367 — بطلب علي) تفريغ Groq Whisper جوه المشغّل: SRT من صوت الفيديو الحالي، ويتابع من مركز التحميل */
+    // (v1368 — بطلب علي) تفريغ Groq بيظهر لحظيًا على الفيديو: كل باتش يتفرّغ يتحط بتوقيته كجمل فورًا، زي تفريغ محرك الترجمة بالظبط
+    private var groqBase: List<Sub>? = null
+    private val groqSubs = ArrayList<Sub>()
+
+    /** (v1367 — بطلب علي) تفريغ Groq Whisper جوه المشغّل: SRT من صوت الفيديو الحالي، ويتابع من مركز التحميل · (v1368) عرض لحظي جملة-جملة */
     fun ghGroq() {
         val u = uri; val su = aurl ?: url
         if (u == null && su == null) { say("افتح الفيديو الأول"); return }
         val t = try { Recents.titleOf(vid).substringBeforeLast('.', Recents.titleOf(vid)) } catch (_: Throwable) { "video" }
+        if (!::engine.isInitialized) { say("استنى لحظة — الفيديو لسه بيتحمّل"); return }
+        if (remote) { GhAudio.startGroqCurrent(this, u, su, HashMap(hdr), t, durMs); return }   // (v1368) العرض اللحظي على الموبايل بس — وضع الريموت يحفظ SRT زي الأول
+        if (engineStarted) { say("وقّف الترجمة الأول — تفريغ Groq بيظهر مكانها على الشاشة"); return }
+        if (TaskCenter.items.any { it.kind == "groq" && (it.state == 0 || it.state == 1) }) { say("⏳ في تفريغ Groq شغّال بالفعل — تابعه في مركز التحميل"); return }
+        if (Cfg.str("groq_key", "").isBlank()) { GhAudio.groqKeyDialog(this) { ghGroq() }; return }
+        if (!ccOn) { try { ccToggleFn() } catch (_: Throwable) { ccOn = true } }
+        val eng = engine
+        groqBase = engine.subs
+        groqSubs.clear()
+        GhAudio.groqChunkHook = { from, segs ->
+            runOnUiThread {
+                try {
+                    if (isDestroyed || engine !== eng || engineStarted) return@runOnUiThread   // لو الترجمة بدأت في النص، المحرك ياخد الشاشة
+                    for (sg in segs) groqSubs.add(Sub(sg.first + from, sg.second + from, sg.third, sg.third, "male", "unknown", "none", emptyList(), emptyList(), false, false))
+                    engine.importSubs(((groqBase ?: emptyList()) + groqSubs).sortedBy { it.start })
+                    dirty = true; curIdx = -2
+                    say("🧪 Groq: اتفرّغ لحد " + PlayerLogic.clock(((segs.lastOrNull()?.second ?: 0.0) + from).toLong() * 1000))
+                } catch (e: Throwable) { LogStore.err("Player:groqlive", e) }
+            }
+        }
         GhAudio.startGroqCurrent(this, u, su, HashMap(hdr), t, durMs)
     }
 

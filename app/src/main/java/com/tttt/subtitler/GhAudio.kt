@@ -36,9 +36,12 @@ object GhAudio {
         } catch (e: Throwable) { LogStore.err("GhAudio:pick", e); Notice.show(act, "⚠ ما قدرتش أفتح اختيار الفيديو", 2400L) }
     }
 
-    // ===== (v1366 — بطلب علي) مسار تجريبي: تفريغ Groq Whisper (الفيديو ← باتشات صوت 10 دقايق ← Groq ← ملف SRT) — ورا سويتش في الإعدادات، من غير ما يلمس المسار الحالي =====
+    // ===== (v1366 — بطلب علي) مسار تجريبي: تفريغ Groq Whisper (الفيديو ← باتشات صوت 10 دقايق ← Groq ← ملف SRT) — جوه المشغّل (v1367) وبعرض لحظي على الفيديو (v1368)، من غير ما يلمس مسار Gemini =====
     private const val GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
     private const val GROQ_CHUNK_SEC = 600.0   // 10 دقايق ≈ 2.5MB عند 32kbps — بعيد عن حد 25MB وحدود الكوتا المجانية
+
+    /** (v1368 — بطلب علي) هوك لحظي: بعد كل باتش متفرّغ يتبعت (بدايته بالثواني + جمله بتوقيتاتها) للمشغّل يعرضها فورًا على الفيديو */
+    @Volatile var groqChunkHook: ((Double, List<Triple<Double, Double, String>>) -> Unit)? = null
 
     /** (v1367 — بطلب علي) تفريغ Groq من جوه المشغّل: الفيديو الحالي على طول من غير اختيار ملف */
     fun startGroqCurrent(act: Activity, uri: Uri?, url: String?, hdr: Map<String, String>, title: String, durMs: Long) {
@@ -97,6 +100,7 @@ object GhAudio {
             task.msg = "☁ Groq بيفرّغ باتش " + (ci + 1) + "/" + chunks + "…"; TaskCenter.changed()
             val segs = groqTranscribe(key, f, lang, task)
             try { f.delete() } catch (_: Throwable) {}
+            try { groqChunkHook?.invoke(from, segs) } catch (_: Throwable) {}   // (v1368) عرض لحظي في المشغّل جملة-جملة
             for (sg in segs) {
                 srt.append(idx++).append('\n')
                 srt.append(PlayerLogic.srtTime(((sg.first + from) * 1000).toLong())).append(" --> ").append(PlayerLogic.srtTime(((sg.second + from) * 1000).toLong())).append('\n')
