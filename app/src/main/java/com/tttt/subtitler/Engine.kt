@@ -1422,6 +1422,34 @@ class Engine(
 
     /** يفك الصوت (ويقصّر المقطع لأقرب لحظة صمت). null = مفيش حاجة تتبعت (صامت / مفيش صوت). */
     /** (v1373 — بطلب علي) فكّ الصوت بيحصل مرة واحدة بس للباتش: لو خيط تاني بيفك نفس الباتش في نفس اللحظة، النداء التاني بيتخطى وصاحبه بيكمّل شغله (الفك المزدوج كان بيبوّظ صوت أول باتش أحيانًا). force=true بيتجاوز المنع عمدًا (إعادة المحاولة) */
+    // (v1381 — بطلب علي: «أول باتش مبيتفرغش أول 30 ثانية أو دقيقة») سدّ رأس الباتش: لو الصوت بدأ متأخر عن المطلوب (الفك بلع أول الصوت) أو أول جملة جت بعد وقت طويل من بداية باتش 1،
+    // بنفك الجزء الناقص على حتت ≤ 20ث (الفك الصغير شغّال) ونفرّغه لوحده بنفس مسار سدّ الفجوات — ومحاولات فك متكررة لو الفك رجّع null (كان بيسيب الفجوة ساكتة)
+    private val headTried = ConcurrentHashMap<Int, Long>()
+    private fun headRecover(i: Int, a: Double, b: Double, why: String) {
+        if (b - a < 3.0 || !running || isClosed) return
+        val nw = System.currentTimeMillis()
+        val prev = headTried.put(i, nw)
+        if (prev != null && nw - prev < 120_000L) { headTried[i] = prev; return }
+        host.log("🧩 باتش ${i + 1}: أول ${"%.0f".format(java.util.Locale.US, b - a)}ث ($why) من غير جمل — بسدّها لوحدها")
+        Thread {
+            try {
+                val off = offFill()
+                for (pt in Gaps.parts(a, b, 20.0)) {
+                    var k = 0
+                    while (running && !isClosed && k++ < 4) {
+                        val probe = try { src().wav(pt[0], pt[1]) } catch (_: Throwable) { null }
+                        if (probe == null) { host.log("… رأس باتش ${i + 1}: فك ${"%.0f".format(java.util.Locale.US, pt[0])}ث رجّع فاضي — محاولة ${k}/4"); nap(1500); continue }
+                        if (probe.silent) { host.log("🔇 رأس باتش ${i + 1}: ${"%.0f".format(java.util.Locale.US, pt[0])}ث صامت فعلًا"); break }
+                        val key = if (off) "off" else (pool.gapKey(gapKeys, rr.getAndIncrement()) ?: run { nap(2000); null })
+                        if (key == null) continue
+                        gapKeys.add(key)
+                        try { fillGap(pt[0], pt[1], key) } finally { gapKeys.remove(key) }
+                        break
+                    }
+                }
+            } catch (e: Throwable) { try { LogStore.err("Engine:headRecover", e) } catch (_: Throwable) {} }
+        }.apply { isDaemon = true; name = "head-recover" }.start()
+    }
     private val prepJobs = ConcurrentHashMap.newKeySet<Int>()
     private val prepBusy = ConcurrentHashMap.newKeySet<Int>()   // (v1376) null بسبب «خيط تاني بيفك» ≠ null بسبب «مفيش صوت» — الاتنين كانوا بيرجعوا null فالنداءات كانت بتفسرهم غلط
     private val skipLogAt = ConcurrentHashMap<Int, Long>()   // (v1377) خنق سبام «اتخطّى الفكّ المزدوج»: نفس الباتش كان بيتسجّل ~١٠ مرات في الثانية
@@ -1469,6 +1497,10 @@ class Engine(
             done.add(rawStart, rawEnd); persist(); return null
         }
         extractNull.remove(i)   // (v1377) فك ناجح — امسح علامة فشل الفك
+        // (v1381) تشخيص: الطلب مقابل اللي الفك رجّعه فعلًا (اللي بيفرق بينهم = صوت ضايع)
+        val lead0 = w.startSec - start
+        host.log("🧭 فك باتش ${i + 1}: طلب ${"%.1f".format(java.util.Locale.US, start)}→${"%.1f".format(java.util.Locale.US, rawEnd)}ث · الصوت بدأ ${"%.1f".format(java.util.Locale.US, w.startSec)}ث · طوله ${"%.1f".format(java.util.Locale.US, w.durSec)}ث")
+        if (lead0 > 3.0) headRecover(i, start, w.startSec - 0.3, "الفك بدأ متأخر")
         if (rampOn && i == rampChunk && rampStep < 2 && !w.silent) {   // (v1067) ✂ قص صمت أول/آخر الخطوات الأولى
             val tr = try { AudioTools.trimSilence(w.bytes) } catch (_: Throwable) { null }
             if (tr != null) { host.log("✂ المقطع ${i + 1}: اتقص صمت ${"%.1f".format(w.durSec - tr.durSec)}ث من الأطراف"); w = WavChunk(tr.bytes, w.startSec + tr.leadSec, tr.durSec, false, w.gain, w.activeSec) }
@@ -1717,6 +1749,10 @@ class Engine(
                 if (!claimed.add(i)) { host.log("↩ باتش ${i + 1}: نسخة تانية خلصته قبلها — اتجاهلت دي"); return }
                 if (i > maxApplied) maxApplied = i
                 runs[i] = KeyRun(keyNo(key), if (tx && groqRan.get() == true) "groq:" + Cfg.str("groq_model", "whisper-large-v3-turbo") else mdl, took, gemCalled)   // (v1369) موديل Groq يظهر باسمه في سجل الباتشات
+                if (i == 0 && !hedge && fresh.isNotEmpty()) {   // (v1381) أول جملة جت متأخرة بعد بداية باتش 1 — غالبًا أول نافذة اتسقطت (الفك أو Whisper): نسدّ الرأس
+                    val fs = fresh.minOf { it.start }
+                    if (fs - rawStart > 12.0 && w.startSec <= rawStart + 3.0) headRecover(i, rawStart, fs - 0.5, "أول جملة بعد ${"%.0f".format(java.util.Locale.US, fs - rawStart)}ث")
+                }
                 if (tx && fresh.isNotEmpty()) {
                     // (v210) الباتش ما بيتطبّقش دلوقتي: بيتحط في المجمّع لحد ما يتترجم (applyChunk + سدّ الثغرات بيحصلوا بعد الترجمة)
                     val xc = crossCheck(i, w, fresh, key)   // (v742) تسميع مزدوج: مفتاح تاني يسمع نفس الباتش وأي اختلاف يتحسم بسماع تالت على الجملة

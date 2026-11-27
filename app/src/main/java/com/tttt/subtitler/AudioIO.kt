@@ -62,11 +62,16 @@ object Decoder {
             var rate = if (fmt.containsKey(MediaFormat.KEY_SAMPLE_RATE)) fmt.getInteger(MediaFormat.KEY_SAMPLE_RATE) else 44100
             var ch = if (fmt.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) fmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
             var enc = 2
-            val deadline = System.currentTimeMillis() + 90_000
+            // (v1381 — بطلب علي: «أول باتش مبيتفرغش») الـdeadline كان ثابت 90ث: باتش جروك ٣٠ دقيقة بيتفك على جهاز علي في ~94ث فكان بيفشل بالتايم-آوت ويتعاد من الأول. دلوقتي السقف على قد المدة المطلوبة + حارس «واقف من غير خرج» ٣٠ث
+            val spanSec = ((endUs - startUs) / 1_000_000.0).coerceAtLeast(1.0)
+            val deadline = System.currentTimeMillis() + 90_000L + (spanSec * 300.0).toLong()
+            var lastProgress = System.currentTimeMillis()
             var st = "بداية"; var dg = ""
             try {
             while (!outDone) {
-                if (System.currentTimeMillis() > deadline) throw IOException("فك الصوت أخد وقت طويل")
+                val nowMs = System.currentTimeMillis()
+                if (nowMs > deadline) throw IOException("فك الصوت أخد وقت طويل")
+                if (nowMs - lastProgress > 30_000L) throw IOException("فك الصوت أخد وقت طويل (واقف ٣٠ث من غير خرج)")
                 if (!inDone) {
                     st = "dequeueInputBuffer"
                     val ii = codec.dequeueInputBuffer(10_000)
@@ -99,6 +104,7 @@ object Decoder {
                     if (of.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) ch = of.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
                     enc = if (of.containsKey("pcm-encoding")) of.getInteger("pcm-encoding") else 2
                 } else if (oi >= 0) {
+                    lastProgress = System.currentTimeMillis()
                     var reached = false
                     st = "getOutputBuffer"
                     val ob = codec.getOutputBuffer(oi)
@@ -249,6 +255,7 @@ class FileSource(
         slots.acquireUninterruptibly()
         try {
             var retried = false
+            var lateW: WavChunk? = null   // (v1381) نتيجة المحاولة الأولى لو بدأت متأخر — ماتضيعش لو المحاولة الطازجة رجّعت فاضي
             while (true) {
                 // (v1377 — بطلب علي: «جروك أول باتش مجاش كامل») نتيجة فاضية من extractor متداول ممكن يكون في حالة بايظة: بنرميه ونجرب مرة أخيرة بواحد طازج، مع عدادات تشخيص في اللوج قبل الحكم إن المقطع من غير صوت
                 val e = if (retried) openNew() else acquire(); val f = fmt ?: e.getTrackFormat(track.coerceAtLeast(0))
@@ -260,13 +267,23 @@ class FileSource(
                     if (sink.isEmpty()) {
                         try { e.release() } catch (x: Exception) { LogStore.err("AudioIO:v1377", x) }   // الفاضي مابيرجعش الحوض
                         log("🔇 فك [${startSec}s ← ${endSec}s] طلّع فاضي (نداءات السينك: ${sink.dbgCalls}، فريمات: ${sink.dbgFrames}، اتخطّى قبل البداية: ${sink.dbgEarly})" + if (retried) "" else " — محاولة أخيرة بمصدر طازج")
-                        if (retried) return null
+                        if (retried) return lateW
                         retried = true; continue
                     }
+                    // (v1381) الفك بدأ متأخر عن المطلوب (بداية الصوت اتبلعت): بنرمي الـextractor ونجرب بواحد طازج مرة، ولو لسه متأخر بنكمّل والـEngine بيسد رأس الباتش
+                    val leadSec = (sink.firstPtsUs - startUs) / 1_000_000.0
+                    if (leadSec > 2.5 && !retried) {
+                        lateW = sink.finish(sink.firstPtsUs / 1_000_000.0)
+                        try { e.release() } catch (x: Exception) { LogStore.err("AudioIO:v1381", x) }
+                        log("🕳 فك [${startSec}s ← ${endSec}s] بدأ متأخر ${"%.1f".format(java.util.Locale.US, leadSec)}ث عن المطلوب — محاولة أخيرة بمصدر طازج")
+                        retried = true; continue
+                    }
+                    if (leadSec > 2.5) log("🕳 فك [${startSec}s ← ${endSec}s] لسه بدأ متأخر ${"%.1f".format(java.util.Locale.US, leadSec)}ث — رأس الباتش هيتسد لوحده")
                     giveBack(e)
                     return sink.finish(sink.firstPtsUs / 1_000_000.0)
                 } catch (t: Throwable) {
                     if (t is Unsupported) giveBack(e) else try { e.release() } catch (x: Exception) { LogStore.err("AudioIO:190", x) }
+                    if (retried && lateW != null && t !is Unsupported) return lateW   // (v1381) المحاولة الطازجة فشلت — نتيجة الأولى (المتأخرة) أحسن من مفيش
                     throw t
                 }
             }
