@@ -84,13 +84,15 @@ object Decoder {
                         val n = if (ib != null) { ib.clear(); ex.readSampleData(ib, 0) } else -1
                         st = "sampleTime"; dg = "n=$n"
                         val t = ex.sampleTime
-                        if (n < 0 || t < 0 || t >= endUs + 300_000) {
+                        // (v1383 — بطلب علي: «أول جزء ما بيتفرغش») sampleTime السالب مش نهاية ملف: أول عينة AAC في ملفات واتساب/الـedit-list وقتها سالب صغير (تعويض الـencoder delay) فالفك من 0 كان بيقفل فورًا بصفر فريمات. النهاية الحقيقية = n < 0 بس
+                        if (n < 0 || t >= endUs + 300_000) {
+                            if (sink.dbgCalls == 0) sink.dbgNote = "EOS مبكر: n=$n t=$t"   // تشخيص للّوج
                             st = "queueInputBuffer(EOS)"; dg = "ii=$ii n=$n t=$t"
                             codec.queueInputBuffer(ii, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM); inDone = true
                         } else {
                             if (ex.sampleFlags and MediaExtractor.SAMPLE_FLAG_ENCRYPTED != 0) throw Unsupported(DRM_MSG)
                             st = "queueInputBuffer"; dg = "ii=$ii n=$n t=$t cap=" + (ib?.capacity() ?: -1)
-                            codec.queueInputBuffer(ii, 0, n, t, 0)
+                            codec.queueInputBuffer(ii, 0, n, if (t < 0) 0L else t, 0)   // (v1383) وقت سالب ← 0
                             st = "advance"; ex.advance()
                         }
                     }
@@ -261,12 +263,12 @@ class FileSource(
                 val e = if (retried) openNew() else acquire(); val f = fmt ?: e.getTrackFormat(track.coerceAtLeast(0))
                 val startUs = (startSec * 1_000_000).toLong(); val endUs = (endSec * 1_000_000).toLong()
                 try {
-                    e.seekTo(maxOf(0L, startUs - preRollUs), MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+                    e.seekTo(maxOf(0L, startUs - preRollUs), if (retried) MediaExtractor.SEEK_TO_NEXT_SYNC else MediaExtractor.SEEK_TO_PREVIOUS_SYNC)   // (v1383) المحاولة التانية بمزامنة تانية لو الأولى طلعت فاضية
                     val sink = PcmSink(endSec - startSec)
                     Decoder.decode(e, f, startUs, endUs, sink)
                     if (sink.isEmpty()) {
                         try { e.release() } catch (x: Exception) { LogStore.err("AudioIO:v1377", x) }   // الفاضي مابيرجعش الحوض
-                        log("🔇 فك [${startSec}s ← ${endSec}s] طلّع فاضي (نداءات السينك: ${sink.dbgCalls}، فريمات: ${sink.dbgFrames}، اتخطّى قبل البداية: ${sink.dbgEarly})" + if (retried) "" else " — محاولة أخيرة بمصدر طازج")
+                        log("🔇 فك [${startSec}s ← ${endSec}s] طلّع فاضي (نداءات السينك: ${sink.dbgCalls}، فريمات: ${sink.dbgFrames}، اتخطّى قبل البداية: ${sink.dbgEarly}${if (sink.dbgNote.isNotEmpty()) "، " + sink.dbgNote else ""})" + if (retried) "" else " — محاولة أخيرة بمصدر طازج")
                         if (retried) return lateW
                         retried = true; continue
                     }

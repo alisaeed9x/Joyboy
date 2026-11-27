@@ -72,6 +72,7 @@ class PcmSink(expectedSec: Double = 60.0, private val outRate: Int = 16000, priv
     var dbgCalls = 0
     var dbgFrames = 0
     var dbgEarly = 0
+    var dbgNote = ""   // (v1383) سبب وقف الفك المبكر
 
     private fun configure(rate: Int) {
         inRate = rate; step = rate.toDouble() / outRate; accSum = 0.0; accCnt = 0.0
