@@ -3564,7 +3564,7 @@ open class PlayerActivity : Activity(), Host {
                 else say("المحرك لسه بيحمّل — جرّب كمان لحظة") } })
             if (started) col.addView(shRow("⏹ إلغاء", "إيقاف الترجمة الحالية خالص") { close(); h.post { cancelDialog() } })   // (v1379 — بطلب علي) ⏹ = إلغاء الترجمة الحالية
             col.addView(shRow("⚙ الإعدادات", "", true) { close(); h.post {
-                val sk = listOf("lang", "style", "model", "conv_dialect", "tone_style", "tone_strength", "mt_tr_mode", "stt_offline", "tr_engine", "tr_method", "stt_lang", "groq_model", "fastmode", "tr_bal", "groq_chunk")
+                val sk = listOf("lang", "style", "model", "conv_dialect", "tone_style", "tone_strength", "mt_tr_mode", "stt_offline", "tr_engine", "tr_method", "stt_lang", "groq_model", "fastmode", "tr_bal", "groq_chunk2")
                 fun snap() = sk.joinToString("|") { k -> try { Cfg.str(k, "�") } catch (_: Throwable) { "�" } }
                 val before = snap()
                 trSettings(anchor) {   // (v1379 — بطلب علي) الإعدادات اتغيّرت ← «🚀 يلا ابدا» يظهر في الشيت

@@ -291,7 +291,7 @@ object Cfg {
         return Conf(
             main, bk, str("model", Models.DEFAULT).trim().ifEmpty { Models.DEFAULT },
             str("lang", "فصحى"), str("style", "تلقائي"),
-            (if (groqTx()) int("groq_chunk", 1800).coerceIn(600, 3600) else int("chunk", 45).coerceIn(10, 600)), int("ahead", 3).coerceIn(0, 50), int("atrack", 1).coerceAtLeast(1),   // (v1379 — بطلب علي) باتش جروك = ٣٠ دقيقة (فيديو أقصر من ٣٠ د = باتش واحد كامل)
+            (if (groqTx()) int("groq_chunk2", 300).coerceIn(60, 3600) else int("chunk", 45).coerceIn(10, 600)), int("ahead", 3).coerceIn(0, 50), int("atrack", 1).coerceAtLeast(1),   // (v1379 — بطلب علي) باتش جروك = ٣٠ دقيقة (فيديو أقصر من ٣٠ د = باتش واحد كامل)
             emptyList() /* جدول الشخصيات اليدوي اتشال — الشخصيات بتتحلل تلقائيًا */, str("gloss"),
             true, true, true,   // (v229) تحليل الشخصيات · تصحيح الضمائر · ترجمة القالب: أوتوماتيك دايمًا (اتشال مفتاحهم من الإعدادات)
             1 /* (v141) طلب واحد لكل مفتاح */, bool("hitiming", false), true /* (v229) سد الفجوات أوتوماتيك دايمًا */,
