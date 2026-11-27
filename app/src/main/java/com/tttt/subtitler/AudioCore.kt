@@ -68,6 +68,11 @@ class PcmSink(expectedSec: Double = 60.0, private val outRate: Int = 16000, priv
     val samples: Int get() = len / 2
     fun isEmpty() = len == 0
 
+    // (v1377) عدادات تشخيص النتيجة الفاضية: الفك كان بيرجع null من غير ما نعرف وصلتش فريمات أصلًا ولا اتخطّت بره المجال
+    var dbgCalls = 0
+    var dbgFrames = 0
+    var dbgEarly = 0
+
     private fun configure(rate: Int) {
         inRate = rate; step = rate.toDouble() / outRate; accSum = 0.0; accCnt = 0.0
         if (rate > outRate) { lp1 = Biq.lowpass(rate.toDouble(), outRate * 0.45, 0.5412); lp2 = Biq.lowpass(rate.toDouble(), outRate * 0.45, 1.3066) }
@@ -118,6 +123,7 @@ class PcmSink(expectedSec: Double = 60.0, private val outRate: Int = 16000, priv
      */
     fun addFrames(get: (Int, Int) -> Float, frames: Int, channels: Int, rate: Int, ptsUs: Long, startUs: Long, endUs: Long): Boolean {
         if (rate <= 0 || channels <= 0) return false
+        dbgCalls++; dbgFrames += frames   // (v1377)
         if (channels == 2 && stereoMode == 0 && !(fast && corrDone)) {
             for (f in 0 until frames) { val l = get(f, 0).toDouble(); val r = get(f, 1).toDouble(); sLR += l * r; sLL += l * l; sRR += r * r }
             if (sLL + sRR > 1.0 && sLR < -0.5 * Math.sqrt(sLL * sRR)) stereoMode = if (sLL >= sRR) 1 else 2
@@ -125,7 +131,7 @@ class PcmSink(expectedSec: Double = 60.0, private val outRate: Int = 16000, priv
         }
         for (f in 0 until frames) {
             val t = ptsUs + (f * 1_000_000L) / rate
-            if (t < startUs) continue
+            if (t < startUs) { dbgEarly++; continue }   // (v1377)
             if (t >= endUs) return true
             if (firstPtsUs < 0) { firstPtsUs = t; configure(rate) }
             else if (rate != inRate) configure(rate)

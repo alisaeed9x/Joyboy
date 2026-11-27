@@ -248,18 +248,27 @@ class FileSource(
     override fun wav(startSec: Double, endSec: Double): WavChunk? {
         slots.acquireUninterruptibly()
         try {
-            val e = acquire(); val f = fmt ?: e.getTrackFormat(track.coerceAtLeast(0))
-            val startUs = (startSec * 1_000_000).toLong(); val endUs = (endSec * 1_000_000).toLong()
-            try {
-                e.seekTo(maxOf(0L, startUs - preRollUs), MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-                val sink = PcmSink(endSec - startSec)
-                Decoder.decode(e, f, startUs, endUs, sink)
-                giveBack(e)
-                if (sink.isEmpty()) return null
-                return sink.finish(sink.firstPtsUs / 1_000_000.0)
-            } catch (t: Throwable) {
-                if (t is Unsupported) giveBack(e) else try { e.release() } catch (x: Exception) { LogStore.err("AudioIO:190", x) }
-                throw t
+            var retried = false
+            while (true) {
+                // (v1377 — بطلب علي: «جروك أول باتش مجاش كامل») نتيجة فاضية من extractor متداول ممكن يكون في حالة بايظة: بنرميه ونجرب مرة أخيرة بواحد طازج، مع عدادات تشخيص في اللوج قبل الحكم إن المقطع من غير صوت
+                val e = if (retried) openNew() else acquire(); val f = fmt ?: e.getTrackFormat(track.coerceAtLeast(0))
+                val startUs = (startSec * 1_000_000).toLong(); val endUs = (endSec * 1_000_000).toLong()
+                try {
+                    e.seekTo(maxOf(0L, startUs - preRollUs), MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+                    val sink = PcmSink(endSec - startSec)
+                    Decoder.decode(e, f, startUs, endUs, sink)
+                    if (sink.isEmpty()) {
+                        try { e.release() } catch (x: Exception) { LogStore.err("AudioIO:v1377", x) }   // الفاضي مابيرجعش الحوض
+                        log("🔇 فك [${startSec}s ← ${endSec}s] طلّع فاضي (نداءات السينك: ${sink.dbgCalls}، فريمات: ${sink.dbgFrames}، اتخطّى قبل البداية: ${sink.dbgEarly})" + if (retried) "" else " — محاولة أخيرة بمصدر طازج")
+                        if (retried) return null
+                        retried = true; continue
+                    }
+                    giveBack(e)
+                    return sink.finish(sink.firstPtsUs / 1_000_000.0)
+                } catch (t: Throwable) {
+                    if (t is Unsupported) giveBack(e) else try { e.release() } catch (x: Exception) { LogStore.err("AudioIO:190", x) }
+                    throw t
+                }
             }
         } finally { slots.release() }
     }

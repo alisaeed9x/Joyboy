@@ -1198,6 +1198,7 @@ class MainActivity : Activity() {
         try { TvSync.install(this) } catch (_: Throwable) {}
         // (v727) «وضع الواجهة» القديم اتشال من الموبايل: نرجّعه للأصلي من غير مزامنة   // (v568) مزامنة الإعدادات للتلفزيون من أي شاشة
         frame.post { handleLinkIntent(intent) }; frame.post { handleExternal(intent) }; frame.post { handleClipBubbleIntent(intent) }
+        frame.postDelayed({ try { Onboarding.maybeShow(this) } catch (t: Throwable) { LogStore.err("Main:onboarding", t) } }, 900)   // (v1377 — بطلب علي) شاشة أول تشغيل (مفاتيح Groq/Gemini أو تنزيل ويسبر) — بعد ما الواجهة تترسم
     }
     /** (v1354) هل فيه اتصال إنترنت فعّال دلوقتي (شك = نعتبره شغّال زي الأول) */
     private fun netUp(): Boolean = try {

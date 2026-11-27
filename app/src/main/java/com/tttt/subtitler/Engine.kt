@@ -674,7 +674,8 @@ class Engine(
         }
         for (b in problems()) {
             val i = b.idx
-            val zero = b.mark == "⚠" && subCount(i, d) == 0   // رجع من غير جمل: يتعاد مرة واحدة بس للتأكد
+            // (v1377) وi !in extractNull: فشل الفك مش «رجع من غير جمل» — مابتتختمش «فاضي» بعد إعادة واحدة، يفضل ⚠ ويكمل مسار الـ٣ محاولات وإشعار ⛔ ظاهر بدل الاختفاء الصامت
+            val zero = b.mark == "⚠" && subCount(i, d) == 0 && i !in extractNull
             val limit = if (zero) 1 else 3
             val n = autoTries[i] ?: 0
             if (n >= limit) {
@@ -1420,11 +1421,14 @@ class Engine(
     /** (v1373 — بطلب علي) فكّ الصوت بيحصل مرة واحدة بس للباتش: لو خيط تاني بيفك نفس الباتش في نفس اللحظة، النداء التاني بيتخطى وصاحبه بيكمّل شغله (الفك المزدوج كان بيبوّظ صوت أول باتش أحيانًا). force=true بيتجاوز المنع عمدًا (إعادة المحاولة) */
     private val prepJobs = ConcurrentHashMap.newKeySet<Int>()
     private val prepBusy = ConcurrentHashMap.newKeySet<Int>()   // (v1376) null بسبب «خيط تاني بيفك» ≠ null بسبب «مفيش صوت» — الاتنين كانوا بيرجعوا null فالنداءات كانت بتفسرهم غلط
+    private val skipLogAt = ConcurrentHashMap<Int, Long>()   // (v1377) خنق سبام «اتخطّى الفكّ المزدوج»: نفس الباتش كان بيتسجّل ~١٠ مرات في الثانية
+    private val extractNull = ConcurrentHashMap.newKeySet<Int>()   // (v1377) باتشات آخر فشل ليها كان «الفك رجّع فاضي» — ماتتختمش «اتأكد إنه فاضي» في الإعادة التلقائية
     private fun prepare(i: Int, force: Boolean = false, caller: String = "?"): Prep? {
         if (force) return prepareInner(i, force)
         if (!prepJobs.add(i)) {   // (v1376) اسم النداء بيتمرر ثابت — stackTrace methodName بيتعمّى في الريليز ($r8$lambda$…) وبقى عديم الفايدة في اللوج
             prepBusy.add(i)
-            host.log("🔊 باتش ${i + 1}: فكّ صوته شغّال بالفعل في خيط تاني (النداء من $caller) — اتخطّى الفكّ المزدوج")
+            val nw = System.currentTimeMillis()   // (v1377) مرة كل ٣ ثواني لكل باتش بس
+            if (nw - (skipLogAt[i] ?: 0L) > 3000L) { skipLogAt[i] = nw; host.log("🔊 باتش ${i + 1}: فكّ صوته شغّال بالفعل في خيط تاني (النداء من $caller) — اتخطّى الفكّ المزدوج") }
             return null
         }
         try { return prepareInner(i, force).also { prepBusy.remove(i) } } finally { prepJobs.remove(i) }
@@ -1448,7 +1452,8 @@ class Engine(
         var w = s0.wav(start, rawEnd)
         // فك الصوت ساعات بيرجع null مؤقتًا (المصدر لسه بيفتح / شبكة) — نعيد قبل ما نعتبر المقطع من غير صوت
         // (v1374 — بطلب علي: «أول باتش مبيتفرغش») الفك ساعات بيبقى مش جاهز في أول ~١٥ ثانية بعد ضغطة الزرار (ويسبر وجروك) — نعيد محاولات أكتر وبرده أطول في فترة البداية قبل ما نحكم إن المقطع فاضي
-        val startup = engineStartMs > 0 && System.currentTimeMillis() - engineStartMs < 15_000
+        // (v1377) باتش 1 ميزانيته ٦٠ث من ضغطة الزرار مش ١٥: تجهيزه ممكن يتأخر بالتزاحم (جهاز علي بدأ بعد 20.6ث) فياخد ٣ محاولات بس ويتحكم عليه فاضي وهو فيه كلام
+        val startup = engineStartMs > 0 && System.currentTimeMillis() - engineStartMs < (if (i == 0) 60_000 else 15_000)
         val maxTry = if (startup) 9 else 2
         val waitMs = if (startup) 1400L else 700L
         var retry = 0
@@ -1457,9 +1462,10 @@ class Engine(
             if (isClosed || !running) return null   // (v1376 — بطلب علي: «جروك أول باتش مجاش كامل») الإلغاء أثناء محاولات فك الصوت كان بيدخل فرع «مفيش صوت» ويعلّم المجال done ويحفظه نهائي — أول خطوات الباتش كانت بتضيع
             host.log("… المقطع ${i + 1} مفيهوش صوت")
             // لو ده مش آخر ذيل الفيديو يبقى غالبًا فشل فك مش صمت حقيقي: نعلّمه ⚠ عشان يتعاد بدل ما يبان ✅ فاضي
-            if (d <= 0 || (rawEnd - rawStart > 5.0 && rawStart < d - 3.0)) { incomplete.add(i); host.log("⚠ باتش ${i + 1}: مقدرتش أفك صوته — أعده من علامة التحذير") }
+            if (d <= 0 || (rawEnd - rawStart > 5.0 && rawStart < d - 3.0)) { incomplete.add(i); extractNull.add(i); host.log("⚠ باتش ${i + 1}: مقدرتش أفك صوته — أعده من علامة التحذير") }
             done.add(rawStart, rawEnd); persist(); return null
         }
+        extractNull.remove(i)   // (v1377) فك ناجح — امسح علامة فشل الفك
         if (rampOn && i == rampChunk && rampStep < 2 && !w.silent) {   // (v1067) ✂ قص صمت أول/آخر الخطوات الأولى
             val tr = try { AudioTools.trimSilence(w.bytes) } catch (_: Throwable) { null }
             if (tr != null) { host.log("✂ المقطع ${i + 1}: اتقص صمت ${"%.1f".format(w.durSec - tr.durSec)}ث من الأطراف"); w = WavChunk(tr.bytes, w.startSec + tr.leadSec, tr.durSec, false, w.gain, w.activeSec) }
@@ -3598,7 +3604,7 @@ class Engine(
                     val batches = idx.chunked(25)
                     var failedB = 0
                     for ((bi, b) in batches.withIndex()) {
-                        if (!running && isClosed) break
+                        if (!running || isClosed) break   // (v1377) كان &&: إلغاء المحرك (running=false) لوحده مابيوقفش اللوب — باقي المواضع كلها ||
                         if (bi % 8 == 0) report("🌍 جوجل ${bi + 1}/${batches.size}")
                         val src = b.map { snap[it].original.replace(Regex("\\s*\n\\s*"), " ").trim() }
                         try {
