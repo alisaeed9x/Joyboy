@@ -1310,7 +1310,7 @@ class Engine(
         Thread {
             try {
                 val p = prepare(ki, caller = "تجهيز مسبق")
-                if (p != null && running && !isClosed && groqTxOn() && ki !in inflight && !isDone(ki, d)) prePrepped[ki] = p
+                if (p != null && running && !isClosed && groqTxOn() && !isDone(ki, d)) { if (ki in inflight) handoff[ki] = p else prePrepped[ki] = p }
             } catch (e: Throwable) { try { LogStore.err("Engine:preprep", e) } catch (_: Throwable) {} }
             finally { prePrepping.remove(ki); try { host.changed() } catch (_: Throwable) {} }
         }.apply { isDaemon = true }.start()
@@ -1331,13 +1331,23 @@ class Engine(
                     val tPrep0 = System.currentTimeMillis()   // (v1031 — م0) توقيت فك/تجهيز الصوت لكل باتش
                     val ok = if (prep0 != null) { preps[i] = prep0; true } else guard(i) { val got = prepare(i, force, "توزيع"); p = got; if (got != null) preps[i] = got }
                     if (prep0 == null) LogStore.add("⏱ [مشغّل-توقيت] باتش ${i + 1}: فك+تجهيز الصوت " + (System.currentTimeMillis() - tPrep0) + "ms")
-                    if (prep0 == null && p == null && prepBusy.contains(i)) nap(800)   // (v1376) الباتش بيتفك في خيط التجهيز المسبق — مهلة بدل ما اللوب يلف يبعته كل ~150ms (سبام «فك+تجهيز 1ms» في اللوج)
+                    if (prep0 == null && p == null && prepBusy.contains(i)) {
+                        nap(800)
+                        // (v1384) استنى الصوت الجاهز من خيط التجهيز المسبق بدل ما تفك تاني من الأول
+                        var waited = 0
+                        while (p == null && running && !isClosed && waited++ < 600) {
+                            val g = handoff.remove(i)
+                            if (g != null) { p = g; preps[i] = g; host.log("🤝 باتش ${i + 1}: صوته جهز من التجهيز المسبق — بكمّل بيه من غير فك تاني"); break }
+                            if (!prepJobs.contains(i) && !prePrepping.contains(i)) break
+                            nap(300)
+                        }
+                    }
                     if (ok) {
                         val pp = p
                         if (pp == null) failed.remove(i)
                         else { startedAt[i] = System.currentTimeMillis(); if (guard(i) { sendOrBackup(i, pp, fk) }) failed.remove(i) }
                     }
-                } finally { if (i !in bkQueued) inflight.remove(i); sentReq.remove(i); preps.remove(i); startedAt.remove(i); keyOf.remove(i); pool.unreserve(i); host.changed() }   // (v216) باتش في طابور الاحتياطي يفضل «شغّال» لحد ما يخلص
+                } finally { handoff.remove(i); if (i !in bkQueued) inflight.remove(i); sentReq.remove(i); preps.remove(i); startedAt.remove(i); keyOf.remove(i); pool.unreserve(i); host.changed() }   // (v216) باتش في طابور الاحتياطي يفضل «شغّال» لحد ما يخلص
             }
         } catch (_: RejectedExecutionException) { inflight.remove(i); sentReq.remove(i); preps.remove(i); startedAt.remove(i); pool.unreserve(i) }
     }
@@ -1450,6 +1460,8 @@ class Engine(
             } catch (e: Throwable) { try { LogStore.err("Engine:headRecover", e) } catch (_: Throwable) {} }
         }.apply { isDaemon = true; name = "head-recover" }.start()
     }
+    // (v1384 — بطلب علي: «الباتش كله مبقاش يتفرغ») صوت جاهز من التجهيز المسبق لباتش التوزيع حاجزه ومستني — كان بيترمي فالتوزيع يفك من الأول وبيلف للأبد
+    private val handoff = ConcurrentHashMap<Int, Prep>()
     private val prepJobs = ConcurrentHashMap.newKeySet<Int>()
     private val prepBusy = ConcurrentHashMap.newKeySet<Int>()   // (v1376) null بسبب «خيط تاني بيفك» ≠ null بسبب «مفيش صوت» — الاتنين كانوا بيرجعوا null فالنداءات كانت بتفسرهم غلط
     private val skipLogAt = ConcurrentHashMap<Int, Long>()   // (v1377) خنق سبام «اتخطّى الفكّ المزدوج»: نفس الباتش كان بيتسجّل ~١٠ مرات في الثانية
