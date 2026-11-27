@@ -1590,6 +1590,8 @@ open class PlayerActivity : Activity(), Host {
         add("📝 ترجمات الفيديو (قديم + جديد)") { sfTranslationsDialog(anchor) }
         add("🎧 باتش الصوت للترجمة بره (على الموبايل)") { ghUpload() }   // (v1361) محلي بدل الريبو: فصل الصوت + برومبت في التنزيلات (بطلب علي)
         add("📋 نسخ برومبت باتش الصوت") { GhAudio.copyLast(this) }
+        add("🧪 تفريغ Groq Whisper (تجريبي)") { ghGroq() }   // (v1367 — بطلب علي) جوه المشغّل بدل مركز التحميل
+        add("🔑 مفتاح Groq API") { GhAudio.groqKeyDialog(this) }   // (v1367) المفتاح هنا بعد شيل قسم الإعدادات
         if (tr) {
             add("🔄 إعادة / تقدم الباتشات") { batchDialog() }
             add("⚙ إعدادات الترجمة") { trSettings(anchor) }
@@ -5428,6 +5430,8 @@ open class PlayerActivity : Activity(), Host {
         if (Design.isNew()) gTool.addView(pd("🎧 ابعت الصوت كله (ملف واحد)") { shareFullAudio() })
         gTool.addView(pd("🎧 باتش الصوت للترجمة بره (على الموبايل)") { ghUpload() })   // (v1361) محلي بدل الريبو (بطلب علي)
         gTool.addView(pd("📋 نسخ برومبت باتش الصوت") { GhAudio.copyLast(this) })
+        gTool.addView(pd("🧪 تفريغ Groq Whisper (تجريبي)") { ghGroq() })   // (v1367 — بطلب علي) جوه المشغّل بدل مركز التحميل
+        gTool.addView(pd("🔑 مفتاح Groq API") { GhAudio.groqKeyDialog(this) })   // (v1367) المفتاح هنا بعد شيل قسم الإعدادات
         gTool.addView(pd("📥 استيراد ملف ترجمة (بيترجم فورًا)") { doImport() })
         gTool.addView(pd("📂 فتح فيديو") { doOpen() })
         // (v1025) اللي اتشال من الشريط العلوي لقلّة الاستعمال بقى هنا
@@ -5492,7 +5496,6 @@ open class PlayerActivity : Activity(), Host {
         // (v188) مركز التحميل (التقدم + الناتج) في نافذة فوق المشغّل
         fun openTasksDialog() {
             val tu = TasksUi(this, ui, th)
-            tu.onTrSettings = { trSettings(tu.root) }   // (v1361) إعدادات الترجمة من مركز التحميل — بتأثر في برومبت باتش الصوت
             val dlg = android.app.Dialog(this)
             dlg.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
             val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setBackgroundColor(th.bg) }
@@ -8131,6 +8134,14 @@ open class PlayerActivity : Activity(), Host {
         if (u == null && su == null) { say("افتح الفيديو الأول"); return }
         val t = try { Recents.titleOf(vid).substringBeforeLast('.', Recents.titleOf(vid)) } catch (_: Throwable) { "video" }
         GhAudio.start(this, u, su, HashMap(hdr), t, durMs)
+    }
+
+    /** (v1367 — بطلب علي) تفريغ Groq Whisper جوه المشغّل: SRT من صوت الفيديو الحالي، ويتابع من مركز التحميل */
+    fun ghGroq() {
+        val u = uri; val su = aurl ?: url
+        if (u == null && su == null) { say("افتح الفيديو الأول"); return }
+        val t = try { Recents.titleOf(vid).substringBeforeLast('.', Recents.titleOf(vid)) } catch (_: Throwable) { "video" }
+        GhAudio.startGroqCurrent(this, u, su, HashMap(hdr), t, durMs)
     }
 
     /** (v1195) ZIP «اللوج + الترجمة»: اللوج كامل + الأصل لوحده + الترجمة الناتجة لوحدها (Download/Joyboy_Logs) */

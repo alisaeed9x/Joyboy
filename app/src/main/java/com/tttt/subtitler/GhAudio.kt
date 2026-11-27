@@ -40,16 +40,35 @@ object GhAudio {
     private const val GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
     private const val GROQ_CHUNK_SEC = 600.0   // 10 دقايق ≈ 2.5MB عند 32kbps — بعيد عن حد 25MB وحدود الكوتا المجانية
 
-    fun pickAndStartGroq(act: Activity) {
+    /** (v1367 — بطلب علي) تفريغ Groq من جوه المشغّل: الفيديو الحالي على طول من غير اختيار ملف */
+    fun startGroqCurrent(act: Activity, uri: Uri?, url: String?, hdr: Map<String, String>, title: String, durMs: Long) {
+        if (uri == null && url == null) { Notice.show(act, "افتح الفيديو الأول", 2400L); return }
+        startGroq(act, uri, url, hdr, title, durMs)
+    }
+
+    /** (v1367 — بطلب علي) مفتاح Groq بقى في قايمة المشغّل بدل قسم الإعدادات: لصق/تعديل/مسح */
+    fun groqKeyDialog(act: Activity, onSaved: (() -> Unit)? = null) {
         try {
-            VideoPicker.show(act, "🧪 اختار الفيديو للتفريغ بـ Groq", { v ->
-                startGroq(act, Uri.parse(v.uri), null, emptyMap(), v.title, v.durMs)
-            }, { Notice.show(act, "الفيديوهات بتظهر هنا من مكتبة الموبايل", 2400L) })
-        } catch (e: Throwable) { LogStore.err("GhAudio:groqpick", e); Notice.show(act, "⚠ ما قدرتش أفتح اختيار الفيديو", 2400L) }
+            val et = android.widget.EditText(act)
+            et.hint = "gsk_..."
+            et.setText(Cfg.str("groq_key", ""))
+            et.setSelection(et.text.length)
+            GAlert(act).setTitle("🔑 مفتاح Groq API")
+                .setMessage("مجاني من console.groq.com — بيتحفظ على الموبايل بس ومش بيتبعت لأي حد غير Groq")
+                .setView(et)
+                .setPositiveButton("حفظ") { _, _ ->
+                    Cfg.put("groq_key", et.text.toString().trim())
+                    Notice.show(act, "✅ اتحفظ المفتاح", 2200L)
+                    onSaved?.invoke()
+                }
+                .setNeutralButton("مسح") { _, _ -> Cfg.put("groq_key", ""); Notice.show(act, "🗑 اتمسح المفتاح", 2200L) }
+                .setNegativeButton("إلغاء", null)
+                .show()
+        } catch (e: Throwable) { LogStore.err("GhAudio:groqkey", e) }
     }
 
     private fun startGroq(act: Activity, uri: Uri?, url: String?, hdr: Map<String, String>, title: String, durMs: Long) {
-        if (Cfg.str("groq_key", "").isBlank()) { Notice.show(act, "🔑 حط مفتاح Groq الأول من الإعدادات (قسم 🎧 باتش الصوت)", 3600L); return }
+        if (Cfg.str("groq_key", "").isBlank()) { groqKeyDialog(act) { startGroq(act, uri, url, hdr, title, durMs) }; return }   // (v1367) المفتاح بقى بدايلوج جوه المشغّل
         if (TaskCenter.items.any { it.kind == "groq" && (it.state == 0 || it.state == 1) }) { Notice.show(act, "⏳ في تفريغ Groq شغّال بالفعل", 2400L); return }
         LogStore.add("🧪 Groq Whisper: بدأ — " + title)
         Notice.show(act, "🧪 اتضاف لمركز التحميل — التفريغ التجريبي بـ Groq", 2600L)
@@ -134,7 +153,7 @@ object GhAudio {
                         return out
                     }
                     lastErr = "Groq رفض (كود " + code + "): " + txt.take(160)
-                    if (code == 401 || code == 403) throw IOException("مفتاح Groq غلط — راجعه في الإعدادات")
+                    if (code == 401 || code == 403) throw IOException("مفتاح Groq غلط — صلّحه من «🔑 مفتاح Groq API» في قايمة المشغّل")
                     if (code == 429 || code >= 500) { Thread.sleep(15000L * attempt); continue }
                     throw IOException(lastErr)
                 } finally { c.disconnect() }

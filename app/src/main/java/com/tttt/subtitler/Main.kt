@@ -629,11 +629,7 @@ class MainActivity : Activity() {
                     ui.chips(baseLangs.map { it.second }, { baseLangName() }) { n -> Cfg.put("base_lang", baseLangs.firstOrNull { it.second == n }?.first ?: "ar") }),
                 ui.button("📝 البرومبتات (شوف · انسخ · عدّل · استبدل)") { PromptsUi.show(this, ui) },
                 ui.section("📖 مسرد المصطلحات الثابت", false,
-                    ui.noHint(), gloss),
-                ui.section("🎧 باتش الصوت (للترجمة برّه)", false,
-                    ui.switchRow("✨ تحسين الصوت قبل الحفظ: Opus + رفع الكلام الواطي (أدق وأصغر لكن أبطأ بكتير)", Cfg.bool("gh_audio_enhance", false)) { Cfg.put("gh_audio_enhance", if (it) "1" else "0") },
-                    ui.switchRow("🧪 تفريغ Groq Whisper (تجريبي): زرار في مركز التحميل يطلّع SRT من Groq", Cfg.bool("groq_exp", false)) { Cfg.put("groq_exp", if (it) "1" else "0") },
-                    ui.input("🔑 مفتاح Groq API (gsk_...) — مجاني من console.groq.com", Cfg.str("groq_key", "")).apply { addTextChangedListener(object : android.text.TextWatcher { override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}; override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}; override fun afterTextChanged(s: android.text.Editable?) { Cfg.put("groq_key", s?.toString()?.trim() ?: "") } }) })) }),   // (v1363) الافتراضي السرعة بعد شكوى البطء · (v1366) مسار Groq التجريبي
+                    ui.noHint(), gloss)) }),
             // ===== 🔑 المفاتيح: جيميناي · الوضع البصري · محركات خارجية =====
             tab("keys", { listOf<View>(
                 ui.section("🆓 من غير مفتاح؟ تمام", true,
@@ -943,7 +939,6 @@ class MainActivity : Activity() {
         // (v1038) البوابة التالتة: «مركز التحميل» (التحميلات بس — أدوات القص/GIF/الضغط اتشالت)
         val tasksUi = TasksUi(this, ui, th); tasksUiRef = tasksUi
         tasksUi.onOpenOut = { t -> openTaskOutput(t) }   // (v472) دوسة على مهمة خالصة تفتح
-        tasksUi.onTrSettings = { settingsShow?.invoke("general") }   // (v1361) إعدادات الترجمة (🚀 خط الترجمة) من مركز التحميل — بتأثر في برومبت باتش الصوت الفيديو
         tasksUi.onClose = { showTabFn(if (tabBeforeTasks == 5) 0 else tabBeforeTasks) }   // (v324) ✕ في صفحة المهام
         // (v198) الشريط السفلي (البوابات) وشريط النظام بياخدوا لون مشغّل الموسيقى لما يتفتح، ويرجعوا لثيم البرنامج لما يتقفل
         @Suppress("DEPRECATION")
