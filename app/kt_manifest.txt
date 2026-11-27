@@ -157,6 +157,7 @@ com/tttt/subtitler/Notice.kt
 com/tttt/subtitler/OffLang.kt
 com/tttt/subtitler/Offline.kt
 com/tttt/subtitler/Offload.kt
+com/tttt/subtitler/Onboarding.kt
 com/tttt/subtitler/OrbPlayer.kt
 com/tttt/subtitler/PageScan.kt
 com/tttt/subtitler/PageSettings.kt
