@@ -667,30 +667,10 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
                 railLabs.add(lb)
                 rr.addView(cell, LinearLayout.LayoutParams(-2, -2).apply { setMargins(ui.dp(2), 0, ui.dp(2), 0) })
             }
-            val host = object : FrameLayout(act) {
-                private var dx = 0f; private var drag = false; private var base = 0f
-                override fun onInterceptTouchEvent(e: android.view.MotionEvent): Boolean {
-                    when (e.actionMasked) {
-                        android.view.MotionEvent.ACTION_DOWN -> { dx = e.rawX; drag = false; base = translationX }
-                        android.view.MotionEvent.ACTION_MOVE -> if (!drag && Math.abs(e.rawX - dx) > ui.dp(10)) { drag = true; parent?.requestDisallowInterceptTouchEvent(true) }
-                    }
-                    return drag
-                }
-                override fun onTouchEvent(e: android.view.MotionEvent): Boolean {
-                    when (e.actionMasked) {
-                        android.view.MotionEvent.ACTION_MOVE -> {
-                            val pw = (parent as? View)?.width ?: 0
-                            val lim = ((pw - width) / 2f).coerceAtLeast(0f)
-                            translationX = (base + e.rawX - dx).coerceIn(-lim, lim)
-                        }
-                        android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> { if (drag) { try { Cfg.put("yt_rail_x", translationX.toInt().toString()) } catch (_: Throwable) {} }; drag = false }
-                    }
-                    return true
-                }
-            }
+            val host = FrameLayout(act)   // (v1365 — بطلب علي) الريل ثابت متوسّط من غير سحب أو إزاحة يمين/شمال
             host.addView(cap, FrameLayout.LayoutParams(-2, -2))
-            host.translationX = try { Cfg.int("yt_rail_x", 0).toFloat() } catch (_: Throwable) { 0f }
             ytRail = host
+            host.visibility = View.GONE   // (v1365 — بطلب علي) الريل لتاب يوتيوب بس: بيظهر مع refresh() ويختفي مع onHide()
             val railLp = FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
             if (!railHoist || !MtFloat.hoistRail(act, host, railLp, railGlass)) content.addView(host, railLp)
             ytDock.onVis = { ytDock.post { railInset() } }
@@ -713,6 +693,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
     private fun landTab(): Int = try { if (YtNotify.badgeCount() > 0) 1 else 0 } catch (_: Throwable) { 0 }
     private var leftYt = false   // (v1107)
     fun refresh() {
+        ytRail?.visibility = View.VISIBLE   // (v1365) تاب يوتيوب ظاهر = الريل يظهر
         bellRefresh()   // (v1304)
         if (cur == null) { recMemoAt = 0L; leftYt = false; openTab(landTab()) }   // (v1107) بيفتح على الرئيسية دايمًا (كان الاشتراكات)
         else if (leftYt && !watch.isOpen && !chan.isOpen && cur?.let { it.tab == 1 && it.vid == null && it.q == null && it.chUrl == null } == true) { leftYt = false; recMemoAt = 0L; openTab(landTab()) }   // (v1107) خرجت من يوتيوب وإنت في الاشتراكات ورجعت ← الرئيسية
@@ -729,7 +710,7 @@ class YtProUi(private val act: Activity, private val ui: Ui, private val th: The
             if (ok) { try { YtMtFeed.markSigned(true) } catch (_: Throwable) {}; act.runOnUiThread { if (!act.isFinishing && !act.isDestroyed && promptBox.visibility == View.VISIBLE) { if (tab == 1) openSubs(true) else openTab(0) } } }
         }.also { it.isDaemon = true; it.start() }
     }
-    fun onHide() { leftYt = true; YtNotify.clearNew(); try { markHomeViewed() } catch (_: Throwable) {}; hideKb(); sugBox.visibility = View.GONE; watch.pause(); h.removeCallbacks(pollRun); h.removeCallbacks(softRefresh); if (DeviceUi.isTv(act) && navSel == 1) { try { YtNotify.markOpened(act) } catch (_: Throwable) {} } }   // (v575) خرجت من الاشتراكات = العدّ من دلوقتي
+    fun onHide() { ytRail?.visibility = View.GONE; leftYt = true; YtNotify.clearNew(); try { markHomeViewed() } catch (_: Throwable) {}; hideKb(); sugBox.visibility = View.GONE; watch.pause(); h.removeCallbacks(pollRun); h.removeCallbacks(softRefresh); if (DeviceUi.isTv(act) && navSel == 1) { try { YtNotify.markOpened(act) } catch (_: Throwable) {} } }   // (v575) خرجت من الاشتراكات = العدّ من دلوقتي
     /** (v348) Main.onStop: الشورتس تقف لما التطبيق يروح الخلفية أو يظهر المشغّل فوقه (بترجع في refresh() مع onResume) */
     fun onPause() { watch.pause(); ytDock.pause() }
     /** (v1162) صفحة المشاهدة اتصغّرت: المشغّل الشغّال بيتسلّم للدوك السفلي (instant لأن الحركة اتعملت في الصفحة) */

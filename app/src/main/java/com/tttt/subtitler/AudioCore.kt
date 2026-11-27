@@ -32,7 +32,8 @@ object Wav {
  * - تقليل المعدل بمتوسط صندوقي (box filter) عشان نقلل الـ aliasing
  * - بيحسب نسبة الكلام (نفس فكرة فلتر الصمت VAD في الأصل: نوافذ 0.5ث و RMS > 0.012)
  */
-class PcmSink(expectedSec: Double = 60.0, private val outRate: Int = 16000) {
+class PcmSink(expectedSec: Double = 60.0, private val outRate: Int = 16000, private val fast: Boolean = false) {
+    private var corrDone = false   // (v1365) fast: قياس طور الاستريو مرة واحدة بس
     private var buf = ByteArray(maxOf(4096, ((expectedSec + 2.0) * outRate * 2).toInt()))
     private var len = 0
     var firstPtsUs = -1L
@@ -91,7 +92,7 @@ class PcmSink(expectedSec: Double = 60.0, private val outRate: Int = 16000) {
 
     private fun mono(x0: Float) {
         val a = lp1; val b = lp2
-        val x = if (a != null && b != null) b.run(a.run(x0.toDouble())).toFloat() else x0
+        val x = if (fast || a == null || b == null) x0 else b.run(a.run(x0.toDouble())).toFloat()   // (v1365) fast: من غير فلاتر biquad
         var w = 1.0
         while (w > 1e-9) {
             val need = step - accCnt
@@ -117,9 +118,10 @@ class PcmSink(expectedSec: Double = 60.0, private val outRate: Int = 16000) {
      */
     fun addFrames(get: (Int, Int) -> Float, frames: Int, channels: Int, rate: Int, ptsUs: Long, startUs: Long, endUs: Long): Boolean {
         if (rate <= 0 || channels <= 0) return false
-        if (channels == 2 && stereoMode == 0) {
+        if (channels == 2 && stereoMode == 0 && !(fast && corrDone)) {
             for (f in 0 until frames) { val l = get(f, 0).toDouble(); val r = get(f, 1).toDouble(); sLR += l * r; sLL += l * l; sRR += r * r }
             if (sLL + sRR > 1.0 && sLR < -0.5 * Math.sqrt(sLL * sRR)) stereoMode = if (sLL >= sRR) 1 else 2
+            if (fast) corrDone = true
         }
         for (f in 0 until frames) {
             val t = ptsUs + (f * 1_000_000L) / rate
@@ -145,7 +147,7 @@ class PcmSink(expectedSec: Double = 60.0, private val outRate: Int = 16000) {
         fun rd(k: Int): Int = ((buf[2 * k + 1].toInt() shl 8) or (buf[2 * k].toInt() and 0xFF)).toShort().toInt()
         fun wr(k: Int, v: Int) { val c = v.coerceIn(-32768, 32767); buf[2 * k] = (c and 0xFF).toByte(); buf[2 * k + 1] = ((c shr 8) and 0xFF).toByte() }
         // (v166) 1) high-pass 80Hz: يشيل الدمدمة/الـ DC/هزّة الميكروفون اللي بتوسّخ الكلام وبتضلّل قياس الصوت
-        if (n > 64) {
+        if (!fast && n > 64) {   // (v1365) fast: من غير high-pass
             val w0 = 2 * Math.PI * 80.0 / outRate; val c = Math.cos(w0); val al = Math.sin(w0) / (2 * 0.7071); val a0 = 1 + al
             val b0 = (1 + c) / 2 / a0; val b1 = -(1 + c) / a0; val b2 = b0; val a1 = -2 * c / a0; val a2 = (1 - al) / a0
             var x1 = 0.0; var x2 = 0.0; var y1 = 0.0; var y2 = 0.0
@@ -159,10 +161,10 @@ class PcmSink(expectedSec: Double = 60.0, private val outRate: Int = 16000) {
         // 2) تضخيم حسب مستوى الكلام الفعلي (مش أعلى قمة): قمة واحدة عالية (طقطقة/تصفيق) كانت بتمنع رفع باقي الكلام
         var appliedGain = 1.0
         var pk = 0
-        for (k in 0 until n) { val a = Math.abs(rd(k)); if (a > pk) pk = a }
+        if (!fast) for (k in 0 until n) { val a = Math.abs(rd(k)); if (a > pk) pk = a }   // (v1365) fast: من غير مسح القمم
         val fr = outRate / 50   // إطار 20ms
         val nf = n / fr
-        if (pk >= 300 && nf >= 10) {
+        if (!fast && pk >= 300 && nf >= 10) {   // (v1365) fast: من غير تضخيم/ليملتر
             val lv = DoubleArray(nf)
             for (f in 0 until nf) { var sq = 0.0; for (k in f * fr until (f + 1) * fr) { val v = rd(k) / 32768.0; sq += v * v }; lv[f] = Math.sqrt(sq / fr) }
             val sorted = lv.sortedArray()

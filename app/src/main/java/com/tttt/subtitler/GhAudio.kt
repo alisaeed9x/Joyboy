@@ -98,29 +98,26 @@ object GhAudio {
         if (durMs > 0L) sb.append("مدة الفيديو: ").append(BatchExport.hms(durMs / 1000.0)).append("\n")
         sb.append("ملف الصوت المرفق: ").append(audioName).append(" (").append(bytes / 1048576L).append("MB) — ده صوت الفيديو كله من أوله لآخره.\n\n")
         sb.append("اسمع الملف، ترجمه حسب التعليمات تحت، وارجعلي ملف SRT واحد توقيته على توقيت الفيديو من الصفر.\n\n")
-        sb.append("===== تعليمات الترجمة =====\n").append(promptInstructions(act, durMs))
+        sb.append("===== تعليمات الترجمة =====\n").append(simpleInstructions(act))
         return sb.toString()
     }
 
-    /** «تعليمات الترجمة» نفسها اللي المحرك بيولّدها من الإعدادات الحالية (لهجة/أسلوب/شدة/برومبتات) — من غير ما نشغّل صوت */
-    private fun promptInstructions(act: Activity, durMs: Long): String {
-        return try {
-            Cfg.init(act)
-            val conf = Cfg.snapshot()
-            val store = Store(File(act.filesDir, "progress"), Store.keyFor("audio-patch"))
-            val pb = PromptBuilder { p -> act.assets.open(p).bufferedReader(Charsets.UTF_8).use { it.readText() } }
-            val durSec = if (durMs > 0L) durMs / 1000.0 else 0.0
-            val host = object : Host {
-                override fun log(s: String) {}
-                override fun status(s: String) {}
-                override fun changed() {}
-                override fun position() = 0.0
-                override fun playerDuration() = durSec
-            }
-            val eng = Engine(conf, { throw IOException("prompt-only") }, store, host, pb)
-            eng.headless = true
-            eng.promptText().ifBlank { "(ترجم لعربي طبيعي ومناسب للمشاهدة)" }
-        } catch (e: Throwable) { LogStore.err("GhAudio:prompt", e); "(ترجم لعربي طبيعي ومناسب للمشاهدة)" }
+    /** (v1365 — بطلب علي) برومبت قصير وواضح بدل بلوكات المحرك الكتير: لغة الترجمة + لغة الفيديو بس؛ ولو لغة الفيديو «auto» بنضيف بلوك تحليل الصوت وتحديد اللغة تلقائيًا عشان الـAI يترجم من الصوت مباشرة. */
+    private fun simpleInstructions(act: Activity): String {
+        Cfg.init(act)
+        val target = Cfg.str("lang", "فصحى").ifBlank { "فصحى" }
+        val video = Cfg.str("tr_lang", "auto")
+        val sb = StringBuilder()
+        sb.append("- لغة الترجمة المطلوبة: العربية (").append(target).append(").\n")
+        if (video.isBlank() || video == "auto") {
+            sb.append("- لغة الفيديو: غير محددة — اسمع الصوت وحلّله وحدّد لغته بنفسك، وترجم من الصوت مباشرة من غير ما تسألني عن اللغة.\n")
+        } else {
+            sb.append("- لغة الفيديو: ").append(try { I18n.nameOf(video) } catch (_: Throwable) { video }).append(".\n")
+        }
+        sb.append("- اسمع الملف كله وترجمه، وارجعلي ملف SRT واحد توقيته على توقيت الفيديو من الصفر.\n")
+        sb.append("- صيغة SRT سليمة: رقم متسلسل + توقيت بصيغة 00:00:00,000 --> 00:00:00,000 + سطر الترجمة.\n")
+        sb.append("- الترجمة طبيعية ومناسبة للمشاهدة، والسطر ميطولش (حوالي 42 حرف، سطرين كحد أقصى).\n")
+        return sb.toString()
     }
 
     private fun copy(ctx: Context, text: String) {
@@ -196,7 +193,7 @@ object FullAudio {
 
     /** فك الصوت كله لـ PCM مونو 48kHz على شبابيك (ذاكرة ثابتة ~12MB مهما طال الفيديو) + ترميزه. */
     private fun transcode(ctx: Context, uri: Uri?, url: String?, hdr: Map<String, String>, out: File, opus: Boolean, onPct: (Int) -> Unit) {
-        val rate = if (opus) OUT_RATE else 16000
+        val rate = OUT_RATE   // (v1365 — بطلب علي: الفصل لسه بطيء) المسار السريع بقى 48k مونو من غير DSP: الترميز بكوديك هاردوير قياسي، والتصغير لـ16k كان بيحمّل فلاتر على كل عينة
         val ex = MediaExtractor()
         var writer: PcmOut? = null
         try {
@@ -214,7 +211,7 @@ object FullAudio {
             while (start < durUs) {
                 val end = minOf(start + winUs, durUs)
                 ex.seekTo(start, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-                val sink = PcmSink(WIN_SEC + 2.0, rate)
+                val sink = PcmSink(WIN_SEC + 2.0, rate, !opus)   // (v1365) fast mode للمسار السريع: بلا biquad/HP/تضخيم/limiter
                 Decoder.decode(ex, fmt, start, end, sink)
                 val wav = sink.finish(start / 1_000_000.0).bytes   // WAV 48k مونو (44 بايت هيدر + PCM)
                 w.offer(wav, 44, wav.size - 44, end >= durUs)
