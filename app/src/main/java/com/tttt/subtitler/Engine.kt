@@ -198,8 +198,13 @@ class Engine(
     private fun curModel(): String = conf.model
     private fun keyNo(k: String): Int = basePool.all().indexOf(k) + 1
     // (v1114) FIX 5: نقاط حالة المفاتيح — نقطة لكل مفتاح في الـ pool (العدد من الـ pool نفسه، من غير عدد ثابت) برقمه
+    /** (v1373 — بطلب علي) حالة مفتاح جروك أثناء التفريغ: 0🔵 واقف · 4🟡 شغّال · 1🟢 نجح · 2🔴 فشل */
+    private val groqDot = AtomicInteger(0)
     fun keyDots(): String {
         val dots = arrayOf("🔵", "🟢", "🔴", "🟠", "🟡")
+        // (v1373 — بطلب علي) في التفريغ: حالة المزوّد الحقيقي بدل نقط مسبح جيميناي (بتتحرك وهو مش شغال فتبان كأن مفاتيح بتفشل وبتتبدّل)
+        if (transOnly && groqTxOn()) return "⚡" + dots[groqDot.get()] + "1"
+        if (transOnly && Offline.on()) return "🎙 ويسبر"
         val parts = pool.all().mapIndexed { idx, k -> dots[pool.dotState(k)] + (idx + 1) }
         return parts.joinToString(" ")
     }
@@ -1253,7 +1258,7 @@ class Engine(
         } catch (e: RehomeEx) {
             if (!running) return false
             rehomeQ[i] = Rehome(e.avoid, System.currentTimeMillis(), preps[i])
-            host.log("↪ باتش ${i + 1}: مفتاح ${pool.tail(e.avoid ?: "")} فشل ومفيش مفتاح فاضي — الباتش مستني أقرب مفتاح يخلص باتشه")
+            host.log("↪ باتش ${i + 1}: مفتاح ${pool.tail(e.avoid ?: "")} فشل ومفيش مفتاح فاضي — الباتش مستني أقرب مفتاح يخلص باتشه" + (if (transOnly && groqTxOn()) " (مفتاح جيميناي محجوز — التفريغ نفسه بـ Groq ⚡)" else ""))
         } catch (e: Exception) {
             if (!running) return false
             // (v1101) خطأ نت والنت واقع فعلًا: الباتش مش بيتحسب فاشل ولا بيروح لمفتاح تاني — بيرجع للطابور والحلقة الرئيسية مستنية النت
@@ -1408,7 +1413,18 @@ class Engine(
 
 
     /** يفك الصوت (ويقصّر المقطع لأقرب لحظة صمت). null = مفيش حاجة تتبعت (صامت / مفيش صوت). */
+    /** (v1373 — بطلب علي) فكّ الصوت بيحصل مرة واحدة بس للباتش: لو خيط تاني بيفك نفس الباتش في نفس اللحظة، النداء التاني بيتخطى وصاحبه بيكمّل شغله (الفك المزدوج كان بيبوّظ صوت أول باتش أحيانًا). force=true بيتجاوز المنع عمدًا (إعادة المحاولة) */
+    private val prepJobs = ConcurrentHashMap.newKeySet<Int>()
     private fun prepare(i: Int, force: Boolean = false): Prep? {
+        if (force) return prepareInner(i, force)
+        if (!prepJobs.add(i)) {
+            val caller = Throwable().stackTrace.getOrNull(2)?.methodName ?: "?"
+            host.log("🔊 باتش ${i + 1}: فكّ صوته شغّال بالفعل في خيط تاني (النداء من $caller) — اتخطّى الفكّ المزدوج")
+            return null
+        }
+        try { return prepareInner(i, force) } finally { prepJobs.remove(i) }
+    }
+    private fun prepareInner(i: Int, force: Boolean = false): Prep? {
         claimed.remove(i)   // محاولة جديدة للباتش ده من الأول
         val d = currentDur()
         // بنحجز الباتش ونقرا حدوده في خطوة واحدة: لو باتش قبله بيقصّر حدّه بالتوازي ماينفعش يسيب ثغرة
@@ -2009,12 +2025,13 @@ class Engine(
 
     /** (v1369 — بطلب علي) تفريغ باتش واحد بـ Groq — نفس عقد Offline.transcribe بالظبط: Api.Result بـJSON التفريغ، واللغة المكتشفة بتتسجّل. بيرمي IOException/Unsupported عند الفشل (لوب المحاولات العادي بيتصرف) */
     private fun groqResult(bytes: ByteArray, durSec: Double): Api.Result {
+        groqDot.set(4)   // (v1373) 🟡 طلب Groq شغّال دلوقتي
         val key = Cfg.str("groq_key", "").trim()
         val model = Cfg.str("groq_model", "whisper-large-v3-turbo").trim().ifEmpty { "whisper-large-v3-turbo" }
         val lang = try { Offline.lang() } catch (_: Throwable) { "" }   // لغة الكلام اليدوية (لو متحددة) بتتبعت لـ Groq، غير كده بيكتشف لوحده
         val wav = bytes.size > 4 && bytes[0] == 'R'.toByte() && bytes[1] == 'I'.toByte() && bytes[2] == 'F'.toByte() && bytes[3] == 'F'.toByte()   // RIFF
-        val (dl, segs) = GhAudio.groqTranscribeAudio(key, model, lang, if (wav) "chunk.wav" else "chunk.m4a", if (wav) "audio/wav" else "audio/mp4", bytes) { host.log(it) }
-        groqRan.set(true); groqLang.set(dl); host.log("⚡ Groq (" + model + "): رجّع " + segs.size + " مقطع" + (if (dl.isNotEmpty()) " · اللغة: " + dl else ""))   // (v1371) إثبات واضح إن Groq هو اللي فرّغ
+        val (dl, segs) = try { GhAudio.groqTranscribeAudio(key, model, lang, if (wav) "chunk.wav" else "chunk.m4a", if (wav) "audio/wav" else "audio/mp4", bytes) { host.log(it) } } catch (e: Throwable) { groqDot.set(2); throw e }   // (v1373) 🔴 عند فشل الطلب
+        groqRan.set(true); groqLang.set(dl); groqDot.set(1); host.log("⚡ Groq (" + model + "): رجّع " + segs.size + " مقطع" + (if (dl.isNotEmpty()) " · اللغة: " + dl else ""))   // (v1371) إثبات واضح إن Groq هو اللي فرّغ
         val out = JSONArray()
         for (g in segs) {
             val t = g.third.trim()
@@ -3886,7 +3903,7 @@ class Engine(
         val raw = Subs.splitAll(TParse.transcript(j, w.startSec, w.durSec)).filter { !it.isSound && it.original.isNotBlank() && (near || (!it.faint && !it.lowConf)) }
             .filter { s -> val k = s.original.lowercase().filter { it.isLetterOrDigit() }; k.length >= 2 && (seen.merge(k, 1, Int::plus) ?: 1) <= 1 }
         if (raw.isEmpty()) return emptyList()
-        if (transOnly) return raw.map { Subs.capPace(it.copy(translated = it.original, pivot = "")) }
+        if (transOnly) return raw.map { Subs.capPace(it.copy(translated = it.original, pivot = "", src = if (groqTxOn()) "groq" else "whisper")) }   // (v1373) جمل سدّ الفجوات بتتلوّن بلون مصدرها برضه (كانت بتطلع بيضا)
         val tr = googleItems(raw.map { it.original })
         return raw.mapIndexed { q, s -> Subs.capPace(s.copy(translated = tr.getOrNull(q)?.trim().orEmpty().ifBlank { s.original }, pivot = "")) }
     }
