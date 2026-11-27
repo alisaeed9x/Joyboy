@@ -24,6 +24,7 @@ data class SubStyle(
         /** أنماط الخط الأربعة: (id, اسم) */
         val fontStyles = listOf("orig" to "يحاكي الأصلي", "bold" to "عريض", "slim" to "رشيق", "casual" to "عامي")
         val MALE = 0xFFAEE2FF.toInt(); val FEMALE = 0xFFFBC9E0.toInt(); val WHITE = 0xFFFFFFFF.toInt()
+        val SRC_GROQ = 0xFFFBC9E0.toInt(); val SRC_GEM = 0xFFAEE2FF.toInt()   // (v1372) ألوان مصدر التفريغ بطلب علي: Groq بمبي فاتح · Gemini أزرق فاتح · Whisper = الأبيض العادي
         val PLACE = 0xFFFFD54F.toInt(); val EMPH = 0xFFFFF59D.toInt()
         val unifiedPalette = listOf("#FFFFFF", "#FFE600", "#00CFFF", "#A8FF3E", "#FF9F1C")
 
@@ -70,9 +71,9 @@ data class SubStyle(
     fun colorFor(s: Sub): Int = when {
         s.translated.startsWith("📻") -> WHITE   // كلام من راديو/إذاعة: أبيض عادي من غير لون جنس
         plain -> WHITE
-        uniOn -> runCatching { Theme.parse(uniColor) }.getOrDefault(WHITE)
-        else -> WHITE   // (v1199) لون الجنس (أزرق/وردي) اتشال — الجنس مش دايمًا معروف: الترجمة بيضا، والأسماء بس صفرا
+        else -> srcColor(s) ?: if (uniOn) runCatching { Theme.parse(uniColor) }.getOrDefault(WHITE) else WHITE   // (v1372) جملة التفريغ تاخد لون محركها؛ الترجمة src فاضي → بيضا زي ما هي · (v1199) الأسماء بس صفرا
     }
+    fun srcColor(s: Sub): Int? = when (s.src) { "groq" -> SRC_GROQ; "gemini" -> SRC_GEM; "whisper" -> WHITE; else -> null }   // (v1372) null = مش جملة تفريغ معروفة المصدر
     /** وضع العرض (dual): 0 = ترجمة فقط، 1 = ترجمة فوق والأصلي تحت، 2 = الإنجليزي (pivot) تحت، 3 = الأصلي فقط، 4 = الأصلي فوق والترجمة تحت */
     fun secondary(s: Sub): String = when (dual) {
         1 -> if (s.original.isNotBlank() && s.original != s.translated) s.original else ""

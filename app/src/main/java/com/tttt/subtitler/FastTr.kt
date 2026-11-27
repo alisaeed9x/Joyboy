@@ -368,7 +368,7 @@ class FastTr(
                 if (st < bs - 0.25 || st >= be) continue   // الجملة بتتبع الباتش اللي بتبدأ فيه
                 if (en <= st + 0.2) en = st + 1.5
                 en = minOf(en, dur)
-                out.add(plain(st, en, txt, txt, i))
+                out.add(plain(st, en, txt, txt, i, "gemini"))   // (v1372) تفريغ المحرك القديم دايمًا جيميناي — أزرق فاتح
                 hs.add(spkTag(o.optInt("spk", 0)))
             }
             Pair(out, hs)
@@ -421,8 +421,8 @@ class FastTr(
     }
 
     /** جملة عادية من غير أي علامات (لون/إيموشن/متكلم…) عشان تتعرض بنفس شكل الترجمة العادي */
-    private fun plain(st: Double, en: Double, orig: String, tr: String, chunk: Int) =
-        Sub(st, en, orig, tr, "", "", "", emptyList(), emptyList(), false, false, chunk)
+    private fun plain(st: Double, en: Double, orig: String, tr: String, chunk: Int, src: String = "") =
+        Sub(st, en, orig, tr, "", "", "", emptyList(), emptyList(), false, false, chunk, src = src)
 
     /** بيبدّل جمل الباتش (بدايتها جوه [bs,be)) بالجديدة ويبلّغ المشغّل */
     private fun merge(bs: Double, be: Double, fresh: List<Sub>) {

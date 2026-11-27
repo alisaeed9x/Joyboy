@@ -24,7 +24,8 @@ data class Sub(
     /** (v170) كود بصمة الصوت (V1, V2…) من بنك الأصوات؛ أول ما الرد يوصل بيبقى الكود اللي جيميناي كتبه (V# أو new#) */
     val voice: String = "",
     /** (v179) اسم المتكلم (هاوس، ستيف…) من الحوار/الجدول؛ فاضي لو مش معروف */
-    val speakerName: String = ""
+    val speakerName: String = "",
+    val src: String = ""   // (v1372) مصدر التفريغ: groq/gemini/whisper — للتلوين حسب المحرك؛ فاضي = ترجمة أو مش معروف
 ) {
     /** النص اللي بيتعرض/بيتصدّر: «الاسم: الجملة» لو الميزة شغالة والاسم معروف */
     fun withSpeaker(t: String): String = if (Extras.spkNames && !isSound && speakerName.isNotBlank() && Extras.isMain(speakerName) && t.isNotBlank() && !t.trimStart().startsWith("«") && !t.trimStart().startsWith("[")) "$speakerName: $t" else t

@@ -1684,7 +1684,8 @@ class Engine(
                 if (tx && fresh.isNotEmpty()) {
                     // (v210) الباتش ما بيتطبّقش دلوقتي: بيتحط في المجمّع لحد ما يتترجم (applyChunk + سدّ الثغرات بيحصلوا بعد الترجمة)
                     val xc = crossCheck(i, w, fresh, key)   // (v742) تسميع مزدوج: مفتاح تاني يسمع نفس الباتش وأي اختلاف يتحسم بسماع تالت على الجملة
-                    holdTranscript(i, p, j, relistenLow(i, xc.first, key, xc.second), prior, key, partial)   // (v331) الجمل واطية الثقة بتتسمع تاني قبل الترجمة
+                    val txSrc = if (groqRan.get() == true) "groq" else if (gemCalled) "gemini" else if (Offline.ranOffline.get() == true) "whisper" else "gemini"   // (v1372) مصدر تفريغ الباتش ده (علامات ThreadLocal بتتصفّر قبل كل محاولة)
+                    holdTranscript(i, p, j, relistenLow(i, xc.first, key, xc.second), prior, key, partial, txSrc)   // (v331) الجمل واطية الثقة بتتسمع تاني قبل الترجمة
                     startedAt[i]?.let { recentMs.addLast(System.currentTimeMillis() - it); while (recentMs.size > 8) recentMs.pollFirst() }
                     if (hedge) { inflight.remove(i); host.log("⚡ باتش ${i + 1}: النسخة الاحتياطية خلصت الأول") }
                     return
@@ -2050,10 +2051,10 @@ class Engine(
         } catch (t: Throwable) { host.log("⚠ عرض الجمل الجاية فشل: " + (t.message ?: "").take(80)) }
     }
 
-    private fun showTranscriptPreview(i: Int, p: Prep, fresh: List<Sub>) {
+    private fun showTranscriptPreview(i: Int, p: Prep, fresh: List<Sub>, src: String = "") {
         if (isClosed || fresh.isEmpty()) return
         try {
-            var tagged = Subs.splitAll(fresh.map { it.copy(translated = it.original, pivot = "") }).map { Subs.capPace(it).copy(chunk = i) }
+            var tagged = Subs.splitAll(fresh.map { it.copy(translated = it.original, pivot = "", src = src) }).map { Subs.capPace(it).copy(chunk = i) }   // (v1372) الجمل المعروضة كتفريغ بتحمل مصدرها للتلوين
             synchronized(lock) {
                 tagged = Subs.dropOverlapZone(tagged, subs.filter { it.chunk != i }, p.rawStart)
                 val keep = subs.filter { it.chunk != i && !(it.chunk == -1 && it.start >= p.rawStart && it.start < p.rawEnd) && !Subs.inMyZone(it, tagged, i, p.rawEnd) }
@@ -2229,21 +2230,21 @@ class Engine(
         return out
     }
 
-    private fun holdTranscript(i: Int, p: Prep, j: JSONObject?, fresh: List<Sub>, prior: List<Sub>, key: String, partial: Boolean) {
+    private fun holdTranscript(i: Int, p: Prep, j: JSONObject?, fresh: List<Sub>, prior: List<Sub>, key: String, partial: Boolean, txSrc: String = "") {
         if (j != null && !detDone) {
             val dl = j.optString("detected_source_language", "").trim()
             if (dl.isNotEmpty()) { srcLang = dl; detDone = true; host.log("🌐 لغة الفيديو الأصلية: $dl"); checkBaseSkip() } else try { fallbackDetectLang(fresh) } catch (_: Throwable) {}
         }
         try { SongHint.vote(fresh.count { it.isSong }, fresh.size) } catch (_: Throwable) {}   // (v1171) كشف الأغنية من الموديل
         if (transOnly) {   // (v280) تفريغ بس: النص الأصلي بيتعرض ويتحفظ ويتحسب «اتنسخ» من غير ما يدخل مجمّع الترجمة
-            showTranscriptPreview(i, p, fresh)
+            showTranscriptPreview(i, p, fresh, txSrc)
             host.log("✍ باتش ${i + 1}: ${fresh.size} جملة اتفرّغت — تفريغ بس (من غير ترجمة)")
             host.changed()
             scheduleHoleFill(i, p.rawStart, p.rawEnd, p.w, key)   // (v283) الثغرات بتتسدّ بالتفريغ الأوفلاين نفسه (مفيش ترجمة)
             return
         }
         tHold[i] = TItem(i, p, j, fresh, prior, key, partial, System.currentTimeMillis())
-        if (activeMode >= KeyMode.TRANSCRIBE_ALL) showTranscriptPreview(i, p, fresh)   // (v224) الوضع 4: اعرض النص الأصلي فورًا
+        if (activeMode >= KeyMode.TRANSCRIBE_ALL) showTranscriptPreview(i, p, fresh, txSrc)   // (v224) الوضع 4: اعرض النص الأصلي فورًا
         host.log("📝 باتش ${i + 1}: ${fresh.size} جملة منسوخة — مستني الترجمة (في المجمّع ${tHold.size - tTaken.size})")
         host.changed()
     }
