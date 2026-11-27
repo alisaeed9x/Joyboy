@@ -2747,11 +2747,11 @@ open class PlayerActivity : Activity(), Host {
         if (::engine.isInitialized) { engine.baseLangCode = Cfg.str("base_lang", "ar"); if (auto) engine.skipIfBaseLang = true else { engine.skipIfBaseLang = false; if (engine.baseSkipped) { engine.baseSkipped = false; engine.transOnly = false } } }
         if (::engine.isInitialized && !engineReady) { pendingBegin = true; LogStore.add("⏳ بدء الترجمة/التفريغ مؤجّل — بيانات الفيديو المحفوظة لسه بتتحمّل (هيبدأ لوحده)"); return }   // البيانات المحفوظة لسه بتتحمّل: هتبدأ لوحدها أول ما تخلص
         // (v1379 — بطلب علي: «عند ضغطة ترجم/تفريغ القديم يتفصل ومتظهرش متداخل مع الجديد») ترجمة مستوردة من ملف SRT جنب الفيديو مابتدمجش مع التفريغ/الترجمة الجديدة: نسخة تتحفظ في 🗂 والقايمة ترجع فاضية للجديد
-        if (!auto && ::engine.isInitialized && !engineStarted && engine.imported && engine.subs.isNotEmpty()) {
+        if (!auto && ::realEngine.isInitialized && !engineStarted && realEngine.imported && realEngine.subs.isNotEmpty()) {   // (v1379) imported على Engine الحقيقي مش على واجهة EngineBackend
             try {
                 LogStore.add("🔀 ترجمة مستوردة من ملف — انفصلت قبل البدء (محفوظة في 🗂)")
-                engine.saveVersion("قبل ترجمة جديدة — فصل الترجمة المستوردة من الملف")
-                engine.redoAll(keep = false); engine.imported = false
+                realEngine.saveVersion("قبل ترجمة جديدة — فصل الترجمة المستوردة من الملف")
+                realEngine.redoAll(keep = false); realEngine.imported = false
                 Notice.show(this, "🔀 الترجمة القديمة بتاعة الملف اتفصلت واتحفظت في 🗂 — الجديد هيشتغل لوحده", 3000L)
             } catch (e: Throwable) { LogStore.err("Player:detachImp", e) }
         }
