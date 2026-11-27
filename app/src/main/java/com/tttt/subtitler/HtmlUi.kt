@@ -425,6 +425,7 @@ fun Ui.sheet(act: Activity, title: String, views: List<View>, fixedH: Boolean = 
         setGravity(Gravity.BOTTOM)
         setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT)
         setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        setWindowAnimations(R.style.JoySheetAnim)   // (v1360) ظهور/اختفاء ناعم للشيتات: فيد + انزلاق خفيف (بطلب علي)
     }
     // الأفقي: النافذة بتتفتح كصفحة كاملة؛ الرأسي: bottom sheet زي الأول (بيتحدد وقت الفتح مش وقت الإنشاء)
     d.setOnShowListener {

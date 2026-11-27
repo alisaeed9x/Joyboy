@@ -1603,8 +1603,8 @@ class YtWatchPage(private val act: Activity, private val ui: Ui, private val hos
         if (!wasOpen) {
             from = src
             host.state(true)
-            visibility = View.VISIBLE   // (v1347) فتح الصفحة فوري من غير أنيميشن (بطلب علي)
-            alpha = 1f
+            visibility = View.VISIBLE   // (v1347) فتح الصفحة فوري من غير حركات ثقيلة (بطلب علي)
+            alpha = 0f; animate().alpha(1f).setDuration(Skins.dur(160L)).start()   // (v1360) فيد خفيف 160ms عند الفتح (بطلب علي: أنيميشن بسيط من غير لاج)
         }
         else { body.animate().cancel(); body.alpha = 1f }
         // (v471) الفيديو والتفاصيل بقوا على خيطين منفصلين: قبل كده المشغّل كان بيستنى NewPipe يخلّص كل التفاصيل (3-8 ثواني) قبل ما يبدأ يجيب الرابط،

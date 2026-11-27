@@ -58,7 +58,7 @@
         <intent><action android:name="android.intent.action.VIEW"/><data android:scheme="content" android:host="android.media.tv"/></intent>   <!-- (v582) زرار الريسيفر: فتح مدخل HDMI -->
         <intent><action android:name="android.intent.action.SEND"/><data android:mimeType="*/*"/></intent>   <!-- (v831) نلاقي شاشة Quick Share ونفتحها مباشرة -->
     </queries>
-    <application android:name=".JoyApp" android:allowAudioPlaybackCapture="true" android:largeHeap="true" android:supportsRtl="true" android:label="Joyboy" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
+    <application android:name=".JoyApp" android:enableOnBackInvokedCallback="true" android:allowAudioPlaybackCapture="true" android:largeHeap="true" android:supportsRtl="true" android:label="Joyboy" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true" android:banner="@mipmap/ic_launcher" android:theme="@style/Theme.NewTube">
         <!-- (v985) LaunchSplashActivity اتشالت: كانت ميتة من v920 (اللانشر بقى SplashActivity بتاع MeeTube، ومحدش بيبدأها) — واللانشر دلوقتي MainActivity نفسها -->
         <activity android:name=".MainActivity" android:exported="true" android:theme="@style/AppMainPlain" android:launchMode="singleTask"

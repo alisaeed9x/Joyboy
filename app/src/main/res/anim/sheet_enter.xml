@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- (v1360) ظهور الشيتات: فيد + انزلاق خفيف 190ms (بطلب علي: أنيميشن بسيط من غير لاج) -->
+<set xmlns:android="http://schemas.android.com/apk/res/android" android:interpolator="@android:anim/decelerate_interpolator">
+    <alpha android:fromAlpha="0" android:toAlpha="1" android:duration="170"/>
+    <translate android:fromYDelta="4%p" android:toYDelta="0" android:duration="190"/>
+</set>
