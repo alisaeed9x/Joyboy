@@ -496,7 +496,7 @@ object SettingsFuzzy {
  * هنا كل واحدة ليها صف في القسم المناسب من الإعدادات الموجودة (نفس القيم الافتراضية بالظبط، فمفيش حاجة بتتغيّر لحد ما تغيّرها).
  */
 object AdvRows {
-    private class R(val tab: String, val key: String, val label: String, val kind: String, val d: Int = 1, val lo: Int = 0, val hi: Int = 0, val unit: String = "", val scale: Int = 1, val parent: String = "", val parentHideVal: String = "")   // (v1391) parent/parentHideVal: صف شرطي — يتخبّى لما مفتاح الأب يساوي القيمة دي (قيمته المحفوظة مش بتتمسح)
+    private class R(val tab: String, val key: String, val label: String, val kind: String, val d: Int = 1, val lo: Int = 0, val hi: Int = 0, val unit: String = "", val scale: Int = 1, val parent: String = "", val parentHideVal: String = "", val sdef: String = "")   // (v1391) parent/parentHideVal: صف شرطي — يتخبّى لما مفتاح الأب يساوي القيمة دي (قيمته المحفوظة مش بتتمسح) · (v1398) sdef: الافتراضي النصي لنوع txt
     private val rows = listOf(
         R("general", "stt_vad", "🎧 تخطّي الصمت أثناء التفريغ على الجهاز (VAD)", "b", 1),   // (v1393) منقول من تبويب التفريغ الملغى
         R("music", "song_auto_id", "🎵 التعرف التلقائي على اسم الأغنية", "s01", 1),   // (v1393) منقول من التفريغ للموسيقى
@@ -518,6 +518,10 @@ object AdvRows {
         R("browser", "prewarm_tabs", "🔥 تسخين التبويبات عند فتح التطبيق", "b", 1),   // (v1393) منقول للمتصفح — تسخين تبويبات = سلوك متصفح
         R("capture", "lw_toast_off", "🔕 إخفاء إشعارات الترجمة الحية", "b", 0, parent = "lw_web_off", parentHideVal = "1"),
         R("capture", "lw_hist_off", "🗑 عدم حفظ سجل الروابط المنسوخة", "b", 0, parent = "lw_web_off", parentHideVal = "1"),
+        R("capture", "lw_clip_off", "⏸ قفل لقط الروابط المنسوخة (السجل يفضل شغّال لوحده)", "b", 0, parent = "lw_web_off", parentHideVal = "1"),   // (v1398) المفتاح كان شغّال بلا زرار (قرارات علي 28/11)
+        R("player", "gh_audio_enhance", "🎼 استخراج الصوت الكامل بجودة Opus الأعلى", "b", 0),   // (v1398) المفتاح كان شغّال بلا زرار
+        R("more", "gh_every", "⏱ فترة فحص بيلدات GitHub", "int", 30, 15, 720, "د"),   // (v1398) المفتاح كان شغّال بلا واجهة — القيمة الجديدة بتتطبّق عند إعادة الجدولة التلقائية
+        R("player", "subnet_langs", "🌍 لغات البحث عن ترجمة أونلاين", "txt", sdef = "ar,en"),   // (v1398) المفتاح كان شغّال بلا واجهة
         R("capture", "pub_hist_on", "📜 حفظ سجل الصفحات المعروضة", "s01", 1),
         R("capture", "subhunt_close", "🧲 قفل صفحة صيد الترجمة بعد ما تتحمّل", "b", 1),
         R("tvset", "tv_autoscale", "📺 تكبير الواجهة تلقائيًا على شاشة التلفزيون", "s01", 1))
@@ -537,7 +541,7 @@ object AdvRows {
     /** قلب قيمة إعداد بوليان. بيرجّع الحالة الجديدة، أو null لو المفتاح مش موجود أو سلايدر */
     fun toggleKey(key: String): Boolean? {
         val r = rows.firstOrNull { it.key == key } ?: return null
-        if (r.kind == "int") return null
+        if (r.kind == "int" || r.kind == "txt") return null   // (v1398) txt برضه مش توجّل
         val n = !isOn(r); setOn(r, n); return n
     }
     // ═══════ (v1306) إدارة المخفي «مش مهتم»: شاشة تراجع (كانت ميزة يتيمة مالهاش وصول) ═══════
@@ -586,6 +590,13 @@ object AdvRows {
         out.add(ui.text("🧩 إعدادات إضافية", 13f, ui.th.muted, true))
         for (r in rs) {
             val rowV: View = if (r.kind == "int") ui.slider(r.label, (Cfg.int(r.key, r.d * r.scale) / r.scale), r.lo, r.hi, r.unit) { v -> Cfg.put(r.key, (v * r.scale).toString()) }
+            else if (r.kind == "txt") LinearLayout(ui.ctx).apply {   // (v1398) صف نصي — بيتحفظ أول ما يفقد التركيز
+                orientation = LinearLayout.VERTICAL
+                addView(ui.text(r.label, 13f, ui.th.text, true))
+                val et = ui.input(r.sdef, Cfg.str(r.key, r.sdef))
+                et.setOnFocusChangeListener { v, f -> v.background = ui.box(ui.th.surface, if (f) ui.th.primary else ui.th.border, 10); if (!f) Cfg.put(r.key, et.text.toString().trim()) }
+                addView(et)
+            }
             else ui.switchRow(r.label, isOn(r)) { on -> setOn(r, on) }
             // (v1305) 📌 تثبيت الإعداد في الشريط السفلي (بيطلب منه: دوسة «أضف للشريط» جنب أي إعداد)
             val pin = ui.text(if (NavCustom.isPinned(r.key)) "📌" else "📍", 15f, ui.th.muted).apply {

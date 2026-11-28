@@ -2476,7 +2476,7 @@ class Engine(
             try {
                 var list = t.fresh.mapIndexed { q, s -> s.copy(translated = tr[a + q]!!.trim(), pivot = pv[a + q].orEmpty()) }
                 if (LangGuard.foreignOf(list).isNotEmpty()) list = fixForeign(list)
-                if (Cfg.bool("refine2pass", false) || TrSlider.on("refine2")) list = refinePass2(t.i, list)   // (v1100) T2b: السلايدر (أو إعداد refine2pass القديم) ·   // (v469) A6: تحسين على مرحلتين (مطفي افتراضيًا)
+                if (TrSlider.on("refine2")) list = refinePass2(t.i, list)   // (v1100) T2b: السلايدر · (v1397) refine2pass القديم اتحذف — الترحيل في TrSlider.pos() · (v469) A6: تحسين على مرحلتين (مطفي افتراضيًا)
                 list = fidelityFix(t.i, list)   // (v469) A5: أمانة الأرقام والأسماء قبل التطبيق
                 if (dl.isEmpty()) dialOf.remove(t.i) else dialOf[t.i] = dl
                 applyChunk(t.i, t.p.rawStart, t.p.rawEnd, t.p.w, t.j, list, t.prior)
