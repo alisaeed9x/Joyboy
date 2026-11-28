@@ -138,7 +138,7 @@ object NavCustom {
             col.addView(head("⚙️ صفحات الإعدادات كبلاطات"))
             col.addView(note("اختار أي قسم من الإعدادات (المصدر، يوتيوب، المفاتيح...) يظهر كبلاطة في «المزيد» أو كزرار في الشريط."))
             val ex = moreExtras()
-            for (id in listOf("applang") + SettingsTabs.sections.map { it.id }) {
+            for (id in SettingsTabs.sections.map { it.id }) {   // (v1393) تبويب اللغة المستقل اتلغى — صفوف اللغة جوه «عام»
                 val (e, n) = split(tabLabel(id))
                 val inMore = id in ex; val inBar = ("s:" + id) in toks
                 col.addView(row(e, n, false,

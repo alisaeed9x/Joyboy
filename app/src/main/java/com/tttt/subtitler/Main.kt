@@ -600,26 +600,8 @@ class MainActivity : Activity() {
         // (v836) محتوى الأقسام lazy: بيتبني أول مرة القسم يتفتح بس (مش في onCreate) — TabDef بياخد دالة مش قايمة
         fun tab(id: String, content: () -> List<View>, preview: Boolean = false) = TabDef(id, SettingsTabs.label(id), { content() + AdvRows.forTab(ui, id) }, preview, SettingsTabs.sub(id), SettingsTabs.group(id))
         val settingsDlg = TabbedDialog(this, ui, if (Cfg.tvOv != null) "📺 إعدادات التلفزيون المشتركة (مش الموبايل)" else "⚙️ الإعدادات", listOf(
-            TabDef("applang", I18n.languageWord(), { listOf<View>(
-                ui.noHint(),
-                ui.section("🌐 " + I18n.languageWord(), true,
-                    LangPicker.settingRow(this, ui, I18n.languageWord(), { I18n.setting() }) { c ->
-                        if (c == "auto") { Cfg.put("app_lang", "auto"); Cfg.put("lang_chosen", "1") } else I18n.setAppLang(c)
-                        recreate() }),
-                ui.section("🗣 لغة الترجمة (مستقلة عن لغة التطبيق)", true,
-                    LangPicker.settingRow(this, ui, "🗣 لغة الترجمة", { Cfg.str("tr_lang", "auto") }) { c -> I18n.setTranslationLang(c) })) }, false, "", "🌐"),
-            tab("browser", { try { BrSet.views(this, ui, th) } catch (e: Throwable) { LogStore.err("Main:browser", e); listOf<View>(ui.noHint()) } }),
-            tab("youtube", ytSettingsViews),
-            tab("tvset", { listOf<View>(
-                ui.text(if (Cfg.tvOv != null) "✏️ أنت دلوقتي بتعدّل نسخة التلفزيون من الإعدادات المشتركة (الترجمة · شكل الترجمة · الصوت…): كل حاجة بتغيّرها في أي قسم بتتحفظ على التلفزيون بس ومابتأثرش على الموبايل. لما تخلّص دوس «ارجع لإعدادات الموبايل»." else "الإعدادات المشتركة (الترجمة · شكل الترجمة · الصوت…) موجودة على الموبايل والتلفزيون. تقدر تعدّل نسخة التلفزيون لوحدها من غير ما نسخة الموبايل تتغيّر.", 12f, if (Cfg.tvOv != null) th.primary else th.muted),
-                if (Cfg.tvOv != null) ui.button("↩ ارجع لإعدادات الموبايل", true) { TvEdit.exit(this) } else ui.button("✏️ عدّل إعدادات التلفزيون المشتركة (على التلفزيون بس)", true) { TvEdit.enter(this) },
-                ui.switchRow("زامن تغييرات إعدادات الموبايل للتلفزيون تلقائياً (قفّله لو عايز كل جهاز بإعداداته)", Cfg.str("tv_sync_off", "0") != "1") { on -> Cfg.put("tv_sync_off", if (on) "0" else "1") },
-                ui.noHint(),
-                ui.button("📺 افتح إعدادات التلفزيون", true) { TvLookPad.show(this) },
-                ui.button("🔧 افتح إعدادات البرنامج على شاشة التلفزيون") { try { RemoteClient.cmd("open_settings") } catch (_: Throwable) {} }) }),
-            TabDef("navcust", "🧩 تخصيص البلاطات", { try { NavCustom.views(this, ui, th, navUi?.catalog(this) ?: emptyList()) } catch (e: Throwable) { LogStore.err("Main:navcust", e); listOf<View>(ui.noHint()) } }, false, "رتّب/أخفِ أزرار الشريط وبلاطات المزيد · أقسام الإعدادات كبلاطات · صفحة البداية", "🧩"),
-            // ===== 🚀 خط الترجمة: الخطة (تفريغ ← ترجمة ← لهجة) + اللهجة والأسلوب + البرومبتات =====
-            tab("general", { listOf<View>(
+            // ===== 🗣 الترجمة (v1393 — بطلب علي، المرحلة C): الخطة + اللهجة والأسلوب + اللغة الأساسية + البرومبتات + المسرد + محرك الترجمة والتفريغ (منقول من «التفريغ والصوت») + الموديل والأداء (منقول من «الموديل والأداء») =====
+            tab("general", { listOfNotNull<View>(
                 ui.noHint(),
                 savedPlanTxt, planBtn,
                 ui.section("🗣 اللهجة والأسلوب والشدة", true,
@@ -634,69 +616,8 @@ class MainActivity : Activity() {
                     ui.chips(baseLangs.map { it.second }, { baseLangName() }) { n -> Cfg.put("base_lang", baseLangs.firstOrNull { it.second == n }?.first ?: "ar") }),
                 ui.button("📝 البرومبتات (شوف · انسخ · عدّل · استبدل)") { PromptsUi.show(this, ui) },
                 ui.section("📖 مسرد المصطلحات الثابت", false,
-                    ui.noHint(), gloss)) }),
-            // ===== 🔑 المفاتيح: جيميناي · الوضع البصري · محركات خارجية =====
-            tab("keys", { run {
-                // (v1369 — بطلب علي) قسم Groq تحت «من غير مفتاح؟ تمام»: مفتاح + فحص + اختيار موديل التفريغ من Groq نفسها
-                val groqKeyInp = ui.input("gsk_… الصق مفتاح Groq هنا", Cfg.str("groq_key", ""))
-                groqKeyInp.addTextChangedListener(object : android.text.TextWatcher {
-                    override fun afterTextChanged(s: android.text.Editable?) { val v = s?.toString()?.trim() ?: ""; if (v != Cfg.str("groq_key", "")) { Cfg.put("groq_key", v); Cfg.put("groq_key_state", "") } }
-                    override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-                    override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-                })
-                val groqState = ui.text(when (Cfg.str("groq_key_state", "")) { "ok" -> "✅ المفتاح شغال (اتفحص)"; "bad" -> "❌ آخر فحص رفض المفتاح"; else -> if (Cfg.str("groq_key", "").isBlank()) "لسه مفيش مفتاح محفوظ" else "المفتاح محفوظ — اضغط «فحص المفتاح» للتأكد" }, 12f, th.muted)
-                var groqModelBtn: IconButton? = null   // (v1369) var nullable عشان الكولباك جوه نفس الزرار يقدر يحدّث نصه
-                groqModelBtn = ui.button("🧠 موديل التفريغ: " + Cfg.str("groq_model", "whisper-large-v3-turbo").ifBlank { "whisper-large-v3-turbo" }) {
-                    val k = Cfg.str("groq_key", "").trim()
-                    if (k.isBlank()) { Notice.show(this, "🔑 الصق مفتاح Groq الأول", 2600L); return@button }
-                    Notice.show(this, "⏳ بجيب الموديلات من Groq…", 1800L)
-                    Thread {
-                        val ms = GhAudio.groqModels(k)
-                        runOnUiThread {
-                            if (ms.isNullOrEmpty()) { Notice.show(this, "⚠ فشل جلب الموديلات — اتأكد من المفتاح والنت", 3000L); return@runOnUiThread }
-                            GAlert(this).setTitle("🧠 موديل التفريغ من Groq").setItems(ms.toTypedArray()) { _, w2 -> Cfg.put("groq_model", ms[w2]); groqModelBtn?.text = "🧠 موديل التفريغ: " + ms[w2] }.setNegativeButton("إلغاء", null).show()
-                        }
-                    }.start()
-                }
-                listOf<View>(
-                ui.section("🆓 من غير مفتاح؟ تمام", true,
-                    ui.text("المفتاح اختياري. من غيره البرنامج بيشتغل بتفريغ على الجهاز (أوفلاين) + ترجمة جوجل المجانية. ومعاه الترجمة بتبقى أدق وأسرع (جيميناي بيفهم السياق).", 13f, th.text),
-                    ui.button("🎙 جهّز التفريغ على الجهاز (من غير مفتاح)") { settingsShow?.invoke("audio") }),
-                ui.section("⚡ جروك (تفريغ Whisper سحابي سريع)", true,
-                    ui.text("تفريغ الصوت بـWhisper على سيرفرات Groq — أسرع بكتير من تفريغ الجهاز. المفتاح مجاني من console.groq.com وبيتحفظ على الموبايل بس ومش بيتبعت لأي حد غير Groq.", 13f, th.text),
-                    groqKeyInp,
-                    groqState,
-                    ui.button("🔍 فحص المفتاح") {
-                        val k = groqKeyInp.text.toString().trim()
-                        groqState.text = "⏳ بفحص المفتاح…"
-                        Thread {
-                            val res = GhAudio.groqCheckKey(k)
-                            Cfg.put("groq_key_state", if (res.first) "ok" else "bad")
-                            runOnUiThread { groqState.text = res.second }
-                        }.start()
-                    },
-                    groqModelBtn),
-                ui.section("✨ جيميناي", false,
-                ui.button("❓ إزاي أجيب مفتاح Gemini؟ (وألصقه)", true) {
-                    showKeyGuide { k ->
-                        val cur = keys.text.toString().lines().map { it.trim() }.filter { it.isNotEmpty() }
-                        val hit = dupHits(k, "", -1)
-                        if (hit.isNotEmpty()) Notice.show(this, ("⚠ المفتاح ده مستخدم قبل كده: " + hit.joinToString(" ، ")).toString(), 3600L)
-                        else { keys.setText((cur + k).joinToString("\n")); keyLoaders.forEach { it() } }
-                        Cfg.p.edit().putString("keys", keys.text.toString()).apply()
-                    }
-                },
-                ui.button("📊 إحصائية الاستهلاك والكوتة") { StatsUi(this, ui, th).show() },
-                                ui.section("🔑 كل المفاتيح", true,
-                    ui.noHint(), KeyStatus.row(this, ui, th), fetchModelsBtnKeys, keysUi, backupUi, extraUi)),   // (v1303) حالة المفاتيح هنا بعد حذف تبويب الشات + (v1320) زرار جلب الموديلات
-                ui.section("🔑 مفتاح الوضع البصري فقط", true,
-                    ui.noHint(), visKeysUi)) } }),   // (v1014) مفتاح الوضع البصري مع باقي المفاتيح
-            // ===== 🎙 التفريغ والصوت: موديلات الجهاز + إعدادات الصوت =====
-            tab("audio", { listOfNotNull<View>(
-                ui.noHint(),
-                ui.section("🔊 الصوت", true, atrack, audioPresetTitle, audioPresetChips, audioPresetDesc, *fl("soundtags", "hitiming")),
-                ModelsUi.section(this, ui, th),
-                ui.section("🔀 محرك الترجمة والتفريغ", true,
+                    ui.noHint(), gloss),
+                ui.section("🔀 محرك الترجمة والتفريغ", true,   // (v1393) القسم ده منقول كما هو من تبويب «التفريغ والصوت» الملغى
                     ui.text("التفريغ (صوت ← نص):", 12f, th.muted),
                     ui.chips(listOf("☁ جيميناي", "⚡ جروك", "🎙 ويشبر (على الجهاز)"), { if (Cfg.bool("stt_offline", false)) "🎙 ويشبر (على الجهاز)" else if (Cfg.str("mt_tr_mode", "") == "groq") "⚡ جروك" else "☁ جيميناي" }) { n ->
                         if (n.startsWith("⚡")) { Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "groq"); Cfg.put("tr_engine", "gem"); if (Cfg.str("groq_key", "").isBlank()) Notice.show(this, "🔑 مفتاح Groq ناقص — ضيفه من تبويب المفاتيح", 3200L) }   // (v1385 — بطلب علي) جروك اختيار ظاهر في محرك التفريغ زي ويشبر
@@ -728,40 +649,141 @@ class MainActivity : Activity() {
                     ui.button("🔑 المفتاح والفحص وجلب الموديلات ← تبويب المفاتيح") { try { settingsShow?.invoke("keys") } catch (e: Throwable) { LogStore.err("Main:groqKeys", e) } },
                     groqChunk,
                     ui.text("فيديو أقصر من الطول ده = باتش واحد كامل. ليميت Groq الرسمي: ساعتين صوت كل ساعة و8 ساعات في اليوم.", 11f, th.muted)) else null,
-                ) }),
-            // ===== 🤖 الموديل والأداء =====
-            tab("perf", { listOf<View>(
-                ui.noHint(),
-                ui.section("👁 محرك الوضع البصري", false, visAutoChips,
-                    ui.slider("المسافة اللي الوضع البصري بيفحصها قدّام مكان التشغيل", Cfg.int("vis_ahead", 180).coerceIn(30, 900), 30, 900, "ث") { Cfg.put("vis_ahead", it.toString()) },
-                    ui.noHint()),   // (v1014) كان تبويب «الصورة» لوحده
-                                ui.section("🤖 الموديل والسرعة", true, modelChips, fetchModelsBtn, model, modelDesc,
+                ModelsUi.section(this, ui, th),   // (v1393) موديلات التفريغ على الجهاز — منقولة من «التفريغ والصوت»
+                ui.section("🤖 الموديل والسرعة", true, modelChips, fetchModelsBtn, model, modelDesc,   // (v1393) منقول من تبويب «الموديل والأداء» الملغى
                     ui.noHint(), speedBtn, speedOut, speedUseBtn),
-                ui.section("⏱ التقطيع والتنقيح", false, chunk, ahead, hlsAhead,   // (v1385) طول باتش جروك نقل لقسم جروك في تبويب التفريغ
+                ui.section("⏱ التقطيع والتنقيح", false, chunk, ahead, hlsAhead,   // (v1393) منقول من «الموديل والأداء»
                     ui.noHint(), offPartChips,
                     ui.switchRow("كمّل ترجمة باقي الفيديو بعد ما توصل لمكان التشغيل (بيرجع للأول لو فيه جزء ناقص)", Cfg.bool("keepgoing", true)) { Cfg.put("keepgoing", if (it) "1" else "0") },
-                    *fl("fastmode", "prefine"))) }),
+                    *fl("fastmode", "prefine")),
+                ui.section("👁 محرك الوضع البصري", false, visAutoChips,   // (v1393) منقول من «الموديل والأداء»
+                    ui.slider("المسافة اللي الوضع البصري بيفحصها قدّام مكان التشغيل", Cfg.int("vis_ahead", 180).coerceIn(30, 900), 30, 900, "ث") { Cfg.put("vis_ahead", it.toString()) },
+                    ui.noHint())) }),
 
-            // ===== 🎬 شكل الترجمة =====
+            // ===== 🔑 المفاتيح: جيميناي · الوضع البصري · محركات خارجية =====
+            tab("keys", { run {
+                // (v1369 — بطلب علي) قسم Groq تحت «من غير مفتاح؟ تمام»: مفتاح + فحص + اختيار موديل التفريغ من Groq نفسها
+                val groqKeyInp = ui.input("gsk_… الصق مفتاح Groq هنا", Cfg.str("groq_key", ""))
+                groqKeyInp.addTextChangedListener(object : android.text.TextWatcher {
+                    override fun afterTextChanged(s: android.text.Editable?) { val v = s?.toString()?.trim() ?: ""; if (v != Cfg.str("groq_key", "")) { Cfg.put("groq_key", v); Cfg.put("groq_key_state", "") } }
+                    override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                    override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                })
+                val groqState = ui.text(when (Cfg.str("groq_key_state", "")) { "ok" -> "✅ المفتاح شغال (اتفحص)"; "bad" -> "❌ آخر فحص رفض المفتاح"; else -> if (Cfg.str("groq_key", "").isBlank()) "لسه مفيش مفتاح محفوظ" else "المفتاح محفوظ — اضغط «فحص المفتاح» للتأكد" }, 12f, th.muted)
+                var groqModelBtn: IconButton? = null   // (v1369) var nullable عشان الكولباك جوه نفس الزرار يقدر يحدّث نصه
+                groqModelBtn = ui.button("🧠 موديل التفريغ: " + Cfg.str("groq_model", "whisper-large-v3-turbo").ifBlank { "whisper-large-v3-turbo" }) {
+                    val k = Cfg.str("groq_key", "").trim()
+                    if (k.isBlank()) { Notice.show(this, "🔑 الصق مفتاح Groq الأول", 2600L); return@button }
+                    Notice.show(this, "⏳ بجيب الموديلات من Groq…", 1800L)
+                    Thread {
+                        val ms = GhAudio.groqModels(k)
+                        runOnUiThread {
+                            if (ms.isNullOrEmpty()) { Notice.show(this, "⚠ فشل جلب الموديلات — اتأكد من المفتاح والنت", 3000L); return@runOnUiThread }
+                            GAlert(this).setTitle("🧠 موديل التفريغ من Groq").setItems(ms.toTypedArray()) { _, w2 -> Cfg.put("groq_model", ms[w2]); groqModelBtn?.text = "🧠 موديل التفريغ: " + ms[w2] }.setNegativeButton("إلغاء", null).show()
+                        }
+                    }.start()
+                }
+                listOf<View>(
+                ui.section("🆓 من غير مفتاح؟ تمام", true,
+                    ui.text("المفتاح اختياري. من غيره البرنامج بيشتغل بتفريغ على الجهاز (أوفلاين) + ترجمة جوجل المجانية. ومعاه الترجمة بتبقى أدق وأسرع (جيميناي بيفهم السياق).", 13f, th.text),
+                    ui.button("🎙 جهّز التفريغ على الجهاز (من غير مفتاح)") { settingsShow?.invoke("general") }),   // (v1393) التفريغ اتنقل جوه تبويب الترجمة
+                ui.section("⚡ جروك (تفريغ Whisper سحابي سريع)", true,
+                    ui.text("تفريغ الصوت بـWhisper على سيرفرات Groq — أسرع بكتير من تفريغ الجهاز. المفتاح مجاني من console.groq.com وبيتحفظ على الموبايل بس ومش بيتبعت لأي حد غير Groq.", 13f, th.text),
+                    groqKeyInp,
+                    groqState,
+                    ui.button("🔍 فحص المفتاح") {
+                        val k = groqKeyInp.text.toString().trim()
+                        groqState.text = "⏳ بفحص المفتاح…"
+                        Thread {
+                            val res = GhAudio.groqCheckKey(k)
+                            Cfg.put("groq_key_state", if (res.first) "ok" else "bad")
+                            runOnUiThread { groqState.text = res.second }
+                        }.start()
+                    },
+                    groqModelBtn),
+                ui.section("✨ جيميناي", false,
+                ui.button("❓ إزاي أجيب مفتاح Gemini؟ (وألصقه)", true) {
+                    showKeyGuide { k ->
+                        val cur = keys.text.toString().lines().map { it.trim() }.filter { it.isNotEmpty() }
+                        val hit = dupHits(k, "", -1)
+                        if (hit.isNotEmpty()) Notice.show(this, ("⚠ المفتاح ده مستخدم قبل كده: " + hit.joinToString(" ، ")).toString(), 3600L)
+                        else { keys.setText((cur + k).joinToString("\n")); keyLoaders.forEach { it() } }
+                        Cfg.p.edit().putString("keys", keys.text.toString()).apply()
+                    }
+                },
+                ui.button("📊 إحصائية الاستهلاك والكوتة") { StatsUi(this, ui, th).show() },
+                                ui.section("🔑 كل المفاتيح", true,
+                    ui.noHint(), KeyStatus.row(this, ui, th), fetchModelsBtnKeys, keysUi, backupUi, extraUi)),   // (v1303) حالة المفاتيح هنا بعد حذف تبويب الشات + (v1320) زرار جلب الموديلات
+                ui.section("🔑 مفتاح الوضع البصري فقط", true,
+                    ui.noHint(), visKeysUi)) } }),   // (v1014) مفتاح الوضع البصري مع باقي المفاتيح,
+            tab("youtube", ytSettingsViews),
+
+            // (v1012) 🎬 المشغّل: كل إعدادات المشغّل في قسم واحد — المظهر · الجودة · السلاسة · الخروج
+            tab("player", { listOfNotNull<View>(
+                ui.section("🎞 الجودة الافتراضية", true,
+                    ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { n -> val qh = ytQv[ytQ.indexOf(n).coerceAtLeast(0)]; Cfg.put("yt_maxh", qh.toString()); TvQ.askPin(this, qh) },   // (v1163)
+                    ui.noHint()),
+                ui.section("⚡ السلاسة والفريمات", false,
+                    ui.chips(MtSmooth.hzChoices(this), { MtSmooth.hzLabel(this) }) { n -> MtSmooth.setHz(this, n) },
+                    ui.switchRow("مطابقة معدل الشاشة مع فريمات الفيديو (24/30 ← ×5/×4 من غير رعشة)", MtSmooth.matchOn()) { Cfg.put(MtSmooth.K_MATCH, if (it) "1" else "0") },
+                    ui.switchRow("تنبيه لو الفيديو التقيل اتفك بالمعالج (سوفتوير)", MtSmooth.hwWarnOn()) { Cfg.put(MtSmooth.K_HW_WARN, if (it) "1" else "0") },
+                    ui.noHint()),
+                watchViews[0],   // الخروج من المشغّل
+                ui.section("🔊 الصوت", false, atrack, audioPresetTitle, audioPresetChips, audioPresetDesc, *fl("soundtags"))) }),   // (v1393) قسم الصوت منقول من تبويب «التفريغ والصوت» الملغى,
+
+            // ===== 🔤 شكل الترجمة (v1393: ترتيب التصميم المعتمد — العدّادات قبل العرض والألوان، ومزامنة التوقيت اتنقلت هنا من قسم الصوت) =====
             tab("look", { listOf<View>(
                 ui.section("🔤 الخط والحجم", true, *sp.fonts.toTypedArray()),
                 ui.section("✨ الأنيميشن", false, *sp.anim.toTypedArray()),
-                *sp.look.toTypedArray(),
                 ui.section("🔘 كبسولات العدّادات (صوتي · بصري · نت)", false,
                     ui.noHint(),
-                    ui.slider("الظهور (100 = معتمة، أقل = أشفّ)", Cfg.int("badge_alpha", 55).coerceIn(15, 100), 15, 100, "%") { Cfg.put("badge_alpha", it.toString()) })) }, true),
-            // (v606) المظهر: 7 أقسام بقوا 3 — الثيم (+ استوديو السمات + راحة العين) · الواجهة (السكِن + نوع الجهاز) · الحركة والوصول
-            tab("appearance", { listOfNotNull<View>(
-                ui.section("🖼 التصميم (كلاسيك · فانيلا · ماتيريال)", true,
-                    ui.button("🎨 تصميم التطبيق: " + Design.label(Design.cur()) + " (اختار التصميم · الوضع · اللون)") { Design.pick(this) },
+                    ui.slider("الظهور (100 = معتمة، أقل = أشفّ)", Cfg.int("badge_alpha", 55).coerceIn(15, 100), 15, 100, "%") { Cfg.put("badge_alpha", it.toString()) }),
+                *sp.look.toTypedArray(),
+                ui.section("⚙ مزامنة التوقيت", false, *fl("hitiming"))) }, true),   // (v1393) hitiming منقول من قسم الصوت — بيأثر على الترجمة المعروضة مش الصوت,
+
+            // ===== 🎵 الموسيقى =====
+            
+            TabDef("music", SettingsTabs.label("music"), { listOfNotNull<View>(
+                ui.section("📝 الكلمات", true,
+                                        ui.noHint(),
+                    ui.switchRow("جيب الكلمات تلقائيًا لما أفتح المشغّل", Cfg.str("music_auto_lyr", "1") != "0") { Cfg.put("music_auto_lyr", if (it) "1" else "0"); recreate() }),
+                if (Cfg.str("music_auto_lyr", "1") != "0") ui.section("🔤 شكل الكلمات", false,   // (v1390) شكل الكلمات بيظهر بس لو الكلمات التلقائية شغالة (أب ← ابن، القيمة محفوظة)
+                    ui.text("الخط:", 12f, th.muted), lyrFontChips,
+                    ui.text("الحجم:", 12f, th.muted), lyrSizeChips) else null,
+                ui.section("🎵 المكتبة", false,
+                    ui.text("لو أغاني جديدة ماظهرتش في صفحة الموسيقى، أعد الفحص:", 12f, th.muted),
+                    ui.button("🔄 إعادة فحص الأغاني") { try { musicUi?.reload(true) } catch (_: Throwable) {}; Notice.show(this, "🔄 بفحص الأغاني…", 1600L) })) }, false, SettingsTabs.sub("music"), group = SettingsTabs.group("music")),
+            tab("browser", { try { BrSet.views(this, ui, th) } catch (e: Throwable) { LogStore.err("Main:browser", e); listOf<View>(ui.noHint()) } }),
+            tab("capture", { listOf<View>(
+                ui.section("🔗 مراقب صفحات الفيديو في المتصفحات", true,
+                    ui.noHint(),
+                    ui.text((if (LinkHub.overlayOk(this)) "✅ العرض فوق التطبيقات: مسموح" else "⚠ العرض فوق التطبيقات: مش مسموح — ده الإذن الأساسي، دوس الزرار اللي تحت") + "\n" +
+                        (if (LinkWatch.enabled(this)) "✅ إمكانية الوصول: متفعّلة (للمتصفحات + معرفة مصدر النسخ)" else "ℹ إمكانية الوصول: مش متفعّلة (اختيارية — للمتصفحات بس)"), 12f, th.text),
+                    ui.button("🖼 اسمح بالعرض فوق التطبيقات (الأساسي)") { try { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")), 14) } catch (_: Throwable) {} },
+                    ui.switchRow("لقط صفحات الفيديو في المتصفحات", !Cfg.bool("lw_web_off", false)) { Cfg.put("lw_web_off", if (it) "0" else "1"); recreate() },   // (v1391) recreate عشان صفوفه الشرطية تظهر/تتخبّى فورًا
+                    ui.button("⚙ إمكانية الوصول (اختياري — للمتصفحات)") { LinkWatch.openSettings(this) },
                     ui.noHint()),
-                MtLook.animSection(this, ui, th),   // (v1277) نفس إعدادات أنيميشن اليوتيوب هنا في العام
-                ui.section("🎨 المظهر (من MeeTube)", true,   // (v907) مصدر واحد: إعداد الثيم بتاع MeeTube نفسه (ThemeMode) — Joyboy وMeeTube بيتبعوه مع بعض
+                watchViews[1]) }),
+            tab("tvset", { listOf<View>(
+                ui.text(if (Cfg.tvOv != null) "✏️ أنت دلوقتي بتعدّل نسخة التلفزيون من الإعدادات المشتركة (الترجمة · شكل الترجمة · الصوت…): كل حاجة بتغيّرها في أي قسم بتتحفظ على التلفزيون بس ومابتأثرش على الموبايل. لما تخلّص دوس «ارجع لإعدادات الموبايل»." else "الإعدادات المشتركة (الترجمة · شكل الترجمة · الصوت…) موجودة على الموبايل والتلفزيون. تقدر تعدّل نسخة التلفزيون لوحدها من غير ما نسخة الموبايل تتغيّر.", 12f, if (Cfg.tvOv != null) th.primary else th.muted),
+                if (Cfg.tvOv != null) ui.button("↩ ارجع لإعدادات الموبايل", true) { TvEdit.exit(this) } else ui.button("✏️ عدّل إعدادات التلفزيون المشتركة (على التلفزيون بس)", true) { TvEdit.enter(this) },
+                ui.switchRow("زامن تغييرات إعدادات الموبايل للتلفزيون تلقائياً (قفّله لو عايز كل جهاز بإعداداته)", Cfg.str("tv_sync_off", "0") != "1") { on -> Cfg.put("tv_sync_off", if (on) "0" else "1") },
+                ui.noHint(),
+                ui.button("📺 افتح إعدادات التلفزيون", true) { TvLookPad.show(this) },
+                ui.button("🔧 افتح إعدادات البرنامج على شاشة التلفزيون") { try { RemoteClient.cmd("open_settings") } catch (_: Throwable) {} }) }),
+
+            // (v1393) المظهر والواجهة: ترتيب التصميم المعتمد — الثيم · التصميم · الشكل · الجهاز · مظهر المشغّل (منقول من تبويب المشغّل) · الحركة والوصول · تخصيص البلاطات (اتدمجت من تبويب مستقل)
+            tab("appearance", { listOfNotNull<View>(
+                ui.section("🎨 الثيم", true,   // (v907) مصدر واحد: إعداد الثيم بتاع MeeTube نفسه (ThemeMode) — Joyboy وMeeTube بيتبعوه مع بعض
     ui.chips(listOf("⚙ النظام", "☀️ فاتح", "🌙 داكن"), { when (com.tttt.subtitler.mtui.ThemeMode.peek(this)) { com.tttt.subtitler.mtui.ThemeMode.LIGHT -> "☀️ فاتح"; com.tttt.subtitler.mtui.ThemeMode.DARK -> "🌙 داكن"; else -> "⚙ النظام" } }) { n ->
         com.tttt.subtitler.mtui.ThemeMode.set(this, when (n) { "☀️ فاتح" -> com.tttt.subtitler.mtui.ThemeMode.LIGHT; "🌙 داكن" -> com.tttt.subtitler.mtui.ThemeMode.DARK; else -> com.tttt.subtitler.mtui.ThemeMode.SYSTEM })
         recreate()
     },
     ui.noHint()),
+                ui.section("🖼 التصميم (كلاسيك · فانيلا · ماتيريال)", true,
+                    ui.button("🎨 تصميم التطبيق: " + Design.label(Design.cur()) + " (اختار التصميم · الوضع · اللون)") { Design.pick(this) },
+                    ui.noHint()),
+                MtLook.animSection(this, ui, th),   // (v1277) نفس إعدادات أنيميشن اليوتيوب هنا في العام
                 ui.section("🎨 الشكل", true,
                     ui.noHint(),
                     ui.slider("🖼 تعتيم خلفية الشاشة الرئيسية", Cfg.int("app_wall_scrim", 55).coerceIn(0, 95), 0, 95, "%") { Cfg.put("app_wall_scrim", it.toString()) },
@@ -776,74 +798,42 @@ class MainActivity : Activity() {
                         startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK).apply { if (m != DeviceUi.TV) putExtra("tab", "settings") })
                         finish()
                     }),
-                ui.section("♿ الحركة والوصول", false,
-                    ui.switchRow("🔠 وضع النص الكبير (تكبير خطوط الواجهة)", Cfg.bool("big_text", false)) { Cfg.put("big_text", if (it) "1" else "0"); recreate() },
-                    ui.switchRow("🎞 انتقالات انسيابية بين التبويبات", Cfg.bool("anim_tabs", true)) { Cfg.put("anim_tabs", if (it) "1" else "0") },
-                    ui.switchRow("📳 اهتزاز لمسي خفيف عند التنقّل بين التبويبات", Cfg.bool("haptics", true)) { Cfg.put("haptics", if (it) "1" else "0") })) }),
-            // (v1012) 🎬 المشغّل: كل إعدادات المشغّل في قسم واحد — المظهر · الجودة · السلاسة · الخروج
-            tab("player", { listOfNotNull<View>(
-                if (MtGlass.on()) ui.section("🎬 مظهر المشغّل (MeeTube) — بيظهر مع الجلاس", false,
+                if (MtGlass.on()) ui.section("🎬 مظهر المشغّل (MeeTube) — بيظهر مع الجلاس", false,   // (v1393) منقول من تبويب المشغّل لمكانه في التصميم المعتمد
                     ui.noHint(),
                     ui.chips(listOf("🫧 شفاف", "🧊 مفروست", "▫️ مينيمال"), { when (MtGlass.playerBtnLook()) { 1 -> "🧊 مفروست"; 2 -> "▫️ مينيمال"; else -> "🫧 شفاف" } }) { n ->
                         Cfg.put("player_btn_look", when (n) { "🧊 مفروست" -> "1"; "▫️ مينيمال" -> "2"; else -> "0" })
                     },
                     *MtLook.views(this, ui, th).toTypedArray()) else null,
-                ui.section("🎞 الجودة الافتراضية", true,
-                    ui.chips(ytQ, { ytQ[ytQv.indexOf(Cfg.int("yt_maxh", 0)).coerceAtLeast(0)] }) { n -> val qh = ytQv[ytQ.indexOf(n).coerceAtLeast(0)]; Cfg.put("yt_maxh", qh.toString()); TvQ.askPin(this, qh) },   // (v1163)
-                    ui.noHint()),
-                ui.section("⚡ السلاسة والفريمات", false,
-                    ui.chips(MtSmooth.hzChoices(this), { MtSmooth.hzLabel(this) }) { n -> MtSmooth.setHz(this, n) },
-                    ui.switchRow("مطابقة معدل الشاشة مع فريمات الفيديو (24/30 ← ×5/×4 من غير رعشة)", MtSmooth.matchOn()) { Cfg.put(MtSmooth.K_MATCH, if (it) "1" else "0") },
-                    ui.switchRow("تنبيه لو الفيديو التقيل اتفك بالمعالج (سوفتوير)", MtSmooth.hwWarnOn()) { Cfg.put(MtSmooth.K_HW_WARN, if (it) "1" else "0") },
-                    ui.noHint()),
-                watchViews[0]) }),   // الخروج من المشغّل
-            // ===== 🗂 سجل اللوجات (v1167) =====
-            tab("trlog", { listOf<View>(
-                ui.section("🗂 سجل اللوجات", true,
-                    ui.noHint(),
-                    ui.text("كل مرة بتفتح فيديو (أو بتترجمه من الأول وجديد) بيتحفظ لوج جديد كنسخة مستقلة، معاه الجمل المترجمة اللي طلعت وقتها — حتى لو خرجت ودخلت على نفس الفيديو أو فيديو تاني. لو ما طلعتش ترجمة بيتكتب «ما طلعش مع ترجمة».", 12f, th.muted),
-                    ui.switchRow("سجّل اللوجات تلقائيًا", Cfg.bool("logarc_on", true)) { Cfg.put("logarc_on", if (it) "1" else "0") },
-                    ui.button("🗂 افتح سجل اللوجات", true) { LogArchiveUi(this, ui, th).show() })) }),
-            // ===== 🎵 الموسيقى =====
-            
-            TabDef("music", SettingsTabs.label("music"), { listOfNotNull<View>(
-                ui.section("📝 الكلمات", true,
-                                        ui.noHint(),
-                    ui.switchRow("جيب الكلمات تلقائيًا لما أفتح المشغّل", Cfg.str("music_auto_lyr", "1") != "0") { Cfg.put("music_auto_lyr", if (it) "1" else "0"); recreate() }),
-                if (Cfg.str("music_auto_lyr", "1") != "0") ui.section("🔤 شكل الكلمات", false,   // (v1390) شكل الكلمات بيظهر بس لو الكلمات التلقائية شغالة (أب ← ابن، القيمة محفوظة)
-                    ui.text("الخط:", 12f, th.muted), lyrFontChips,
-                    ui.text("الحجم:", 12f, th.muted), lyrSizeChips) else null,
-                ui.section("🎵 المكتبة", false,
-                    ui.text("لو أغاني جديدة ماظهرتش في صفحة الموسيقى، أعد الفحص:", 12f, th.muted),
-                    ui.button("🔄 إعادة فحص الأغاني") { try { musicUi?.reload(true) } catch (_: Throwable) {}; Notice.show(this, "🔄 بفحص الأغاني…", 1600L) })) }, false, SettingsTabs.sub("music"), group = SettingsTabs.group("music")),
-            // ===== 🛠 عام: الخروج · الترجمة الحية · الطابور · البطارية · الأمان · النسخة الاحتياطية · الثيم =====
+                ui.section("♿ الحركة والوصول", false,
+                    ui.switchRow("🔠 وضع النص الكبير (تكبير خطوط الواجهة)", Cfg.bool("big_text", false)) { Cfg.put("big_text", if (it) "1" else "0"); recreate() },
+                    ui.switchRow("🎞 انتقالات انسيابية بين التبويبات", Cfg.bool("anim_tabs", true)) { Cfg.put("anim_tabs", if (it) "1" else "0") },
+                    ui.switchRow("📳 اهتزاز لمسي خفيف عند التنقّل بين التبويبات", Cfg.bool("haptics", true)) { Cfg.put("haptics", if (it) "1" else "0") }),
+                ui.section("🧩 تخصيص البلاطات", false, *(try { NavCustom.views(this, ui, th, navUi?.catalog(this) ?: emptyList()) } catch (e: Throwable) { LogStore.err("Main:navcust", e); listOf<View>(ui.noHint()) }).toTypedArray())) }),   // (v1393) تبويب «تخصيص البلاطات» اتدمج هنا كقسم,
+
+            // ===== ⚙️ عام (v1393): اللغة (منقولة من تبويب اللغة الملغى) · الخلفية والتشغيل · التحديثات · الأمان والنسخ (منقولة من تبويب الأمان الملغى) · سجل اللوجات (منقول من تبويبه الملغى) =====
             tab("more", { listOf<View>(
-                                ui.section("▶ التشغيل", true,
+                ui.section("🌐 اللغة", true,
+                    LangPicker.settingRow(this, ui, I18n.languageWord(), { I18n.setting() }) { c ->
+                        if (c == "auto") { Cfg.put("app_lang", "auto"); Cfg.put("lang_chosen", "1") } else I18n.setAppLang(c)
+                        recreate() },
+                    LangPicker.settingRow(this, ui, "🗣 لغة الترجمة (مستقلة عن لغة التطبيق)", { Cfg.str("tr_lang", "auto") }) { c -> I18n.setTranslationLang(c) }),
+                ui.section("▶ التشغيل", true,
                     ui.switchRow("كمّل الطابور تلقائيًا بعد إعادة تشغيل الجهاز", Cfg.bool("bg_autostart", true)) { Cfg.put("bg_autostart", if (it) "1" else "0") },
                     ui.noHint(),
                     ui.button("📋 افتح مجلد الترجمة في الخلفية") { settingsDlg0?.dialog?.dismiss(); qui0?.show() }),
-                                ui.section("🔋 عشان الجهاز ما يقتلش الخدمة", true,
+                ui.section("🔋 عشان الجهاز ما يقتلش الخدمة", true,
                     ui.noHint(),
                     ui.button("1) استثناء من توفير البطارية") { requestBatteryExemption() },
                     ui.button("2) السماح بالتشغيل التلقائي / الخلفية للتطبيق") { openAutoStartSettings() },
                     ui.noHint()),
-                ) }),   // (v815) الاصطياد والترجمة الحية بقوا قسم لوحده (🔗) تحت
-            tab("capture", { listOf<View>(
-                ui.section("🔗 مراقب صفحات الفيديو في المتصفحات", true,
+                ui.section("🔄 التحديثات", false,
+                    ui.switchRow("🔄 تحديث تلقائي (ينزّل لوحده ويسأل تثبّت؟)", Upd.autoOn()) { v -> Cfg.put("upd_auto", if (v) "1" else "0") },
+                    ui.button("🔄 افتح مركز التحديث (تحديث البرنامج · مراقبة البيلدات · لوج الفشل)", true) { try { if (Design.isNew()) UpdateSheet.show(this) else GhCiUi.show(this) } catch (e: Throwable) { LogStore.err("Main:upd", e) } }),   // (v1393) نفس مدخل «مركز التحديث» الموجود في الشريط
+                ui.section("🔒 الأمان", false, lockStatus,
                     ui.noHint(),
-                    ui.text((if (LinkHub.overlayOk(this)) "✅ العرض فوق التطبيقات: مسموح" else "⚠ العرض فوق التطبيقات: مش مسموح — ده الإذن الأساسي، دوس الزرار اللي تحت") + "\n" +
-                        (if (LinkWatch.enabled(this)) "✅ إمكانية الوصول: متفعّلة (للمتصفحات + معرفة مصدر النسخ)" else "ℹ إمكانية الوصول: مش متفعّلة (اختيارية — للمتصفحات بس)"), 12f, th.text),
-                    ui.button("🖼 اسمح بالعرض فوق التطبيقات (الأساسي)") { try { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")), 14) } catch (_: Throwable) {} },
-                    ui.switchRow("لقط صفحات الفيديو في المتصفحات", !Cfg.bool("lw_web_off", false)) { Cfg.put("lw_web_off", if (it) "0" else "1"); recreate() },   // (v1391) recreate عشان صفوفه الشرطية تظهر/تتخبّى فورًا
-                    ui.button("⚙ إمكانية الوصول (اختياري — للمتصفحات)") { LinkWatch.openSettings(this) },
+                    ui.button("🔑 تعيين / تغيير النمط") { lk.change { refreshLock() } }, bioBtn,
+                    ui.button("🗑 إزالة القفل") { lk.remove { refreshLock() } },
                     ui.noHint()),
-                watchViews[1]) }),   // (v458) الترجمة الحية
-            tab("security", { listOf<View>(
-                            ui.section("🔒 الأمان", false, lockStatus,
-                ui.noHint(),
-                ui.button("🔑 تعيين / تغيير النمط") { lk.change { refreshLock() } }, bioBtn,
-                ui.button("🗑 إزالة القفل") { lk.remove { refreshLock() } },
-                ui.noHint()),
                 ui.section("💾 نسخة احتياطية (مفاتيح · إعدادات · ثيم)", false,
                     ui.noHint(),
                     ui.text(Backup.autoTime(this).let { t -> if (t > 0) "آخر نسخة تلقائية: " + java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date(t)) else "لسه مفيش نسخة تلقائية" }, 12f, th.text),
@@ -851,7 +841,12 @@ class MainActivity : Activity() {
                     ui.button("📂 استرجع من ملف") { backupFromFile() },
                     ui.button("♻ استرجع آخر نسخة تلقائية") { restoreAuto() },
                     ui.button("💾 نسخة شاملة (إعدادات + سجل المشاهدة)") { fullToFile() },
-                    ui.button("📂 استرجع نسخة شاملة") { fullFromFile() })) })), sp.holder) { save(); refreshChip(); if (fromPlayer) finish() }
+                    ui.button("📂 استرجع نسخة شاملة") { fullFromFile() }),
+                ui.section("🗂 سجل اللوجات", false,
+                    ui.noHint(),
+                    ui.text("كل مرة بتفتح فيديو (أو بتترجمه من الأول وجديد) بيتحفظ لوج جديد كنسخة مستقلة، معاه الجمل المترجمة اللي طلعت وقتها — حتى لو خرجت ودخلت على نفس الفيديو أو فيديو تاني. لو ما طلعتش ترجمة بيتكتب «ما طلعش مع ترجمة».", 12f, th.muted),
+                    ui.switchRow("سجّل اللوجات تلقائيًا", Cfg.bool("logarc_on", true)) { Cfg.put("logarc_on", if (it) "1" else "0") },
+                    ui.button("🗂 افتح سجل اللوجات", true) { LogArchiveUi(this, ui, th).show() })) })), sp.holder) { save(); refreshChip(); if (fromPlayer) finish() }   // (v458) الترجمة الحية
         // رابط مباشر + المحفوظة (نافذة سفلية): حقل الرابط بيتحط هنا
         link.hint = "الصق أي لينك: فيديو مباشر / يوتيوب / صفحة فيها فيديو"; link.layoutDirection = View.LAYOUT_DIRECTION_LTR
         val linkPlay = ui.button("▶ شغّل / اصطد الرابط", true) {
@@ -1570,7 +1565,7 @@ class MainActivity : Activity() {
         noSaveCfg = true
         try { Extras.load() } catch (_: Throwable) {}
         Notice.show(this, ("✅ اتسترجع $n إعداد — بعيد فتح البرنامج").toString(), 2800L)
-        if (!fromPlayer) intent?.putExtra("reopen_tab", "security")
+        if (!fromPlayer) intent?.putExtra("reopen_tab", "more")   // (v1393) صفوف النسخ اتنقلت جوه تبويب «عام»
         dismissSettings?.invoke()
         if (fromPlayer) finish() else recreate()
     }
