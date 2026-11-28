@@ -82,6 +82,8 @@ object TvDirect {
 object LinkThumb {
     private val tried = HashSet<String>()
 
+    private fun mainHandler() = android.os.Handler(android.os.Looper.getMainLooper())
+
     private fun dir(ctx: Context): File = File(ctx.filesDir, "link_thumbs").also { it.mkdirs() }
     fun fileFor(ctx: Context, id: String): File = File(dir(ctx), Integer.toHexString(id.hashCode()) + "_" + id.length + ".jpg")
 
@@ -94,8 +96,12 @@ object LinkThumb {
             if (yid != null) { com.bumptech.glide.Glide.with(ctx).load(ytThumb(yid)).centerCrop().into(iv); return }
             val f = fileFor(ctx, r.id)
             if (f.exists() && f.length() > 0L) {
-                val b = BitmapFactory.decodeFile(f.absolutePath)
-                if (b != null) iv.setImageBitmap(b)
+                // (v1389) فك الصورة على خيط خلفية — decodeFile كان بيحصل على خيط الواجهة لكل كارت ويعلّق سجل اللوجات عند الفتح (⛔ الواجهة واقفة)
+                iv.tag = r.id
+                Thread {
+                    val b = try { BitmapFactory.decodeFile(f.absolutePath) } catch (_: Throwable) { null }
+                    if (b != null) mainHandler().post { try { if (iv.tag == r.id) iv.setImageBitmap(b) } catch (_: Throwable) {} }
+                }.also { it.isDaemon = true }.start()
             }
         } catch (e: Throwable) { LogStore.err("LinkThumb:into", e) }
     }
@@ -115,14 +121,19 @@ object LinkThumb {
      */
     fun forRecent(ctx: Context, r: Recent, onBitmap: (Bitmap) -> Unit) {
         val app = ctx.applicationContext
-        saved(app, r.id)?.let { onBitmap(it); return }
-        if (r.uri.isEmpty()) return
-        Thumbs.load(app, asItem(r)) { b ->
-            if (b != null) {
-                onBitmap(b)
-                Thread { try { persist(app, r.id, b) } catch (_: Throwable) {} }.also { it.isDaemon = true }.start()
+        // (v1389) قراءة الصورة المحفوظة على خيط خلفية — decodeFile على خيط الواجهة لكل كارت كان بيعلّق فتح سجل اللوجات (⛔ الواجهة واقفة)
+        Thread {
+            val hh = mainHandler()
+            val pre = saved(app, r.id)
+            if (pre != null) { hh.post { onBitmap(pre) }; return@Thread }
+            if (r.uri.isEmpty()) return@Thread
+            Thumbs.load(app, asItem(r)) { b ->
+                if (b != null) {
+                    hh.post { onBitmap(b) }   // ضمان عقد v690: الكولباك دايمًا على خيط الواجهة حتى من كاش Thumbs
+                    Thread { try { persist(app, r.id, b) } catch (_: Throwable) {} }.also { it.isDaemon = true }.start()
+                }
             }
-        }
+        }.also { it.isDaemon = true }.start()
     }
 
     private fun persist(ctx: Context, id: String, b: Bitmap) {

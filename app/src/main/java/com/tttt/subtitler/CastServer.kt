@@ -189,7 +189,7 @@ object SubSidecar {
     fun find(ctx: Context, u: Uri): java.io.File? = try { SubSel.chosen(ctx, u, findAll(ctx, u)) } catch (e: Throwable) { LogStore.err("Player:sidecar", e); null }
 
     /** (v1137) كل ملفات الترجمة المتاحة للفيديو (جنب الفيديو + المستوردة بزرار ➕) — الأحدث الأول */
-    fun findAll(ctx: Context, u: Uri): List<java.io.File> = try {
+    fun findAll(ctx: Context, u: Uri): List<java.io.File> { return try {
         var path: String? = null
         if (u.scheme == "file") path = u.path
         else if (u.scheme == "content") ctx.contentResolver.query(u, arrayOf(android.provider.MediaStore.MediaColumns.DATA), null, null, null)?.use { c -> if (c.moveToFirst()) path = c.getString(0) }
@@ -250,7 +250,7 @@ object SubSidecar {
             scanCk = ck; scanAt = nowMs; scanRes = all
             all
         }
-    } catch (e: Throwable) { LogStore.err("Player:sidecar", e); emptyList() }
+    } catch (e: Throwable) { LogStore.err("Player:sidecar", e); emptyList() } }
 
     private fun ts(sec: Double): String {
         val ms = (sec * 1000.0).toLong().coerceAtLeast(0L)
