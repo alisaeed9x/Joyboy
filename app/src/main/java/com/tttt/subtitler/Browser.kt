@@ -317,7 +317,6 @@ class BrowserActivity : Activity() {
     private var dockUi: MiniDock? = null   // (v344)
     override fun finish() { super.finish(); try { if (!NavAnim.take(this)) overridePendingTransition(R.anim.act_stay, R.anim.act_exit) } catch (e: Exception) { LogStore.err("Browser:finish", e) } }
 
-    private lateinit var vidMark: VidMark   // (v717) إطار أزرق حوالين مربع الفيديو في الصفحة + كبسولة «اتلقط · دوس للخيارات»
     private var badgeTrash: DragTrash? = null   // (v736) سلة ✕ لدايرة الاصطياد
     lateinit var badge: ClipOrb   // (v716) دايرة الاصطياد: نفس شكل دايرة الكليبورد (حلقة + نقطة بتلف)
     private var badgePill: IconTextView? = null   // (v1301) كبسولة بالعرض تحت الدايرة فيها اسم الفيديو اللي اتلقط
@@ -664,11 +663,9 @@ class BrowserActivity : Activity() {
         }
         if (!tvOn) buildActStrip(rotFloat)
         if (tvOn) TvModeFab.dock(this, panicCol) else TvModeFab.dockStrip(this, toolsHost, toolsInner)   // (v592) زرار 📺 العايم يقعد فوق العمود ده · (v801) على الموبايل جوه شريط الأدوات
-        vidMark = VidMark(this) { act -> markAct(act) }
         val webWrap = FrameLayout(this).apply {
             layoutDirection = View.LAYOUT_DIRECTION_LTR
             addView(webHolder, FrameLayout.LayoutParams(-1, -1))
-            if (!tvOn) addView(vidMark, FrameLayout.LayoutParams(-1, -1))   // (v717) فوق الصفحة وتحت الغطا والأزرار العايمة؛ اللمس بيعدّي للصفحة
             addView(panicCover, FrameLayout.LayoutParams(-1, -1))
             if (tvOn) {   // (v801) على الموبايل: العمود والدايرة والألسنة اتنقلوا لشريط actStrip فوق الشريط السفلي
                 addView(panicCol, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.RIGHT).apply { setMargins(0, 0, ui.dp(4), ui.dp(8)) })
@@ -1074,7 +1071,7 @@ class BrowserActivity : Activity() {
         if (prevIdx != i && tabs.size > 1) Motion.slideIn(webHolder, if (i > prevIdx) -1 else 1, 230L)   // (v313) تبديل التبويب بانزلاق
         val t = tabs[i]
         saver.touch(t)   // (v783)
-        webGroups.clear(); openKey = null; markHidden = false; if (::vidMark.isInitialized) vidMark.clear(); refreshBadge()   // (v203) الاصطياد بتاع التبويب ده بس
+        webGroups.clear(); openKey = null; refreshBadge()   // (v203) الاصطياد بتاع التبويب ده بس
         setKbPan(false); scheduleFlashKb(t)   // (v842)
         val first = t.wv == null
         if (first) t.wv = makeWebView(t)
@@ -2378,7 +2375,7 @@ class BrowserActivity : Activity() {
         }
         val oldCap = t.capUrl
         if (panicUrl != null && t.id == panicTabId && !u.contains("google.")) { panicUrl = null; if (::undoB.isInitialized) undoB.visibility = View.GONE }   // (v231) مشيت لصفحة تانية: مفيش تراجع
-        t.capUrl = u; t.gen++; markHidden = false
+        t.capUrl = u; t.gen++
         // (v1172) تغيير رابط من جوه الصفحة (spa) على نفس الموقع بعد لقط حديث (أقل من 25ث): اللقطة بتاعة نفس المشغّل — بتتنقل للجيل الجديد بدل ما تتمسح (السبب في «بتظهر وبعدين تختفي»: الفيديو مبيتطلبش تاني فمبيتلقطش من جديد)
         if (spa && oldCap.isNotEmpty() && PopupGuard.hostOf(oldCap) == PopupGuard.hostOf(u)) {
             val nowMs = android.os.SystemClock.elapsedRealtime(); var kept = 0
@@ -2413,7 +2410,6 @@ class BrowserActivity : Activity() {
 
 
     // ===== (v801) الشريط فوق الشريط السفلي (موبايل): كل الأزرار العايمة اتجمّعت هنا =====
-    private fun panelOn(): Boolean = try { Cfg.str("vid_panel", "0") == "1" } catch (_: Throwable) { false }
     private fun stripBtn(t: String, sp: Float = 18f, w: Int = 40, onTap: () -> Unit): TextView = IconTextView(this).apply {
         text = t; textSize = sp; gravity = Gravity.CENTER; setTextColor(Color.WHITE); includeFontPadding = false
         background = ui.box(0xCC141414.toInt(), 0x66FFFFFF, 20)
@@ -2715,7 +2711,6 @@ class BrowserActivity : Activity() {
             if (first) badge.animate().scaleX(1.25f).scaleY(1.25f).setDuration(120).withEndAction { badge.animate().scaleX(1f).scaleY(1f).setDuration(140).start() }.start()
         }
         if (dlg?.isShowing == true) renderList()
-        updateMark()
         paintPill()
     }
 
@@ -2736,47 +2731,6 @@ class BrowserActivity : Activity() {
         if (lp != null && lp.bottomMargin != want) { lp.bottomMargin = want; stripBottom?.requestLayout() }
     }
 
-    // ===== (v717) علامة مربع الفيديو =====
-    private var markGen = 0
-    private var markLoop = false
-    private var markHidden = false   // ✕ على اللوحة: مخفية لحد صفحة/تبويب جديد
-    /** بتشتغل لما فيه اصطياد في الصفحة: بتسأل الصفحة كل ~⅓ ثانية عن مكان الفيديو وتحط الإطار عليه؛ مفيش اصطياد = بتقف وتخفي الإطار */
-    private fun updateMark() {
-        if (dead || !::vidMark.isInitialized || tvOn || !panelOn()) return   // (v801) اللوحة الزرقا على الفيديو متقفلة افتراضيًا — الأزرار بقت حوالين الدايرة (Cfg vid_panel=1 يرجّعها)
-        val has = try { groupsOf(vis()).any { it.qs.isNotEmpty() } } catch (_: Throwable) { false }
-        if (!has) { markGen++; markLoop = false; vidMark.clear(); return }
-        if (markLoop) return
-        markLoop = true; val gen = ++markGen
-        h.post { markStep(gen) }
-    }
-    private fun markStep(gen: Int) {
-        if (dead || gen != markGen) return
-        val wv = wvOrNull
-        val wanted = !markHidden && customView == null && actScrim == null && fanViews.isEmpty() && dlg?.isShowing != true && panicCover.visibility != View.VISIBLE
-        if (wv == null || !wanted) vidMark.clear()
-        else try {
-            wv.evaluateJavascript(VidMark.RECT_JS) { r ->
-                try {
-                    if (dead || gen != markGen || actScrim != null) return@evaluateJavascript
-                    if (r.isNullOrBlank() || r == "null") { vidMark.clear(); return@evaluateJavascript }
-                    val a = JSONArray(r)
-                    if (a.length() < 5) { vidMark.clear(); return@evaluateJavascript }
-                    val k = wv.width.toFloat() / a.getDouble(4).toFloat().coerceAtLeast(1f)
-                    vidMark.place(a.getDouble(0).toFloat() * k, a.getDouble(1).toFloat() * k, a.getDouble(2).toFloat() * k, a.getDouble(3).toFloat() * k)
-                } catch (_: Throwable) { vidMark.clear() }
-            }
-        } catch (_: Throwable) {}
-        h.postDelayed({ markStep(gen) }, 350L)
-    }
-    /** أزرار اللوحة الزرقا: mw/mt = موبايل (من غير/بالترجمة) · tw/tt = تلفزيون (من غير/بالترجمة) · dl = تحميل · close. أكتر من فيديو ملقوط ← القايمة */
-    private fun markAct(act: String) {
-        try {
-            if (act == "close") { markHidden = true; vidMark.clear(); return }
-            val g = groupsOf(vis()).singleOrNull()
-            if (g == null) { showList(); return }
-            fanAct(act, g)
-        } catch (e: Throwable) { LogStore.err("Browser:markAct", e) }
-    }
     /** (v975) زرار من الأزرار حوالين الدايرة، على فيديو بعينه (فيديو واحد أو اللي اتختار من دواير الفيديوهات) */
     private fun fanAct(act: String, g: Grp) {
         try {
