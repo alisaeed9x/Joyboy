@@ -1680,10 +1680,11 @@ class MainActivity : Activity() {
         val paired = try { RemoteClient.init(this); RemoteClient.lastTv() != null } catch (_: Throwable) { false }
         if (!paired) return false
         if (!ytTvMode) return false   // (v554) مفيش سؤال «تشغّله على التلفزيون؟»: بره وضع التلفزيون = الموبايل، جوّاه PlayTarget بيبعت لوحده
+        if (Cfg.str("tv_ask", "1") == "0") return false   // (v1396) «متسألنيش تاني» بقت محترمة — المفتاح كان بيتكتب ومش بيتقرأ
         val b = GAlert(this).setTitle("📺 تشغّله على التلفزيون؟").setMessage(title.ifBlank { "فيديو يوتيوب" })
             .setPositiveButton("📺 على التلفزيون") { _, _ -> sendYtToTv(id, title, ret) }
             .setNegativeButton("📱 هنا في الموبايل") { _, _ -> playYtHere(id, title, false, false, 0L, null, ret) }
-        if (!ytTvMode) b.setNeutralButton("📱 هنا ومتسألنيش تاني") { _, _ -> Cfg.put("tv_ask", "0"); playYtHere(id, title, false, false, 0L, null, ret) }
+        b.setNeutralButton("📱 هنا ومتسألنيش تاني") { _, _ -> Cfg.put("tv_ask", "0"); playYtHere(id, title, false, false, 0L, null, ret) }   // (v1396) الزرار بقى بيظهر فعلًا — كان جوه شرط ميت (!ytTvMode بعد return false فوقه)
         b.show()
         return true
     }
