@@ -282,8 +282,10 @@ class Engine(
     }
 
     /** (v469) A4: تطبيق قسري بعد الاستلام — مصطلح مصدر فضل زي ما هو جوه الترجمة (الموديل سابه من غير ما يترجمه) بيتبدّل بهدفه من القاموس */
+    private var glossAnnounced = false
     private fun enforceGlossary(list: List<Sub>): List<Sub> {
         val g = glossaryPairs(); if (g.isEmpty()) return list
+        if (!glossAnnounced) { glossAnnounced = true; host.log("📖 قاموس مقفول مفعّل (${g.size} مصطلح) — بيتضاف لكل برومبت ترجمة وبيتراجع بعد الاستلام") }   // (v1390) تأكيد ظاهر في اللوج إن المسرد شغال
         var n = 0
         val out = list.map { s ->
             if (s.isSound || s.translated.isBlank()) s else {
@@ -1952,7 +1954,7 @@ class Engine(
         val dl = convDialect.let { if (it.isBlank() || it == "فصحى") "" else it }
         if (chunk >= 0) { if (dl.isEmpty()) dialOf.remove(chunk) else dialOf[chunk] = dl }
         val c = if (dl.isEmpty() || dl == conf.lang) conf else dialConf.getOrPut(dl) { conf.withLang(dl) }
-        if (lightOn(chunk, hole, tx)) return ModePrompts.fast(pb, c, durSec, effectiveGloss(), if (detDone) srcLang else "", strict)   // (v1066) ⚡ برومبت خفيف للباتشات الأولى
+        if (lightOn(chunk, hole, tx)) return ModePrompts.fast(pb, c, durSec, effectiveGloss(), if (detDone) srcLang else "", strict) + glossaryBlock()   // (v1066) ⚡ برومبت خفيف للباتشات الأولى · (v1390) + قاموس المستخدم المقفول (كان بينقص هنا)
         // (v209) الوضع 2+ (وكمان 3 و4 في طلبات الصوت): برومبت إنجليزي بدل القالب العربي — نفس شكل الرد فـ Parse.subs بيقراه عادي
         if (activeMode >= KeyMode.ALL_PARALLEL || tx) {   // (v239) tx يشتغل في كل الأوضاع (سدّ الثغرات بأسلوب الوضع 4)
             val prev = if (hole) "" else Subs.prevContext(subs, start)
@@ -1960,13 +1962,13 @@ class Engine(
             val sl = if (detDone) srcLang else ""   // (v331) لغة الكلام الأصلية بعد ما تتحدد من أول باتش
             val base = if (tx) toneB() + ModePrompts.transcribe(pb, c, durSec, prev, effectiveChars(), effectiveGloss(), strict, hole, holeNear, sl, notes = !hole)
             else toneB() + ModePrompts.english(pb, c, durSec, prev, effectiveChars(), effectiveGloss(), strict, hole, holeNear, sl)
-            return if (tx || hole) base else base + promptExtras(chunkPrevLine(start), chunkNextLine(start, durSec))   // (v469) سياق/أمثلة/ذاكرة/قاموس لبرومبتات الترجمة بس
+            return if (tx) base else if (hole) base + glossaryBlock() else base + promptExtras(chunkPrevLine(start), chunkNextLine(start, durSec))   // (v469) سياق/أمثلة/ذاكرة/قاموس لبرومبتات الترجمة بس · (v1390) سدّ الثغرات بقى بياخد قاموس المستخدم برضه
         }
         val case = pb.caseOf(srcLang, detDone)
         val tf = if (case == "other") synchronized(tplCache) { tplCache[tplKey(pb.templateId(c, "other"))] } else null
         val built = toneB() + pb.build(c, srcLang, detDone, durSec, if (hole) "" else Subs.prevContext(subs, start), effectiveChars(), effectiveGloss(), tf, strict, hole)
         val built2 = if (hole && holeNear) built.replace(PromptBuilder.holeBlock(), PromptBuilder.holeNearBlock()) else built
-        return if (hole) built2 else built2 + promptExtras(chunkPrevLine(start), chunkNextLine(start, durSec))   // (v469)
+        return if (hole) built2 + glossaryBlock() else built2 + promptExtras(chunkPrevLine(start), chunkNextLine(start, durSec))   // (v469) · (v1390) سدّ الثغرات بقى بياخد قاموس المستخدم برضه
     }
 
     /** إصلاح الجمل اللي translated بتاعتها مش عربي: ترجمة نصية سريعة من original (وpivot) للهجة المختارة */

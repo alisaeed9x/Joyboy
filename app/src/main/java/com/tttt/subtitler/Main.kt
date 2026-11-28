@@ -443,7 +443,6 @@ class MainActivity : Activity() {
                 ui.button("🔔 رجّع إشعارات كل القنوات") { Cfg.put("ytp_notif_off", ""); Notice.show(this, "🔔 رجعت إشعارات كل القنوات", 2200L) },
                 ui.switchRow("🕘 حفظ سجل المشاهدة", YtStore.histOn()) { on -> Cfg.put("ytp_hist_on", if (on) "1" else "0") },
                 ui.button("🕘 سجل يوتيوب") { settingsDlg0?.dialog?.dismiss(); showYtHistory() }),
-            MtLook.animSection(this, ui, th),
             ui.section("🗑 مسح البيانات", false,
                 ui.button("🗑 مسح السجل") { YtStore.write(YtStore.HIST, emptyList()); PlayTarget.clearTvHistory(this, "yt"); Notice.show(this, "🗑 السجل اتمسح", 1800L) },
                 ui.button("🗑 مسح سجل التحميلات") { YtStore.write(YtStore.DL, emptyList()); Notice.show(this, "🗑 سجل التحميلات اتمسح", 1800L) })) }
@@ -807,13 +806,13 @@ class MainActivity : Activity() {
                     ui.button("🗂 افتح سجل اللوجات", true) { LogArchiveUi(this, ui, th).show() })) }),
             // ===== 🎵 الموسيقى =====
             
-            TabDef("music", SettingsTabs.label("music"), { listOf<View>(
+            TabDef("music", SettingsTabs.label("music"), { listOfNotNull<View>(
                 ui.section("📝 الكلمات", true,
                                         ui.noHint(),
-                    ui.switchRow("جيب الكلمات تلقائيًا لما أفتح المشغّل", Cfg.str("music_auto_lyr", "1") != "0") { Cfg.put("music_auto_lyr", if (it) "1" else "0") }),
-                ui.section("🔤 شكل الكلمات", false,
+                    ui.switchRow("جيب الكلمات تلقائيًا لما أفتح المشغّل", Cfg.str("music_auto_lyr", "1") != "0") { Cfg.put("music_auto_lyr", if (it) "1" else "0"); recreate() }),
+                if (Cfg.str("music_auto_lyr", "1") != "0") ui.section("🔤 شكل الكلمات", false,   // (v1390) شكل الكلمات بيظهر بس لو الكلمات التلقائية شغالة (أب ← ابن، القيمة محفوظة)
                     ui.text("الخط:", 12f, th.muted), lyrFontChips,
-                    ui.text("الحجم:", 12f, th.muted), lyrSizeChips),
+                    ui.text("الحجم:", 12f, th.muted), lyrSizeChips) else null,
                 ui.section("🎵 المكتبة", false,
                     ui.text("لو أغاني جديدة ماظهرتش في صفحة الموسيقى، أعد الفحص:", 12f, th.muted),
                     ui.button("🔄 إعادة فحص الأغاني") { try { musicUi?.reload(true) } catch (_: Throwable) {}; Notice.show(this, "🔄 بفحص الأغاني…", 1600L) })) }, false, SettingsTabs.sub("music"), group = SettingsTabs.group("music")),

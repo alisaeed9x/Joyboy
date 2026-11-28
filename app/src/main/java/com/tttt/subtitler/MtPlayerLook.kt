@@ -148,11 +148,7 @@ object MtLook {
 
     fun views(ctx: Context, ui: Ui, th: Theme): List<View> = listOf(
         ui.noHint(),
-        ui.text("⭕ اللودر (بيظهر في كل لودينج: التحميل · الترجمة · البافرنج)", 13f, th.text, true),
-        ui.switchRow("استخدم لودر MeeTube (قفله = النقط القديمة)", Cfg.bool("mt_loader_on", true)) { Cfg.put("mt_loader_on", if (it) "1" else "0") },
-        loaderPicker(ctx, th),
         ui.text("✨ شريط التقدّم ومقبض السيك", 13f, th.text, true),
-        ui.switchRow("توهّج رأس شريط التقدّم", glowOn()) { Cfg.put("progress_glow", if (it) "1" else "0") },
         ui.chips(listOf("⚪ نقطة", "🖼 صورة"), { if (thumbIsPicture(ctx)) "🖼 صورة" else "⚪ نقطة" }) { n -> if (n == "🖼 صورة") pickThumbPicture(ctx) else setThumbDot(ctx) },
         ui.noHint(),
         ui.text("👆 إيماءات المشغّل", 13f, th.text, true),
@@ -160,10 +156,9 @@ object MtLook {
         ui.switchRow("سحب أفقي للتقديم/الترجيع", seekSwipe()) { Cfg.put("gest_seek", if (it) "1" else "0") },
         ui.slider("مدة الضغطتين للتقديم/الترجيع", Cfg.int("gest_dbl_ms", 10).coerceIn(5, 60), 5, 60, " ث") { Cfg.put("gest_dbl_ms", it.toString()) },
         ui.text("🎞 الحركة والأزرار", 13f, th.text, true),
-        ui.switchRow("حركة فتح/قفل المشغّل (من MeeTube: تكبير ناعم + تلاشي)", Cfg.bool("mt_player_anim", true)) { Cfg.put("mt_player_anim", if (it) "1" else "0") },
-        ui.switchRow("إخفاء زرار ⬇ تحميل من شريط المشغّل", hideDl()) { Cfg.put("hide_btn_dl", if (it) "1" else "0") })
+        ui.switchRow("إخفاء زرار ⬇ تحميل من شريط المشغّل", hideDl()) { Cfg.put("hide_btn_dl", if (it) "1" else "0") })   // (v1390) اللودر وتوهّج التقدّم وحركة فتح/قفل المشغّل مكانهم «✨ الأنيميشن والمظهر» في تبويب المظهر (كانت مكررة ٣ مرات)
 
-    /** (v1277) قسم «✨ الأنيميشن والمظهر»: موجود في إعدادات يوتيوب وفي الإعدادات العامة (نفس الإعدادات، بتتطبق على التطبيق كله) */
+    /** (v1277) قسم «✨ الأنيميشن والمظهر» · (v1390) بقى في تبويب المظهر بس (اتشال من يوتيوب) — كل مفتاح بيتعرض من مكان واحد */
     fun animSection(ctx: Context, ui: Ui, th: Theme): View = ui.section("✨ الأنيميشن والمظهر", true,
         ui.text("⭕ اللودر (بيظهر في كل لودينج)", 13f, th.text, true),
         ui.switchRow("استخدم لودر المشغّل (قفله = النقط القديمة)", Cfg.bool("mt_loader_on", true)) { Cfg.put("mt_loader_on", if (it) "1" else "0"); loaderVer++ },
@@ -172,7 +167,5 @@ object MtLook {
         ui.switchRow("✨ توهّج رأس شريط التقدّم", glowOn()) { Cfg.put("progress_glow", if (it) "1" else "0") },
         ui.switchRow("🫧 زجاج سائل (Liquid Glass)", try { com.tttt.subtitler.mtui.Glass.isLiquid(ctx) } catch (_: Throwable) { false }) { try { com.tttt.subtitler.mtui.Glass.setLiquid(ctx, it) } catch (_: Throwable) {} },
         ui.switchRow("🔍 عدسة وحركة شريط التبويبات", try { com.tttt.subtitler.mtui.NavLens.enabled(ctx) } catch (_: Throwable) { false }) { try { com.tttt.subtitler.mtui.NavLens.setEnabled(ctx, it) } catch (_: Throwable) {} },
-        ui.switchRow("🎞 انتقالات انسيابية بين التبويبات", Cfg.bool("anim_tabs", true)) { Cfg.put("anim_tabs", if (it) "1" else "0") },
-        ui.switchRow("📳 اهتزاز لمسي خفيف", Cfg.bool("haptics", true)) { Cfg.put("haptics", if (it) "1" else "0") },
-        ui.text("بعض التغييرات بتظهر بعد قفل وفتح الصفحة أو التطبيق.", 12f, th.muted))
+        ui.text("بعض التغييرات بتظهر بعد قفل وفتح الصفحة أو التطبيق.", 12f, th.muted))   // (v1390) «انتقالات التبويبات» و«الاهتزاز اللمسي» مكانهم قسم «الحركة والوصول» تحت (كانوا مكررين هنا)
 }
