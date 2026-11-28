@@ -99,7 +99,7 @@ object KeyMode {
 // ===== ترميز الإعدادات (نقي — متختبر) =====
 object CfgCodec {
     /** مفاتيح بتتخزن Boolean / Int فعليًا بعد الهجرة */
-    val BOOLS = setOf("autochars", "autopron", "autotpl", "hitiming", "gapfill", "soundtags", "prefine", "refine2pass", "fastmode",
+    val BOOLS = setOf("autochars", "autopron", "autotpl", "hitiming", "gapfill", "soundtags", "prefine", "fastmode",   // (v1397) refine2pass اتحذف
         "sub_nobg", "sub_plain", "sub_uni_on", "sub_split_on", "sub_two_lines", "sub_punct")
     val INTS = setOf("chunk", "ahead", "hls_ahead", "atrack", "parallel", "sub_scale", "sub_bgopa", "sub_blur", "sub_aspeed", "sub_dual", "sub_split", "kmode", "nmain", "nback")
     const val VERSION = 3

@@ -62,6 +62,10 @@ object TrSlider {
 
     /** الموضع: المحفوظ لو لسه في نفس منطقة الإعدادات الحالية، وإلا الافتراضي للمنطقة (٧ لو ٧٥/٢٥) */
     fun pos(): Int = try {
+        if (Cfg.p.contains("refine2pass")) {   // (v1397) ترحيل لمرة واحدة: refine2pass القديم ← أقصى السلايدر (تحسين على مرحلتين) لو المنطقة دقيق، ومسح المفتاح في كل الأحوال
+            try { if (Cfg.bool("refine2pass", false) && zoneNow() == ACC) Cfg.put(KEY, MAX.toString()) } catch (_: Throwable) {}
+            Cfg.p.edit().remove("refine2pass").apply()
+        }
         val z = zoneNow(); val s = Cfg.int(KEY, -1)
         if (s in 0..MAX && zone(s) == z) s
         else if (z == ACC && Cfg.int("dual_listen", 1) == 0) 7 else defOf(z)

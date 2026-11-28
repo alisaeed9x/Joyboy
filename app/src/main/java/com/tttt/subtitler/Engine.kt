@@ -274,7 +274,7 @@ class Engine(
 
     /** (v469) A4: قاموس المصطلحات المقفول من إعداد Cfg ‏"gloss" (أو "glossary" كبديل — الدمج مع واجهة المسرد القائمة) — كل سطر «مصدر=هدف» */
     private fun glossaryPairs(): List<Pair<String, String>> =
-        try { Cfg.str("gloss", "").ifBlank { Cfg.str("glossary", "") }.lines().mapNotNull { ln -> val i = ln.indexOf('='); if (i <= 0) null else { val a = ln.substring(0, i).trim(); val b = ln.substring(i + 1).trim(); if (a.isEmpty() || b.isEmpty()) null else a to b } } } catch (_: Throwable) { emptyList() }
+        try { Cfg.str("gloss", "").ifBlank { Cfg.str("glossary", "").also { g -> if (g.isNotBlank()) { Cfg.put("gloss", g); Cfg.p.edit().remove("glossary").apply() } } }.lines().mapNotNull { ln -> val i = ln.indexOf('='); if (i <= 0) null else { val a = ln.substring(0, i).trim(); val b = ln.substring(i + 1).trim(); if (a.isEmpty() || b.isEmpty()) null else a to b } } } catch (_: Throwable) { emptyList() }   // (v1397) "glossary" القديم بيترحّل لـ gloss أول مرة وبعدين بيتمسح
 
     private fun glossaryBlock(): String {
         val g = glossaryPairs(); if (g.isEmpty()) return ""
