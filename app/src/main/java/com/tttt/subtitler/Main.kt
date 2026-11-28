@@ -247,8 +247,7 @@ class MainActivity : Activity() {
         val model = ui.input("الموديل (اكتب يدوي أو اختار من فوق)", modelSel)
         val modelNames = Models.builtin.map { it.id }
         val modelDesc = ui.text("", 12f, th.muted)
-        fun descOf(id: String) = (Models.builtin.firstOrNull { it.id == id }?.desc ?: "موديل يدوي") + " — استهلاك النهارده: " + Quota.used(id) + " / " + Models.quotaOf(id) + " (تقريبي، بيتصفّر 00:00 PT)" +
-            ModelWatch.pending().let { if (it.isEmpty()) "" else "\n🆕 موديل flash-lite أحدث اتلقى: " + it.joinToString("، ") + " — دوس «جلب كل الموديلات» واختاره" }
+        fun descOf(id: String) = (Models.builtin.firstOrNull { it.id == id }?.desc ?: "موديل يدوي") + " — استهلاك النهارده: " + Quota.used(id) + " / " + Models.quotaOf(id) + " (تقريبي، بيتصفّر 00:00 PT)"   // (v1395) إشعار «موديل أحدث» الميت اتحذف مع ModelWatch
         modelDesc.text = descOf(modelSel)
         lateinit var applyModel: (String) -> Unit
         val modelChips = ui.chips(modelNames, { model.text.toString().trim() }) { applyModel(it) }
@@ -260,14 +259,13 @@ class MainActivity : Activity() {
             Thread {
                 try {
                     val rows = Api.listModels(k)
-                    // الأحدث/الأهم فوق: gemini أولًا
-                    val fresh = ModelWatch.candidates(rows.map { it.id }).toSet()
-                    val sorted = rows.sortedWith(compareBy({ it.id !in fresh }, { !it.id.startsWith("gemini") }, { it.id }))
+                    // الأهم فوق: gemini أولًا — (v1395) علامة 🆕 اتشالت مع ModelWatch الميت
+                    val sorted = rows.sortedWith(compareBy({ !it.id.startsWith("gemini") }, { it.id }))
                     runOnUiThread {
                         if (isFinishing || isDestroyed) return@runOnUiThread
                         if (sorted.isEmpty()) { Notice.show(this, ("مفيش موديلات رجعت").toString(), 3600L); return@runOnUiThread }
                         val cur = model.text.toString().trim()
-                        val labels = sorted.map { (if (it.id == cur) "✓ " else if (it.id in fresh) "🆕 " else "") + it.id + (if (it.display.isNotEmpty() && it.display != it.id) "\n" + it.display else "") }.toTypedArray()
+                        val labels = sorted.map { (if (it.id == cur) "✓ " else "") + it.id + (if (it.display.isNotEmpty() && it.display != it.id) "\n" + it.display else "") }.toTypedArray()
                         GAlert(this).setTitle("اختار الموديل (${sorted.size})")
                             .setItems(labels) { _, which -> applyModel(sorted[which].id) }
                             .setNegativeButton("إلغاء", null).show()
@@ -498,7 +496,7 @@ class MainActivity : Activity() {
         applyModel = { id ->
             model.setText(id); modelSel = id; modelDesc.text = descOf(id)
             Cfg.p.edit().putString("model", id).apply()   // يتحفظ فورًا
-            ModelWatch.refreshPending(); modelDesc.text = descOf(id)
+            modelDesc.text = descOf(id)
             refreshChip()
         }
         // (v529) مفاتيح وصلت من الموبايل والإعدادات مفتوحة: حدّث الخانات من Cfg (وإلا الحفظ التلقائي بيكتب القديم فوق الجديد)
@@ -2131,7 +2129,6 @@ class MainActivity : Activity() {
         // الرجوع من المشغّل أو من إعدادات الإذن: حدّث العرض (تقدم الترجمة) أو أعد الفحص
         if (!fromPlayer) CrashLog.showIfAny(this)
         if (!fromPlayer) ClipOverlay.ensure(this)   // (v735) مراقب الكليبورد بإذن العرض فوق التطبيقات (بيشتغل لوحده أول ما الإذن يتفعّل)
-        if (!fromPlayer) ModelWatch.maybeCheck(this)   // (v141) فحص يومي لموديل flash-lite أحدث
         if (!fromPlayer) { Upd.onChange = { updateUpdBadge() }; updateUpdBadge(); Upd.onOpen(this) }   // (v1259) فحص التحديث عند كل فتح + البادج
         if (!fromPlayer) GhCi.onForeground(this)   // (v856) فشل ورك فلو GitHub ← إشعار + تحميل اللوج · تحديث جاهز ← تثبيت
         // المخفي بيتقفل تاني لو التطبيق قعد في الخلفية أكتر من دقيقة

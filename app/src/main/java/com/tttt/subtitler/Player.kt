@@ -6577,18 +6577,16 @@ open class PlayerActivity : Activity(), Host {
         Thread {
             try {
                 val rows = Api.listModels(k).filter { Models.KEEP.containsMatchIn(it.id) && !Models.JUNK.containsMatchIn(it.id) && !Models.JUNK.containsMatchIn(it.display) }   // (v1354) قايمة الترجمة: فلاش/فلاش-لايت/أومني/برو بس (بطلب علي) — من غير صور/TTS/live/embed
-                val fresh = ModelWatch.candidates(rows.map { it.id }).toSet()
-                val sorted = rows.sortedWith(compareBy({ it.id !in fresh }, { !it.id.startsWith("gemini") }, { it.id }))
+                val sorted = rows.sortedWith(compareBy({ !it.id.startsWith("gemini") }, { it.id }))   // (v1395) علامة 🆕 اتشالت مع ModelWatch الميت
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     if (sorted.isEmpty()) { Notice.show(this, "مفيش موديلات رجعت", 3000L); return@runOnUiThread }
                     val cur = Cfg.str("model", Models.DEFAULT)
-                    val labels = sorted.map { (if (it.id == cur) "✓ " else if (it.id in fresh) "🆕 " else "") + it.id + (if (it.display.isNotEmpty() && it.display != it.id) "\n" + it.display else "") }.toTypedArray()
+                    val labels = sorted.map { (if (it.id == cur) "✓ " else "") + it.id + (if (it.display.isNotEmpty() && it.display != it.id) "\n" + it.display else "") }.toTypedArray()
                     GAlert(this).setTitle("اختار الموديل (${sorted.size}) — بيتطبّق على كل المفاتيح")
                         .setItems(labels) { _, which ->
                             val id = sorted[which].id
                             Cfg.put("model", id)
-                            try { ModelWatch.refreshPending() } catch (_: Throwable) {}
                             Notice.show(this, "🤖 الموديل: " + id + " — اتطبّق على كل المفاتيح", 2600L)
                         }
                         .setNegativeButton("إلغاء", null).show()

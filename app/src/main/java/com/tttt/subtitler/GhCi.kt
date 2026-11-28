@@ -44,9 +44,9 @@ object GhCi {
     private const val DAY = 24L * 3600L * 1000L
 
     // ───────── الإعدادات ─────────
-    /** (v859) الريبو ثابت جوه البرنامج، والتوكن متشفّر جوه البرنامج: مفيش شاشة إدخال ولا حفظ. لو الخانة فاضية بيرجع للتوكن القديم المحفوظ (لو موجود) */
+    /** (v859) الريبو ثابت جوه البرنامج، والتوكن متشفّر جوه البرنامج: مفيش شاشة إدخال ولا حفظ. (v1395) احتياطي gh_token القديم اتحذف — التوكن المدمج بس، وأي قيمة متخزنة قديمة بتتمسح أول مرة */
     fun repo(): String = DEF_REPO
-    fun token(): String = GhSecret.open().ifBlank { Cfg.str("gh_token", "").trim() }
+    fun token(): String { if (Cfg.p.contains("gh_token")) Cfg.p.edit().remove("gh_token").apply(); return GhSecret.open() }
 
     /** (v859) التوكن مخزّن كـ hex متشفّر (XOR مع تيار SHA-256) ومقسّم، مش نص ظاهر في الـAPK ولا في الريبو. الشفرة بتتولّد بسكريبت خارجي */
     private object GhSecret {

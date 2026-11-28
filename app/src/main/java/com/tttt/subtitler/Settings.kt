@@ -514,7 +514,6 @@ object AdvRows {
         R("player", "yt_fs_inplace", "⛶ التكبير جوه نفس المشغّل (يوتيوب)", "s01", 1),
         R("player", "yt_page_in_player", "▶ صفحة الفيديو جوه المشغّل (يوتيوب)", "s01", 1),
         R("player", "yt_next_delay", "⏭ ثواني عد «الفيديو الجاي» في يوتيوب", "int", 20, 3, 120, "ث"),
-        R("player", "yt_portrait_clean", "📱 شاشة نضيفة في الوضع الطولي (يوتيوب)", "b", 1),
         R("youtube", "yt_prewarm", "🔥 تسخين يوتيوب في الخلفية", "b", 1),
         R("browser", "prewarm_tabs", "🔥 تسخين التبويبات عند فتح التطبيق", "b", 1),   // (v1393) منقول للمتصفح — تسخين تبويبات = سلوك متصفح
         R("capture", "lw_toast_off", "🔕 إخفاء إشعارات الترجمة الحية", "b", 0, parent = "lw_web_off", parentHideVal = "1"),

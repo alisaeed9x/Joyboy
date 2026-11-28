@@ -128,7 +128,6 @@ com/tttt/subtitler/MiniDock.kt
 com/tttt/subtitler/MobileDataGuard.kt
 com/tttt/subtitler/ModePrompts.kt
 com/tttt/subtitler/ModelStore.kt
-com/tttt/subtitler/ModelWatch.kt
 com/tttt/subtitler/Models.kt
 com/tttt/subtitler/ModelsUi.kt
 com/tttt/subtitler/Motion.kt

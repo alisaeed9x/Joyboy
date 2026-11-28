@@ -224,12 +224,12 @@ object TrWizard {
     /** (v274) لو التفريغ السحابي كان شغّال بسبب خطة «أونلاين بمحرك خارجي» بنقفله لما نرجع لخطة تانية (إلا لو إنت شغّلته من الإعدادات) */
     private fun leaveCloud() {
         Cfg.put("ext_primary", "")
-        if (Cfg.str("rstt_by_plan") == "1") { Cfg.put("rstt_on", "off"); Cfg.put("rstt_by_plan", "0") }
+        if (Cfg.str("rstt_by_plan") == "1") Cfg.put("rstt_by_plan", "0")   // (v1395) rstt_on الميت اتحذف (صفر قراءة في الكود)
     }
 
     /** بيكتب الإعدادات اللي المحرك بيقراها (من غير ما يحفظ الخطة) */
     fun apply(pl: Plan) {
-        Cfg.put("omni_mode", "0"); Cfg.put("conv_via", pl.conv)   // (v395) المحركات الخارجية اتشالت — محوّل اللهجة جيميناي
+        Cfg.put("conv_via", pl.conv)   // (v395) المحركات الخارجية اتشالت — محوّل اللهجة جيميناي · (v1395) omni_mode الميت اتحذف
         Cfg.put("stt_offline", if (pl.offline || pl.cloud) "1" else "0")
         if (pl.offline) { Cfg.put("stt_lang", pl.lang); Cfg.put("off_model", pl.model); Cfg.put("tr_method", pl.method); Cfg.put("stt_engine", pl.engine); Cfg.put("conv_dialect", if (pl.dialect == "فصحى") "" else pl.dialect)
             if (pl.live) Cfg.put("ctx_min", "1") else if (Cfg.int("ctx_min", 3) == 1) Cfg.put("ctx_min", "3")   // (v266)
