@@ -618,7 +618,7 @@ class MainActivity : Activity() {
                 ui.section("📖 مسرد المصطلحات الثابت", false,
                     ui.noHint(), gloss),
                 ui.section("🔀 محرك الترجمة والتفريغ", true,   // (v1393) القسم ده منقول كما هو من تبويب «التفريغ والصوت» الملغى
-                    ui.text("التفريغ (صوت ← نص):", 12f, th.muted),
+                    ui.text("التفريغ بيحوّل صوت الفيديو لنص قبل الترجمة — جيميناي: سحابي دقيق · جروك: سحابي أسرع (مفتاح مجاني) · ويشبر: على الجهاز أوفلاين من غير نت:", 12f, th.muted),   // (v1394) وصف الفرق بين المحركات (بند تحسين أوصاف التفريغ)
                     ui.chips(listOf("☁ جيميناي", "⚡ جروك", "🎙 ويشبر (على الجهاز)"), { if (Cfg.bool("stt_offline", false)) "🎙 ويشبر (على الجهاز)" else if (Cfg.str("mt_tr_mode", "") == "groq") "⚡ جروك" else "☁ جيميناي" }) { n ->
                         if (n.startsWith("⚡")) { Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "groq"); Cfg.put("tr_engine", "gem"); if (Cfg.str("groq_key", "").isBlank()) Notice.show(this, "🔑 مفتاح Groq ناقص — ضيفه من تبويب المفاتيح", 3200L) }   // (v1385 — بطلب علي) جروك اختيار ظاهر في محرك التفريغ زي ويشبر
                         else if (n.startsWith("🎙")) { Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper"); Cfg.put("tr_engine", "off"); if (!Offline.downloaded()) Notice.show(this, "🎙 موديل الويشبر مش متنزّل — نزّله من خيارات الويشبر تحت", 3200L) }   // (v1375 — بطلب علي) مزامنة tr_engine — التحويل الصامت لجيميناي
@@ -811,7 +811,7 @@ class MainActivity : Activity() {
                 ui.section("🧩 تخصيص البلاطات", false, *(try { NavCustom.views(this, ui, th, navUi?.catalog(this) ?: emptyList()) } catch (e: Throwable) { LogStore.err("Main:navcust", e); listOf<View>(ui.noHint()) }).toTypedArray())) }),   // (v1393) تبويب «تخصيص البلاطات» اتدمج هنا كقسم,
 
             // ===== ⚙️ عام (v1393): اللغة (منقولة من تبويب اللغة الملغى) · الخلفية والتشغيل · التحديثات · الأمان والنسخ (منقولة من تبويب الأمان الملغى) · سجل اللوجات (منقول من تبويبه الملغى) =====
-            tab("more", { listOf<View>(
+            tab("more", { listOfNotNull<View>(
                 ui.section("🌐 اللغة", true,
                     LangPicker.settingRow(this, ui, I18n.languageWord(), { I18n.setting() }) { c ->
                         if (c == "auto") { Cfg.put("app_lang", "auto"); Cfg.put("lang_chosen", "1") } else I18n.setAppLang(c)
@@ -828,7 +828,12 @@ class MainActivity : Activity() {
                     ui.noHint()),
                 ui.section("🔄 التحديثات", false,
                     ui.switchRow("🔄 تحديث تلقائي (ينزّل لوحده ويسأل تثبّت؟)", Upd.autoOn()) { v -> Cfg.put("upd_auto", if (v) "1" else "0") },
-                    ui.button("🔄 افتح مركز التحديث (تحديث البرنامج · مراقبة البيلدات · لوج الفشل)", true) { try { if (Design.isNew()) UpdateSheet.show(this) else GhCiUi.show(this) } catch (e: Throwable) { LogStore.err("Main:upd", e) } }),   // (v1393) نفس مدخل «مركز التحديث» الموجود في الشريط
+                    ui.switchRow("🔔 راقب فشل الورك فلوهات", Cfg.bool("gh_watch", true)) { v -> Cfg.put("gh_watch", if (v) "1" else "0"); GhCi.schedule(this); recreate() },   // (v1394) الأب الشرطي — منقول من مركز التحديث، recreate عشان الأبناء يظهروا/يتخبّوا فورًا
+                    ui.button("🔄 افتح مركز التحديث (تحديث البرنامج · لوج الفشل · تحديث التلفزيون)", true) { try { if (Design.isNew()) UpdateSheet.show(this) else GhCiUi.show(this) } catch (e: Throwable) { LogStore.err("Main:upd", e) } }),   // (v1393) نفس مدخل «مركز التحديث» الموجود في الشريط
+                if (Cfg.bool("gh_watch", true)) ui.section("🔔 خيارات مراقبة البيلدات", false,   // (v1394) أبناء gh_watch الشرطيين — منقولين من مركز التحديث (قيمهم محفوظة لما الأب يتقفل)
+                    ui.switchRow("🔔 إشعار لما بيلد يفشل", Cfg.bool("gh_notify", true)) { Cfg.put("gh_notify", if (it) "1" else "0") },
+                    ui.switchRow("📥 نزّل لوج الفشل مقدمًا", Cfg.bool("gh_prelog", true)) { Cfg.put("gh_prelog", if (it) "1" else "0") },
+                    *(if (!DeviceUi.isTv(this)) arrayOf(ui.switchRow("📺 ابعت التحديث للتلفزيون أول ما يتصل", Cfg.bool("gh_tv_auto", true)) { Cfg.put("gh_tv_auto", if (it) "1" else "0") }) else arrayOf())) else null,
                 ui.section("🔒 الأمان", false, lockStatus,
                     ui.noHint(),
                     ui.button("🔑 تعيين / تغيير النمط") { lk.change { refreshLock() } }, bioBtn,

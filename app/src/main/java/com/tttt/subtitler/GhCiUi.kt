@@ -26,7 +26,6 @@ object GhCiUi {
         fun onUi(f: () -> Unit) { a.runOnUiThread { try { f() } catch (_: Throwable) {} } }
         var appInd: TextView? = null
         var tvInd: TextView? = null
-        var setInd: TextView? = null
 
         // ───── آخر 3 بيلدات + ريفريش صغير ─────
         val head = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
@@ -96,7 +95,6 @@ object GhCiUi {
             }.apply { isDaemon = true; start() }
         }
         fun paintTv() = onUi { tvInd?.text = RemoteClient.tvStatus(a) }
-        fun summary(): String = if (GhCi.watchOn()) "مراقبة فشل البيلدات شغّالة" else ""
 
         if (!DeviceUi.isTv(a)) {
             tvInd = block("📺 تحديث التلفزيون", false) {
@@ -126,9 +124,6 @@ object GhCiUi {
                 if (txt.isNotBlank()) onUi { notesBox.removeAllViews(); notesBox.addView(ui.text("📝 آخر تغييرات", 13f, th.text, true), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(4) }); notesBox.addView(Notes.render(a, ui, th, txt)) }
             } catch (e: Throwable) { LogStore.err("GhCiUi:notes", e) }
         }.apply { isDaemon = true; start() }
-        setInd = block("⚙ الإعدادات", false) { settings(a) { onUi { setInd?.text = summary() } } }
-        setInd?.text = summary()
-
         refresh.setOnClickListener { loadRuns(); paintTv(); checkApp(false) }
         loadRuns(); checkApp(false)
 
@@ -136,30 +131,5 @@ object GhCiUi {
         GAlert(a).setTitle("🔄 مركز التحديث").setView(sv).setNegativeButton("إغلاق", null).show()
     }
 
-    /** (v864) إعدادات مراقبة بيلدات GitHub (الفشل) — (v1357) إعدادات مسار التحديث القديم (الفحص الدوري/التنزيل التلقائي/واي فاي/الشحن/فرع main) اتحذفت كلها مع المسار نفسه (بطلب علي) */
-    fun settings(a: Activity, onChange: () -> Unit) {
-        val th = Themes.current()
-        val ui = Ui(a, th)
-        val col = LinearLayout(a).apply {
-            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4))
-        }
-        fun head(t: String) = col.addView(ui.text(t, 12.5f, th.primary, true), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(10) })
-        fun sw(label: String, key: String, def: Boolean, after: () -> Unit = {}) =
-            col.addView(ui.switchRow(label, Cfg.bool(key, def)) { v -> Cfg.put(key, if (v) "1" else "0"); after(); onChange() })
-
-        lateinit var dlg: android.app.Dialog
-        head("مراقبة البيلدات")
-        sw("🔔 راقب فشل الورك فلوهات", "gh_watch", true) { GhCi.schedule(a); dlg.dismiss(); settings(a, onChange) }   // (v1391) إعادة فتح فورية عشان الأبناء يظهروا/يتخبّوا
-        if (Cfg.bool("gh_watch", true)) {   // (v1391) أبناء المراقبة شرطيين بيها (قيمهم محفوظة)
-            sw("🔔 إشعار لما بيلد يفشل", "gh_notify", true)
-            sw("📥 نزّل لوج الفشل مقدمًا", "gh_prelog", true)
-            if (!DeviceUi.isTv(a)) {
-                head("التلفزيون")
-                sw("📺 ابعت التحديث للتلفزيون أول ما يتصل", "gh_tv_auto", true)
-            }
-        }
-        val sv = ScrollView(a).apply { isVerticalScrollBarEnabled = false; addView(col) }
-        dlg = GAlert(a).setTitle("⚙ إعدادات التحديث").setView(sv).setNegativeButton("إغلاق", null).show()
-    }
+    // (v1394) صفوف مراقبة البيلدات (gh_watch وأبناؤها الشرطيون) اتنقلت لتبويب «عام ← التحديثات» في الإعدادات الشاملة — مكان واحد بس
 }
