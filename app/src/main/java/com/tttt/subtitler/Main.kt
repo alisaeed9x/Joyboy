@@ -834,7 +834,7 @@ class MainActivity : Activity() {
                     ui.text((if (LinkHub.overlayOk(this)) "✅ العرض فوق التطبيقات: مسموح" else "⚠ العرض فوق التطبيقات: مش مسموح — ده الإذن الأساسي، دوس الزرار اللي تحت") + "\n" +
                         (if (LinkWatch.enabled(this)) "✅ إمكانية الوصول: متفعّلة (للمتصفحات + معرفة مصدر النسخ)" else "ℹ إمكانية الوصول: مش متفعّلة (اختيارية — للمتصفحات بس)"), 12f, th.text),
                     ui.button("🖼 اسمح بالعرض فوق التطبيقات (الأساسي)") { try { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")), 14) } catch (_: Throwable) {} },
-                    ui.switchRow("لقط صفحات الفيديو في المتصفحات", !Cfg.bool("lw_web_off", false)) { Cfg.put("lw_web_off", if (it) "0" else "1") },
+                    ui.switchRow("لقط صفحات الفيديو في المتصفحات", !Cfg.bool("lw_web_off", false)) { Cfg.put("lw_web_off", if (it) "0" else "1"); recreate() },   // (v1391) recreate عشان صفوفه الشرطية تظهر/تتخبّى فورًا
                     ui.button("⚙ إمكانية الوصول (اختياري — للمتصفحات)") { LinkWatch.openSettings(this) },
                     ui.noHint()),
                 watchViews[1]) }),   // (v458) الترجمة الحية

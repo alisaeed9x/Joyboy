@@ -500,7 +500,7 @@ object SettingsFuzzy {
  * هنا كل واحدة ليها صف في القسم المناسب من الإعدادات الموجودة (نفس القيم الافتراضية بالظبط، فمفيش حاجة بتتغيّر لحد ما تغيّرها).
  */
 object AdvRows {
-    private class R(val tab: String, val key: String, val label: String, val kind: String, val d: Int = 1, val lo: Int = 0, val hi: Int = 0, val unit: String = "", val scale: Int = 1)
+    private class R(val tab: String, val key: String, val label: String, val kind: String, val d: Int = 1, val lo: Int = 0, val hi: Int = 0, val unit: String = "", val scale: Int = 1, val parent: String = "", val parentHideVal: String = "")   // (v1391) parent/parentHideVal: صف شرطي — يتخبّى لما مفتاح الأب يساوي القيمة دي (قيمته المحفوظة مش بتتمسح)
     private val rows = listOf(
         R("audio", "stt_vad", "🎧 تخطّي الصمت أثناء التفريغ على الجهاز (VAD)", "b", 1),
         R("audio", "song_auto_id", "🎵 التعرف التلقائي على اسم الأغنية", "s01", 1),
@@ -521,8 +521,8 @@ object AdvRows {
         R("player", "yt_portrait_clean", "📱 شاشة نضيفة في الوضع الطولي (يوتيوب)", "b", 1),
         R("youtube", "yt_prewarm", "🔥 تسخين يوتيوب في الخلفية", "b", 1),
         R("youtube", "prewarm_tabs", "🔥 تسخين التبويبات عند فتح التطبيق", "b", 1),
-        R("capture", "lw_toast_off", "🔕 إخفاء إشعارات الترجمة الحية", "b", 0),
-        R("capture", "lw_hist_off", "🗑 عدم حفظ سجل الروابط المنسوخة", "b", 0),
+        R("capture", "lw_toast_off", "🔕 إخفاء إشعارات الترجمة الحية", "b", 0, parent = "lw_web_off", parentHideVal = "1"),
+        R("capture", "lw_hist_off", "🗑 عدم حفظ سجل الروابط المنسوخة", "b", 0, parent = "lw_web_off", parentHideVal = "1"),
         R("capture", "pub_hist_on", "📜 حفظ سجل الصفحات المعروضة", "s01", 1),
         R("capture", "subhunt_close", "🧲 قفل صفحة صيد الترجمة بعد ما تتحمّل", "b", 1),
         R("tvset", "tv_autoscale", "📺 تكبير الواجهة تلقائيًا على شاشة التلفزيون", "s01", 1))
@@ -585,7 +585,7 @@ object AdvRows {
     fun tabOf(key: String): String = rows.firstOrNull { it.key == key }?.tab ?: "general"
 
     fun forTab(ui: Ui, tab: String): List<View> {
-        val rs = rows.filter { it.tab == tab }
+        val rs = rows.filter { it.tab == tab && (it.parent.isEmpty() || Cfg.str(it.parent, "") != it.parentHideVal) }   // (v1391) الصفوف الشرطية بتتخبّى لما الأب مقفول
         if (rs.isEmpty()) return emptyList()
         val out = ArrayList<View>()
         out.add(ui.text("🧩 إعدادات إضافية", 13f, ui.th.muted, true))

@@ -148,15 +148,18 @@ object GhCiUi {
         fun sw(label: String, key: String, def: Boolean, after: () -> Unit = {}) =
             col.addView(ui.switchRow(label, Cfg.bool(key, def)) { v -> Cfg.put(key, if (v) "1" else "0"); after(); onChange() })
 
+        lateinit var dlg: android.app.Dialog
         head("مراقبة البيلدات")
-        sw("🔔 راقب فشل الورك فلوهات", "gh_watch", true) { GhCi.schedule(a) }
-        sw("🔔 إشعار لما بيلد يفشل", "gh_notify", true)
-        sw("📥 نزّل لوج الفشل مقدمًا", "gh_prelog", true)
-        if (!DeviceUi.isTv(a)) {
-            head("التلفزيون")
-            sw("📺 ابعت التحديث للتلفزيون أول ما يتصل", "gh_tv_auto", true)
+        sw("🔔 راقب فشل الورك فلوهات", "gh_watch", true) { GhCi.schedule(a); dlg.dismiss(); settings(a, onChange) }   // (v1391) إعادة فتح فورية عشان الأبناء يظهروا/يتخبّوا
+        if (Cfg.bool("gh_watch", true)) {   // (v1391) أبناء المراقبة شرطيين بيها (قيمهم محفوظة)
+            sw("🔔 إشعار لما بيلد يفشل", "gh_notify", true)
+            sw("📥 نزّل لوج الفشل مقدمًا", "gh_prelog", true)
+            if (!DeviceUi.isTv(a)) {
+                head("التلفزيون")
+                sw("📺 ابعت التحديث للتلفزيون أول ما يتصل", "gh_tv_auto", true)
+            }
         }
         val sv = ScrollView(a).apply { isVerticalScrollBarEnabled = false; addView(col) }
-        GAlert(a).setTitle("⚙ إعدادات التحديث").setView(sv).setNegativeButton("إغلاق", null).show()
+        dlg = GAlert(a).setTitle("⚙ إعدادات التحديث").setView(sv).setNegativeButton("إغلاق", null).show()
     }
 }
