@@ -1162,6 +1162,8 @@ class MainActivity : Activity() {
         }
         // (v823) كبسولة ⚙️ الصفحة: عايمة بس فوق الصفحة (مش صف) — لازقة فوق الشريط السفلي
         if (!fromPlayer && !DeviceUi.isTv(this)) { pageGearUi = PageGear(this, frame, nav.view, tabletShell, ui, th, msw.view) { pg -> pageSettingsShow?.invoke(pg) }; pageGearUi?.sync(curTab) }   // (v829) msw.view = الكبسولة ترتفع فوق زرارين الميديا ومتغطّيهمش
+        // (v1400 — بطلب علي: «مش عايز جروك، عايز اشتغل بجيميناي على طول») ترحيل لمرة واحدة: اختيار ⚡ جروك المحفوظ بيرجع لجيميناي — جروك يفضل اختيار ظاهر في الشيبات، ولو اتختار منها تاني مش بيتقلب (علامة mig_groq_gem)
+        try { if (!Cfg.bool("mig_groq_gem", false)) { Cfg.put("mig_groq_gem", "1"); if (Cfg.str("mt_tr_mode", "") == "groq") { Cfg.put("mt_tr_mode", "gemini"); LogStore.add("🔄 ترحيل v1400: محرك التفريغ رجع ☁ جيميناي (كان ⚡ جروك)") } } } catch (_: Throwable) {}
         if (fromPlayer) {
             setContentView(FrameLayout(this))
             settingsDlg.show(intent?.getStringExtra("tab"))   // من غير قسم محدد = قايمة الإعدادات كاملة
