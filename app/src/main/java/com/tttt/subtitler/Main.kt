@@ -286,7 +286,7 @@ class MainActivity : Activity() {
         fun chunkLbl(v: Int) = "$v ثانية"
         val chunk = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(ui.text("طول المقطع", 14f, th.text, true))
+            addView(ui.text("طول المقطع (جيميناي / ويشبر)", 14f, th.text, true))   // (v1385) جروك ليه طول لوحده في قسمه
             addView(ui.chips(chunkOpts.map { chunkLbl(it) }, { chunkLbl(chunkOpts.minByOrNull { Math.abs(it - chunkSec) }!!) }) { pick -> chunkSec = chunkOpts.first { chunkLbl(it) == pick } })
         }
         // (v1379 — بطلب علي) طول باتش جروك بيتعدّل من الإعدادات اللي بره: فيديو أقصر من الطول ده = باتش واحد كامل
@@ -699,8 +699,9 @@ class MainActivity : Activity() {
                 ModelsUi.section(this, ui, th),
                 ui.section("🔀 محرك الترجمة والتفريغ", true,
                     ui.text("التفريغ (صوت ← نص):", 12f, th.muted),
-                    ui.chips(listOf("☁ جيميناي", "🎙 ويشبر (على الجهاز)"), { if (Cfg.bool("stt_offline", false)) "🎙 ويشبر (على الجهاز)" else "☁ جيميناي" }) { n ->
-                        if (n.startsWith("🎙")) { Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper"); Cfg.put("tr_engine", "off"); if (!Offline.downloaded()) Notice.show(this, "🎙 موديل الويشبر مش متنزّل — نزّله من خيارات الويشبر تحت", 3200L) }   // (v1375 — بطلب علي) مزامنة tr_engine — التحويل الصامت لجيميناي
+                    ui.chips(listOf("☁ جيميناي", "⚡ جروك", "🎙 ويشبر (على الجهاز)"), { if (Cfg.bool("stt_offline", false)) "🎙 ويشبر (على الجهاز)" else if (Cfg.str("mt_tr_mode", "") == "groq") "⚡ جروك" else "☁ جيميناي" }) { n ->
+                        if (n.startsWith("⚡")) { Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "groq"); Cfg.put("tr_engine", "gem"); if (Cfg.str("groq_key", "").isBlank()) Notice.show(this, "🔑 مفتاح Groq ناقص — ضيفه من تبويب المفاتيح", 3200L) }   // (v1385 — بطلب علي) جروك اختيار ظاهر في محرك التفريغ زي ويشبر
+                        else if (n.startsWith("🎙")) { Cfg.put("stt_offline", "1"); Cfg.put("mt_tr_mode", "whisper"); Cfg.put("tr_engine", "off"); if (!Offline.downloaded()) Notice.show(this, "🎙 موديل الويشبر مش متنزّل — نزّله من خيارات الويشبر تحت", 3200L) }   // (v1375 — بطلب علي) مزامنة tr_engine — التحويل الصامت لجيميناي
                         else { Cfg.put("stt_offline", "0"); Cfg.put("mt_tr_mode", "gemini"); Cfg.put("tr_engine", "gem") }
                         recreate()
                     },
@@ -714,12 +715,20 @@ class MainActivity : Activity() {
                         recreate()
                     },
                     ui.noHint()),
-                // (v1376 — بطلب علي: «لما نختار الويشبر تظهر تحتها خياراتها») قسم الويشبر تحت اختيار المحرك مباشرة، وبيظهر بس لو الويشبر مختار
-                if (Cfg.bool("stt_offline", false)) ui.section("📴 خيارات الويشبر — التفريغ على الجهاز (من غير مفتاح)", true,
-                    ui.noHint(),
-                    ui.text("حجم موديل Whisper:", 12f, th.muted), offModelChips, ui.text("⚡ خانات التفريغ المتوازي:", 12f, th.muted), parChips, parNote, offStatus, offDlBtn, offProg,
-                    ui.text("لغة الكلام (لو عارفها بتقلّل أخطاء الاكتشاف التلقائي):", 12f, th.muted), offLangChips,
-                    ui.noHint()) else null,
+                // (v1385 — بطلب علي: «اعدادات الويشبر وارصة تحت بعضها ومضروبة») الويشبر اتقسّم 3 أقسام واضحة بدل سطور ملزوقة تحت بعضها، وكلها بتظهر بس لو الويشبر مختار
+                if (Cfg.bool("stt_offline", false)) ui.section("📴 موديل الويشبر وتنزيله (تفريغ على الجهاز — من غير مفتاح)", true,
+                    offModelChips, offStatus, offDlBtn, offProg) else null,
+                if (Cfg.bool("stt_offline", false)) ui.section("⚡ أداء الويشبر (خانات التفريغ المتوازي)", false,
+                    parChips, parNote) else null,
+                if (Cfg.bool("stt_offline", false)) ui.section("🗣 لغة الكلام", false,
+                    ui.text("لو عارفها بتقلّل أخطاء الاكتشاف التلقائي", 12f, th.muted), offLangChips) else null,
+                // (v1385 — بطلب علي: «اعدادات الجروك مش موجودة في الاعدادات اصلا») قسم جروك لوحده في تبويب التفريغ: الموديل الحالي + حالة المفتاح + طول الباتش — بيظهر بس لو جروك مختار
+                if (!Cfg.bool("stt_offline", false) && Cfg.str("mt_tr_mode", "") == "groq") ui.section("⚡ خيارات جروك — التفريغ السحابي السريع", true,
+                    ui.text("الموديل: " + Cfg.str("groq_model", "whisper-large-v3-turbo").ifBlank { "whisper-large-v3-turbo" }, 12f, th.muted),
+                    ui.text("المفتاح: " + (if (Cfg.str("groq_key_state", "") == "ok") "✅ شغّال (اتفحص)" else if (Cfg.str("groq_key", "").isBlank()) "❌ ناقص — ضيفه من تبويب المفاتيح" else "محفوظ — الفحص من تبويب المفاتيح"), 12f, th.muted),
+                    ui.button("🔑 المفتاح والفحص وجلب الموديلات ← تبويب المفاتيح") { try { settingsShow?.invoke("keys") } catch (e: Throwable) { LogStore.err("Main:groqKeys", e) } },
+                    groqChunk,
+                    ui.text("فيديو أقصر من الطول ده = باتش واحد كامل. ليميت Groq الرسمي: ساعتين صوت كل ساعة و8 ساعات في اليوم.", 11f, th.muted)) else null,
                 ) }),
             // ===== 🤖 الموديل والأداء =====
             tab("perf", { listOf<View>(
@@ -729,7 +738,7 @@ class MainActivity : Activity() {
                     ui.noHint()),   // (v1014) كان تبويب «الصورة» لوحده
                                 ui.section("🤖 الموديل والسرعة", true, modelChips, fetchModelsBtn, model, modelDesc,
                     ui.noHint(), speedBtn, speedOut, speedUseBtn),
-                ui.section("⏱ التقطيع والتنقيح", false, chunk, groqChunk, ahead, hlsAhead,
+                ui.section("⏱ التقطيع والتنقيح", false, chunk, ahead, hlsAhead,   // (v1385) طول باتش جروك نقل لقسم جروك في تبويب التفريغ
                     ui.noHint(), offPartChips,
                     ui.switchRow("كمّل ترجمة باقي الفيديو بعد ما توصل لمكان التشغيل (بيرجع للأول لو فيه جزء ناقص)", Cfg.bool("keepgoing", true)) { Cfg.put("keepgoing", if (it) "1" else "0") },
                     *fl("fastmode", "prefine"))) }),
