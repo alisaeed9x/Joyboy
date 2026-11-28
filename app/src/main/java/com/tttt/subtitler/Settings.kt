@@ -413,16 +413,44 @@ internal class MV(val v: View, val p: android.view.ViewGroup, val idx: Int, val 
 /** مطابقة مرنة عربي/إنجليزي: بيشيل التشكيل والتطويل، يوحّد الهمزات (أإآ→ا) والياء/الألف المقصورة والتاء المربوطة، يشيل «ال»، يسامح في غلطة إملائية واحدة (اتنين في الكلمات الطويلة)، ومرادفات قليلة (مشغل=player…) */
 object SettingsFuzzy {
     private val STOP = setOf("نوع", "اعداد", "اعدادات", "عايز", "عاوز", "ابحث", "عن", "في", "من", "علي", "على", "ده", "دي", "بتاع", "بتاعه", "اختيار", "setting", "settings", "the")
-    private val SYN = mapOf(
+    private val SYN = mapOf(   // (v1391) اتوسّعت: مرادفات عربي↔إنجليزي لكل تبويب (بند البحث في إعادة التنظيم)
         "مشغل" to listOf("player", "بلاير"), "player" to listOf("مشغل"),
-        "ترجمه" to listOf("سبتايتل", "subtitle", "translation"), "سبتايتل" to listOf("ترجمه"),
-        "صوت" to listOf("audio", "volume"), "audio" to listOf("صوت"),
+        "ترجمه" to listOf("سبتايتل", "subtitle", "translation"), "سبتايتل" to listOf("ترجمه"), "subtitle" to listOf("ترجمه"), "translation" to listOf("ترجمه"),
+        "صوت" to listOf("audio", "volume"), "audio" to listOf("صوت"), "volume" to listOf("صوت"),
         "فيديو" to listOf("video"), "video" to listOf("فيديو"),
-        "خلفيه" to listOf("background"), "بطاريه" to listOf("battery"),
-        "مفتاح" to listOf("key", "keys", "مفاتيح"), "مفاتيح" to listOf("مفتاح", "key"),
-        "جوده" to listOf("quality"), "سرعه" to listOf("speed"),
-        "ثيم" to listOf("مظهر", "theme"), "مظهر" to listOf("ثيم", "theme"),
-        "خط" to listOf("font"), "لهجه" to listOf("dialect"), "تحميل" to listOf("download"), "اشعار" to listOf("notification"))
+        "خلفيه" to listOf("background"), "background" to listOf("خلفيه"), "بطاريه" to listOf("battery"), "battery" to listOf("بطاريه"),
+        "مفتاح" to listOf("key", "keys", "مفاتيح"), "مفاتيح" to listOf("مفتاح", "key"), "key" to listOf("مفتاح", "مفاتيح"),
+        "جوده" to listOf("quality"), "quality" to listOf("جوده"), "سرعه" to listOf("speed"), "speed" to listOf("سرعه"),
+        "ثيم" to listOf("مظهر", "theme"), "مظهر" to listOf("ثيم", "theme"), "theme" to listOf("مظهر", "ثيم"),
+        "خط" to listOf("font"), "font" to listOf("خط"), "حجم" to listOf("size"), "لون" to listOf("color"), "color" to listOf("لون"),
+        "لهجه" to listOf("dialect"), "dialect" to listOf("لهجه"), "تحميل" to listOf("download"), "download" to listOf("تحميل"),
+        "اشعار" to listOf("notification"), "notification" to listOf("اشعار", "تنبيه"), "تنبيه" to listOf("اشعار", "notification"),
+        "كلمات" to listOf("lyrics", "اغاني"), "lyrics" to listOf("كلمات"), "موسيقي" to listOf("music", "اغاني", "كلمات"), "music" to listOf("موسيقي", "اغاني"), "اغاني" to listOf("music", "موسيقي"),
+        "تلفزيون" to listOf("tv", "تلفاز", "كاست", "شاشه"), "تلفاز" to listOf("تلفزيون", "tv"), "tv" to listOf("تلفزيون", "تلفاز"), "كاست" to listOf("cast", "تلفزيون"), "cast" to listOf("كاست"),
+        "ريموت" to listOf("remote", "تلفزيون"), "remote" to listOf("ريموت"),
+        "اصطياد" to listOf("capture", "التقاط"), "التقاط" to listOf("capture", "اصطياد"), "capture" to listOf("اصطياد", "التقاط"),
+        "متصفح" to listOf("browser"), "browser" to listOf("متصفح"), "تصفح" to listOf("browser", "متصفح"),
+        "امان" to listOf("security", "قفل", "بصمه"), "security" to listOf("امان", "قفل"), "قفل" to listOf("lock", "بصمه", "امان"), "lock" to listOf("قفل"), "بصمه" to listOf("fingerprint", "قفل"), "fingerprint" to listOf("بصمه"),
+        "نسخ" to listOf("backup", "احتياطي"), "احتياطي" to listOf("backup", "نسخ"), "backup" to listOf("نسخ", "احتياطي"),
+        "لوج" to listOf("log", "سجل"), "log" to listOf("لوج", "سجل"), "سجل" to listOf("log", "history", "لوج", "تاريخ"), "تاريخ" to listOf("history", "سجل"), "history" to listOf("تاريخ", "سجل"),
+        "موديل" to listOf("model", "ويشبر", "موديلات"), "model" to listOf("موديل"), "ويشبر" to listOf("whisper", "تفريغ"), "whisper" to listOf("ويشبر", "تفريغ"),
+        "تفريغ" to listOf("whisper", "ويشبر", "stt", "جروك"), "جروك" to listOf("groq", "تفريغ"), "groq" to listOf("جروك"), "جيميناي" to listOf("gemini"), "gemini" to listOf("جيميناي"),
+        "مسرد" to listOf("قاموس", "glossary"), "قاموس" to listOf("مسرد", "glossary", "dictionary"), "glossary" to listOf("مسرد", "قاموس"),
+        "ايماات" to listOf("gestures", "سحب"), "gestures" to listOf("ايماات", "سحب"), "سحب" to listOf("swipe", "ايماات"), "swipe" to listOf("سحب"),
+        "زوم" to listOf("zoom", "تكبير"), "zoom" to listOf("زوم", "تكبير"), "تكبير" to listOf("zoom", "زوم"),
+        "انيميشن" to listOf("animation", "حركه"), "animation" to listOf("انيميشن", "حركه"), "حركه" to listOf("animation", "انيميشن", "انتقالات"),
+        "اهتزاز" to listOf("haptic", "هابتك", "حافظ"), "haptic" to listOf("اهتزاز"),
+        "بلاطات" to listOf("tiles", "تخصيص"), "tiles" to listOf("بلاطات"), "تخصيص" to listOf("customize", "بلاطات"),
+        "تحديث" to listOf("update", "اپديت"), "update" to listOf("تحديث"),
+        "لغه" to listOf("language"), "language" to listOf("لغه"),
+        "توقيت" to listOf("timing", "مزامنه"), "timing" to listOf("توقيت", "مزامنه"), "مزامنه" to listOf("sync", "توقيت"), "sync" to listOf("مزامنه"),
+        "كاش" to listOf("cache", "ذاكره"), "cache" to listOf("كاش"),
+        "خصوصيه" to listOf("privacy"), "privacy" to listOf("خصوصيه"), "اعلان" to listOf("ads", "اعلانات"), "ads" to listOf("اعلان", "اعلانات"),
+        "تشغيل" to listOf("play", "playback"), "play" to listOf("تشغيل"), "playback" to listOf("تشغيل"),
+        "فريم" to listOf("fps", "فريمات", "سلاسه"), "فريمات" to listOf("fps", "فريم"), "fps" to listOf("فريم", "فريمات", "سلاسه"), "سلاسه" to listOf("smooth", "فريمات", "fps"), "smooth" to listOf("سلاسه"),
+        "اختصار" to listOf("shortcut"), "shortcut" to listOf("اختصار"),
+        "صوره" to listOf("thumbnail", "صور", "غلاف"), "thumbnail" to listOf("صوره", "غلاف"), "غلاف" to listOf("cover", "صوره"), "cover" to listOf("غلاف"),
+        "وضع" to listOf("mode"), "mode" to listOf("وضع"))
 
     fun norm(s: String): String {
         val sb = StringBuilder(s.length)
