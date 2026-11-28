@@ -27,7 +27,7 @@ object LocalMt {
     class Model(val id: String, val label: String, val file: String, val approxMb: Int, val note: String, val repo: String, val owner: String = "tencent", val needStq: Boolean = false)
     val models = listOf(
         Model("small", "📴 HY-MT1.5 · 1.8B", "HY-MT1.5-1.8B-Q4_K_M.gguf", 1130, "للعربي بس — Q4_K_M ~1.1GB", "HY-MT1.5-1.8B-GGUF"),   // (v745) الأساسي
-        Model("q125", "🪶 HY-MT1.5 · 1.25-bit (~440 ميجا)", "Hy-MT1.5-1.8B-1.25bit.gguf", 440, "الأصغر — نفس الموديل مضغوط 1.25-bit (QAT). محتاج بيلد خاص (JOY_STQ=1) وما اتجرّبش على جهاز؛ الجودة على العربي لازم تتقاس", "Hy-MT1.5-1.8B-1.25bit-GGUF", "AngelSlim", true)   // (v747)
+        Model("q125", "🪶 HY-MT1.5 · 1.25-bit (~440 ميجا)", "Hy-MT1.5-1.8B-1.25bit.gguf", 440, "الأصغر — نفس الموديل مضغوط. ⚠ مش شغال في النسخة العادية من التطبيق (محتاج نسخة خاصة)", "Hy-MT1.5-1.8B-1.25bit-GGUF", "AngelSlim", true)   // (v747)
     )
     /** رابط المتصفح (للتنزيل اليدوي) */
     fun url(m: Model = model()): String = "https://huggingface.co/" + m.owner + "/" + m.repo + "/resolve/main/" + m.file
@@ -53,7 +53,7 @@ object LocalMt {
     /** بيحمّل الموديل لو لسه. بيرمي SttInitFail لو فشل */
     fun prepare(log: (String) -> Unit) = synchronized(lock) {
         val f = file() ?: throw SttInitFail("مفيش مساحة تخزين")
-        if (!usable()) throw SttInitFail("الموديل الصغير (1.25-bit) محتاج بيلد خاص (JOY_STQ=1) — اختار النسخة 1.8B العادية")
+        if (!usable()) throw SttInitFail("موديل الترجمة الصغير (1.25-bit) مش شغال في نسختك من التطبيق — اختار موديل HY-MT1.5 العادي (1.8B)")
         if (!ready()) throw SttInitFail("موديل الترجمة مش موجود — نزّله أو اختاره من الإعدادات")
         if (h != 0L && loadedFile == f.path) return@synchronized
         releaseLocked()
@@ -198,7 +198,7 @@ object LocalMt {
 
     fun status(): String = when {
         !LlmLib.loaded -> "⛔ الترجمة الأوفلاين مش مدعومة على جهازك (محتاجة معالج 64-bit)."
-        !usable() -> "⛔ الموديل الصغير (1.25-bit) محتاج بيلد خاص من التطبيق (JOY_STQ=1) — النسخة دي من غيره. اختار 1.8B العادية."
+        !usable() -> "⛔ موديل الترجمة الصغير (1.25-bit) مش شغال في نسختك من التطبيق — اختار موديل HY-MT1.5 العادي (1.8B)، أو سيب الترجمة لجيميناي."
         !downloaded() -> "⬇ موديل الترجمة لسه مش موجود (~${model().approxMb} ميجا، مرة واحدة)."
         else -> "✅ ترجمة أوفلاين: HY-MT1.5 ${model().id} على الجهاز."
     }
