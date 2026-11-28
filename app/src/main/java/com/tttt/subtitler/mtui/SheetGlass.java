@@ -272,9 +272,15 @@ public final class SheetGlass {
                     boolean copied = result == PixelCopy.SUCCESS;
                     if (copied && !mLive) {
                         // The message pill is frosted, not see-through: twice the blur, shapes gone.
-                        blur(page, Math.max(1, Math.round((mTint != 0 ? BLUR_RADIUS * 2 : BLUR_RADIUS) * com.tttt.subtitler.MtGlass.blurScale())));
+                        // (v1388) البلور على خيط خلفية والعرض يرجع للواجهة — كان بيحصل على خيط الواجهة بعد PixelCopy ويعلّق يوتيوب ثانيتين عند الفتح (⛔ الواجهة واقفة في اللوج)
+                        int radius = Math.max(1, Math.round((mTint != 0 ? BLUR_RADIUS * 2 : BLUR_RADIUS) * com.tttt.subtitler.MtGlass.blurScale()));
+                        new Thread(() -> {
+                            blur(page, radius);
+                            mMain.post(() -> show(page, origin, pageW, pageH));
+                        }, "SheetGlass-blur").start();
+                    } else {
+                        show(copied ? page : null, origin, pageW, pageH);
                     }
-                    show(copied ? page : null, origin, pageW, pageH);
                 }, mMain);
             } catch (IllegalArgumentException e) {
                 // The page's window has no surface (already gone): keep what the sheet shows.
@@ -349,21 +355,37 @@ public final class SheetGlass {
         int step = horizontal ? 1 : w;
         for (int line = 0; line < lines; line++) {
             int start = horizontal ? line * w : line;
+            // (v1388) نافذة منزلقة: نفس المتوسط القديم بالظبط لكن كل بكسل O(1) بدل O(2r) — البلور أسرع ~٣٠ مرة
+            int sa = 0;
+            int sr = 0;
+            int sg = 0;
+            int sb = 0;
+            for (int k = 0; k <= Math.min(len - 1, r); k++) {
+                int c0 = src[start + k * step];
+                sa += c0 >>> 24;
+                sr += (c0 >> 16) & 0xFF;
+                sg += (c0 >> 8) & 0xFF;
+                sb += c0 & 0xFF;
+            }
             for (int i = 0; i < len; i++) {
-                int sa = 0;
-                int sr = 0;
-                int sg = 0;
-                int sb = 0;
-                int n = 0;
-                for (int k = Math.max(0, i - r); k <= Math.min(len - 1, i + r); k++) {
-                    int c = src[start + k * step];
-                    sa += c >>> 24;
-                    sr += (c >> 16) & 0xFF;
-                    sg += (c >> 8) & 0xFF;
-                    sb += c & 0xFF;
-                    n++;
-                }
+                int n = Math.min(len - 1, i + r) - Math.max(0, i - r) + 1;
                 dst[start + i * step] = (sa / n) << 24 | (sr / n) << 16 | (sg / n) << 8 | (sb / n);
+                int add = i + r + 1;
+                if (add < len) {
+                    int ca = src[start + add * step];
+                    sa += ca >>> 24;
+                    sr += (ca >> 16) & 0xFF;
+                    sg += (ca >> 8) & 0xFF;
+                    sb += ca & 0xFF;
+                }
+                int rem = i - r;
+                if (rem >= 0) {
+                    int cr = src[start + rem * step];
+                    sa -= cr >>> 24;
+                    sr -= (cr >> 16) & 0xFF;
+                    sg -= (cr >> 8) & 0xFF;
+                    sb -= cr & 0xFF;
+                }
             }
         }
     }

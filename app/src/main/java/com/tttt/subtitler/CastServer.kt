@@ -184,6 +184,7 @@ object CastServer {
  */
 object SubSidecar {
     @Volatile private var lastScanMsg = ""   // (v1139) نفس سطر الفحص ما يتكتبش تاني (كان بيتكرر ~50 مرة في الجلسة)
+    @Volatile private var scanCk = ""; @Volatile private var scanAt = 0L; @Volatile private var scanRes: List<java.io.File> = emptyList()   // (v1388) كاش ٥ ثواني لنتيجة فحص الفولدر — تحديثات الواجهة المتكررة ما بتعدّش الملفات على خيط الواجهة
     /** (v1137) الملف المختار للفيديو (اختيار المستخدم المحفوظ، وإلا الأحدث). null = بدون ترجمة أو مفيش ملف */
     fun find(ctx: Context, u: Uri): java.io.File? = try { SubSel.chosen(ctx, u, findAll(ctx, u)) } catch (e: Throwable) { LogStore.err("Player:sidecar", e); null }
 
@@ -197,6 +198,9 @@ object SubSidecar {
         if (f == null || dir == null) { LogStore.add("💬 سوفت صب: مسار الفيديو مش معروف (" + (u.scheme ?: "?") + ") — مش هقدر ألاقي ملف ترجمة جنبه"); emptyList() } else {
             val exts = listOf("srt", "ass", "ssa", "vtt", "ttml")
             val base = f.nameWithoutExtension.lowercase()
+            val ck = dir.absolutePath + "|" + base
+            val nowMs = System.currentTimeMillis()
+            if (ck == scanCk && nowMs - scanAt < 5000L) return scanRes
             fun norm(x: String) = x.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), "")
             val nb = norm(base)
             // (v661) تطابق متسامح: نفس الاسم · name.ar.srt · أو نفس الاسم بعد شيل المسافات/الرموز + لاحقة قصيرة (لغة) — من غير ما «movie1» تلقط «movie10»
@@ -243,6 +247,7 @@ object SubSidecar {
                 .sortedWith(compareByDescending<java.io.File> { it.lastModified() }.thenBy { exts.indexOf(it.extension.lowercase()) }.thenBy { it.name })
             val scanMsg = "💬 سوفت صب: فحص ملف جنب الفيديو — الفولدر فيه " + files.size + " ملف، " + (if (all.isNotEmpty()) "لقيت " + all.size + " ملف ترجمة (الأحدث «" + all.first().name + "»)" else "مفيش ملف ترجمة بنفس الاسم")
             if (scanMsg != lastScanMsg) { lastScanMsg = scanMsg; LogStore.add(scanMsg) }
+            scanCk = ck; scanAt = nowMs; scanRes = all
             all
         }
     } catch (e: Throwable) { LogStore.err("Player:sidecar", e); emptyList() }

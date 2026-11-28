@@ -902,16 +902,30 @@ open class PlayerActivity : Activity(), Host {
     @Volatile private var sfShown = false
     private var sfOffKey = ""
     @Volatile private var sfBatchFresh = false
+    @Volatile private var softSubKey = ""   // (v1388) نتيجة فحص الترجمة الجانبية متخزنة لكل فيديو
+    @Volatile private var softSubVal = false
+    @Volatile private var softSubBusy = false
+    /** (v1388) الفحص بقى على خيط خلفية بنتيجة متخزنة — كان بيعدّ ملفات الفولدر على خيط الواجهة مع كل updateTr ويعلّق المشغّل عند الفتح (⛔ الواجهة واقفة في اللوج) */
     private fun hasSoftSubNow(): Boolean {
         val u = uri?.toString() ?: ""
         if (u.isNotEmpty() && sfDoneUri == u) return true
-        return try {
-            val sc = sfSidecar()
-            val ours = sc != null && SrtWriter.isOurs(this, sc)
-            val realSide = if (sc == null) false else if (!ours) true else subCands().any { f -> !SrtWriter.isOurs(this, f) }
-            realSide || castSubFile?.exists() == true || mobileSub?.exists() == true || (sfNativeCount() - (if (ours) 1 else 0)) > 0
-        } catch (_: Throwable) { false }
+        if (u != softSubKey && !softSubBusy) {
+            softSubBusy = true
+            Thread {
+                val r = try {
+                    val sc = sfSidecar()
+                    val ours = sc != null && SrtWriter.isOurs(this, sc)
+                    val realSide = if (sc == null) false else if (!ours) true else subCands().any { f -> !SrtWriter.isOurs(this, f) }
+                    realSide || castSubFile?.exists() == true || mobileSub?.exists() == true || (sfNativeCount() - (if (ours) 1 else 0)) > 0
+                } catch (_: Throwable) { false }
+                softSubVal = r; softSubKey = u; softSubBusy = false
+                try { runOnUiThread { if (!isFinishing && !isDestroyed) updateTr() } } catch (_: Throwable) {}   // حدّث سطر «ترجم» بعد ما الفحص يخلص
+            }.start()
+        }
+        val cached = u.isNotEmpty() && u == softSubKey && softSubVal
+        return try { cached || castSubFile?.exists() == true || mobileSub?.exists() == true } catch (_: Throwable) { cached }   // الكاست/الموبايل لايف (فحص رخيص) عشان يظهروا فورًا
     }
+    private fun softSubBust() { softSubKey = "" }   // بعد اختيار/استيراد/إزالة ملف ترجمة: الفحص يتعاد
     private fun modeLabelNow(): String = try {
         if (!engineStarted && sfDoneLabel.isNotEmpty() && sfDoneUri.isNotEmpty() && sfDoneUri == (uri?.toString() ?: "")) sfDoneLabel else modeName()
     } catch (_: Throwable) { "" }
@@ -3375,7 +3389,7 @@ open class PlayerActivity : Activity(), Host {
     /** بعد تغيير الاختيار: نعيد تحميل المسار في المشغّل (الملف الجديد أو من غير ترجمة) ونصفّر كاش الاسم */
     private fun subApplied(u: Uri, f: java.io.File?) {
         try {
-            sfSideKey = ""; subCands(true)
+            sfSideKey = ""; softSubBust(); subCands(true)
             softAskedFor = u.toString()
             sfHideNative = false; nativeCue = ""; curIdx = -2
             player.exo()?.let { xp ->
